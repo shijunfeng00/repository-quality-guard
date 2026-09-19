@@ -182,8 +182,25 @@ def _legacy_payload_issues(root: Path) -> list[str]:
     lock_path = root / RELEASE_LOCK_NAME
     if lock_path.is_file():
         lock = _lock_values(lock_path)
-        if lock["distribution"] == "agents" and (root / "offline").exists():
-            issues.append("安装态 `.agents` 不得包含 `offline/` 离线依赖介质。")
+        if lock["distribution"] == "agents":
+            agents_forbidden = (
+                "offline",
+                "README.md",
+                "dev-tests",
+                "tools",
+                "profiles",
+                "installed/profile/AGENTS.md",
+                "installed/profile/README.md",
+                "installed/profile/tests",
+                "installed/profile/dev-tests",
+                "installed/profile/docs",
+                "installed/profile/examples",
+            )
+            for relative in agents_forbidden:
+                if (root / relative).exists():
+                    issues.append(
+                        f"安装态 `.agents` 不得包含 source/authoring 资产 `{relative}`。"
+                    )
     for path in root.rglob("*"):
         if not path.is_file():
             continue

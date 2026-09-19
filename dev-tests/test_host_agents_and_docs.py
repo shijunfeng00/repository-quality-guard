@@ -5,14 +5,36 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from runtime.deploy import _create_host_agents_if_missing
+from runtime.deploy import _agents_source, _create_host_agents_if_missing
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestHostAgentsContract(unittest.TestCase):
+    def test_profile_agents_file_is_selected_from_profile_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp)
+            profile_dir = bundle / "profiles" / "sample"
+            profile_dir.mkdir(parents=True)
+            expected = profile_dir / "AGENTS.md"
+            expected.write_text("profile instructions\n", encoding="utf-8")
+            selection = SimpleNamespace(reference="sample")
+            profile = SimpleNamespace(agents_file="AGENTS.md")
+            self.assertEqual(_agents_source(bundle, selection, profile), expected.resolve())
+
+    def test_generic_agents_source_uses_bootstrap_resource(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp)
+            templates = bundle / "templates"
+            templates.mkdir(parents=True)
+            expected = templates / "AGENTS.template.md"
+            expected.write_text("generic instructions\n", encoding="utf-8")
+            selection = SimpleNamespace(reference="")
+            self.assertEqual(_agents_source(bundle, selection, None), expected)
+
     def test_existing_host_agents_is_preserved_byte_for_byte(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)
@@ -50,6 +72,20 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertIn("create-if-missing", texts["references/CODING_GUIDE.md"])
         self.assertNotIn("Profile 模板覆盖", texts["references/CODING_GUIDE.md"])
         self.assertNotIn("Profile 模板覆盖", texts["references/AUDIT.md"])
+
+
+    def test_readme_documents_profile_authoring_and_private_profile_boundary(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("## 开发自定义 Profile", readme)
+        self.assertIn("QualityGuardProfile", readme)
+        self.assertIn("QualityRule", readme)
+        self.assertIn("RuleContext", readme)
+        self.assertIn("Finding", readme)
+        self.assertIn("PROFILE.lock", readme)
+        self.assertIn('"agents_file": "AGENTS.md"', readme)
+        self.assertIn("/profiles/", ignore)
+        self.assertFalse(any(line.startswith("/profiles/") and line != "/profiles/" for line in ignore))
 
     def test_deploy_cli_has_one_profile_switch_and_no_ignore(self) -> None:
         result = subprocess.run(

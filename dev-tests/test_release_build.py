@@ -41,7 +41,7 @@ class TestReleaseBuild(unittest.TestCase):
             self.assertEqual(_sha(a), _sha(b))
             self.assertEqual(a.read_bytes(), b.read_bytes())
 
-    def test_public_release_excludes_private_profiles_and_source_only_assets(self) -> None:
+    def test_public_release_excludes_private_profiles_and_keeps_authoring_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "public.zip"
             self._build(out)
@@ -49,8 +49,9 @@ class TestReleaseBuild(unittest.TestCase):
                 names = set(archive.namelist())
                 joined = "\n".join(sorted(names))
                 self.assertNotIn("profiles/", joined)
-                self.assertFalse(any("dev-tests/" in name for name in names))
-                self.assertFalse(any("tools/" in name for name in names))
+                self.assertTrue(any("dev-tests/" in name for name in names))
+                self.assertTrue(any("tools/" in name for name in names))
+                self.assertIn("repository-quality-guard/README.md", names)
                 self.assertFalse(any("profiles/" in name for name in names))
                 self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in names))
 
@@ -60,6 +61,9 @@ class TestReleaseBuild(unittest.TestCase):
             self._build(out, "--internal")
             with zipfile.ZipFile(out) as archive:
                 names = set(archive.namelist())
+                self.assertIn("repository-quality-guard/README.md", names)
+                self.assertTrue(any("dev-tests/" in name for name in names))
+                self.assertTrue(any("tools/" in name for name in names))
                 private_names = sorted(
                     item.name
                     for item in (ROOT / "profiles").iterdir()
@@ -70,10 +74,16 @@ class TestReleaseBuild(unittest.TestCase):
                     prefix = f"repository-quality-guard/profiles/{private_name}/"
                     self.assertIn(prefix + "profile.json", names)
                     self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in names))
-                    self.assertNotIn(prefix + "AGENTS.md", names)
-                    template = ROOT / "profiles" / private_name / "AGENTS.template.md"
-                    if template.is_file():
-                        self.assertIn(prefix + "AGENTS.template.md", names)
+                    profile_root = ROOT / "profiles" / private_name
+                    agents_file = profile_root / "AGENTS.md"
+                    if agents_file.is_file():
+                        self.assertIn(prefix + "AGENTS.md", names)
+                    readme = profile_root / "README.md"
+                    if readme.is_file():
+                        self.assertIn(prefix + "README.md", names)
+                    tests_dir = profile_root / "tests"
+                    if tests_dir.is_dir():
+                        self.assertTrue(any(name.startswith(prefix + "tests/") for name in names))
 
     def test_public_release_manifest_does_not_leak_private_profile_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

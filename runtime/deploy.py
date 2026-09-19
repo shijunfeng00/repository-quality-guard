@@ -130,6 +130,9 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
             ".ruff_cache",
             ".pytest_cache",
             "tests",
+            "dev-tests",
+            "tools",
+            "README.md",
             "templates",
             "profiles",
             "installed",
@@ -143,6 +146,9 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
         target / "offline",
         target / "profiles",
         target / "tests",
+        target / "dev-tests",
+        target / "tools",
+        target / "README.md",
         target / "runtime" / "releases",
         target / "runtime" / "CURRENT",
         target / "runtime" / "src" / "repo_quality_guard",
@@ -194,7 +200,10 @@ def _write_installed_policy(
         shutil.copytree(
             source_dir,
             installed / "profile",
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "AGENTS.template.md"),
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*.pyc", "*.pyo", "AGENTS.md", "README.md",
+                "tests", "dev-tests", "docs", "examples",
+            ),
         )
     payload = {
         "schema": "repository-quality-guard/installed-policy-v1",
@@ -212,14 +221,14 @@ def _write_installed_policy(
     return policy
 
 
-def _agents_template(bundle: Path, selection: Any, profile: Any | None) -> Path:
-    """Return Profile AGENTS override or the fixed generic template."""
-    if profile is not None and profile.agents_template:
+def _agents_source(bundle: Path, selection: Any, profile: Any | None) -> Path:
+    """Return the complete Profile AGENTS.md or the generic bootstrap resource."""
+    if profile is not None and profile.agents_file:
         if not selection.reference:
-            raise RuntimeError("profile AGENTS template has no source reference")
-        source = _profile_source_dir(bundle, str(selection.reference)) / profile.agents_template
+            raise RuntimeError("profile AGENTS.md has no source reference")
+        source = _profile_source_dir(bundle, str(selection.reference)) / profile.agents_file
         if not source.is_file():
-            raise RuntimeError(f"selected Profile AGENTS template missing: {source}")
+            raise RuntimeError(f"selected Profile AGENTS.md missing: {source}")
         return source
     source = bundle / "templates" / "AGENTS.template.md"
     if not source.is_file():
@@ -351,7 +360,7 @@ def deploy(bundle: Path, destination: Path, profile_reference: str = "") -> str:
     _release_identity(bundle)
     repo = _repo_for_destination(destination)
     selection, profile = _profile_selection(bundle, repo, profile_reference)
-    agents_source = _agents_template(bundle, selection, profile)
+    agents_source = _agents_source(bundle, selection, profile)
     _git_persistence_preflight(repo, destination)
 
     module_name, installer = _load_module(

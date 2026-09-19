@@ -149,10 +149,12 @@ profiles/<profile-name>/
 ├── profile.json
 ├── extension.py
 ├── PROFILE.lock        # 存在自定义规则时使用
-└── AGENTS.template.md  # 可选，仅安装时 create-if-missing
+├── AGENTS.md           # 可选；Profile 命中且宿主缺失时直接复制到根目录
+├── README.md           # 可选；Profile authoring 说明，不安装
+└── tests/              # 可选；Profile authoring tests，不安装
 ```
 
-`profile.json` 只负责名称、版本、entrypoint 和少量声明式配置。复杂规则与策略写在 Python 中。
+`profile.json` 只负责名称、版本、entrypoint 和少量声明式配置。复杂规则与策略写在 Python 中。若 Profile 提供宿主指令，使用 `"agents_file": "AGENTS.md"` 指向完整文件。
 
 `extension.py` 固定导出：
 
@@ -190,11 +192,11 @@ RQG 不拥有宿主仓库根 `AGENTS.md`。
 部署规则固定为：
 
 - 根 `AGENTS.md` 已存在：逐字节保留，不覆盖、不 merge、不 append；
-- 根 `AGENTS.md` 不存在且 Profile 提供 `AGENTS.template.md`：创建 Profile 模板；
-- 根 `AGENTS.md` 不存在且 Profile 未提供模板：创建通用 `templates/AGENTS.template.md`；
+- 根 `AGENTS.md` 不存在且 Profile 提供 `AGENTS.md`：直接复制该完整 Profile 指令文件；
+- 根 `AGENTS.md` 不存在且 Profile 未提供 `AGENTS.md`：创建通用 `templates/AGENTS.template.md`；
 - 并发部署期间若文件被其他进程抢先创建：安装失败并回滚，不覆盖新出现的宿主文件。
 
-Profile 的模板是 deploy-time bootstrap 资源，不进入 Installed runtime Profile payload。
+Profile 的 `AGENTS.md` 是 deploy-time bootstrap 资源，不进入 Installed runtime Profile payload。Profile 的 `README.md`、`tests/` 等 authoring 资产同样不进入 Installed runtime。
 
 ## 7. Git 持久化
 
@@ -235,8 +237,10 @@ Node.js/npm/Clang 属于宿主系统能力；只有显式 `--install-system` 或
 
 正式 public `.skill.zip`：
 
-- 包含完整第一方 Skill 与离线依赖；
-- 不包含 source-only tests、builder、缓存或私有 dogfood Profiles。
+- 包含完整第一方 Skill、`README.md`、`dev-tests/`、authoring/release tools 与离线依赖；
+- 不包含构建缓存或私有 Profile catalog。
+
+这些 authoring 资产只属于完整 Skill 发行介质；deploy 到 `.agents` 时必须剥离 `README.md`、`dev-tests/`、`tools/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
 
 Internal build 可以额外带本地 Profile catalog，用于组织内部 dogfood / parity 验证；它不改变 public Git tree。
 

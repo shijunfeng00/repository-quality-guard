@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from runtime.profile_build import build_profile_lock
-from runtime.src.profile_api import QualityGuardProfile, QualityRule, RulePack, RuleContext, SearchStrategy
+from runtime.src.profile_api import Finding, QualityGuardProfile, QualityRule, RulePack, RuleContext, SearchStrategy
 from runtime.src.project_profiles import load_quality_profile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +93,26 @@ class TestProfileContract(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 load_quality_profile(str(p), release_root=ROOT)
+
+
+    def test_agents_file_is_manifest_driven(self) -> None:
+        class Profile(QualityGuardProfile):
+            name = "sample"
+
+        built = Profile(manifest={"agents_file": "AGENTS.md"}).build()
+        self.assertEqual(built.agents_file, "AGENTS.md")
+
+    def test_finding_is_exported_from_stable_profile_api(self) -> None:
+        finding = Finding(
+            code="QG10000",
+            severity="warning",
+            confidence="high",
+            path="x.py",
+            line=1,
+            column=1,
+            message="example",
+        )
+        self.assertEqual(finding.code, "QG10000")
 
     def test_custom_rule_codes_are_frozen_and_not_recycled(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

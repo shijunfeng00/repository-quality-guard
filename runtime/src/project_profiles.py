@@ -270,7 +270,7 @@ class ProjectProfile:
     rule_codes: Mapping[str, str] = MappingProxyType({})
     search_strategy: type[SearchStrategy] | None = None
     report_extensions: tuple[type[ReportExtension], ...] = ()
-    agents_template: str = ""
+    agents_file: str = ""
 
 
 class RulePack(ABC):
@@ -287,7 +287,7 @@ class QualityGuardProfile:
 
     name = ""
     version = "1"
-    agents_template = ""
+    agents_file = ""
 
     def __init__(self, *, manifest: Mapping[str, Any] | None = None, source: str = "") -> None:
         self.manifest = MappingProxyType(dict(manifest or {}))
@@ -409,7 +409,7 @@ class QualityGuardProfile:
         if not configured_name:
             raise ValueError("profile name must be non-empty")
         version = str(self.manifest.get("version") or self.version or "")
-        template = str(self.manifest.get("agents_template") or self.agents_template or "")
+        agents_file = str(self.manifest.get("agents_file") or self.agents_file or "")
         locked_codes = dict(_profile_lock_codes(self.source))
         resolved_codes: dict[str, str] = {}
         seen_codes: set[str] = set()
@@ -454,7 +454,7 @@ class QualityGuardProfile:
             rule_codes=MappingProxyType(resolved_codes),
             search_strategy=self._search_strategy,
             report_extensions=tuple(self._report_extensions),
-            agents_template=template,
+            agents_file=agents_file,
         )
 
 

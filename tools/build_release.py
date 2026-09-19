@@ -19,9 +19,7 @@ _SOURCE_EXCLUDES = {
     ".qg-work",
     ".pytest_cache",
     ".ruff_cache",
-    "dev-tests",
     "equivalence-fixtures",
-    "tools",
 }
 _FILE_EXCLUDES = {"修改说明.md"}
 

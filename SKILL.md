@@ -1,46 +1,23 @@
 ---
 name: repository-quality-guard
-description: 对 Git 仓库执行接口复用检索、增量接口文档、Python/JS/TS/CSS/HTML/C++ 质量审计、语义裁决与最终只读门禁。
+description: 对 Git 仓库执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
+version: 0.20.0
+status: stable
 ---
 
 # Repository Quality Guard
 
-这是低自由度质量门禁。机器负责扫描事实与候选；模型负责阅读真实源码、做语义裁决并继续减法，不得自行弱化规则。
+**Version:** 0.20.0
+**Status:** Stable
+**Distribution:** Portable `.skill.zip` / repository-installed `.agents`
 
-## 固定流程
+Repository Quality Guard（RQG）是一套面向 Git 仓库的代码质量审计与开发闭环工具。它把可机械验证的代码事实、接口变化、测试契约和多语言静态分析统一到同一份仓库快照中，再通过结构化审计报告完成语义裁决、Reduction Pass 与最终只读验证。
 
-1. 修改前先冻结 **accepted design baseline**：用户明确指定 commit 时以该 commit 为准，否则使用任务开始时最后一个可确认的目标分支基线。该 revision 在整轮 `audit/verify` 中保持不变，不得移动到本轮自己生成的中间 commit 来缩小差分，也不得按 author 姓名筛选“权威提交”。
-2. 新增 function/method/class/helper 前，先执行 `doc-generate`，再用 `doc-search` 检索相关能力；阅读 Top10 中相关源码与调用方。
-3. 修改 production 后先运行受影响的既有测试；既有 tests 默认是稳定行为/契约基线，不得为了让当前实现通过而顺手改断言。只有真实需求变化、Bug 修复导致旧行为失效、测试自身缺陷，或保持行为不变的测试重构，才允许修改既有测试。随后执行 `audit`，填写 ADD/SEM/TEST-CHANGE/十一问；发现 BLOCKING 或可安全削减项时继续修改。
-4. 所有语言事实都由统一 `RepositoryAnalysisSnapshot` 持有：Python 保持既有 AST/RelationGraph 路径；JS/TS/CSS/HTML/C++ 由 language adapter 从同一 baseline/current 源码快照派生。优先查看 callers/callees、传递可达性、owner surface、隐藏 SCC、接口 blast radius 与 affected tests；不得建立第二套独立 Git/file snapshot、数据库或外部 CodeGraph 运行依赖。
-5. 重新 `audit`，完成 Reduction Pass：再次检查剩余 Warning、语义候选和新增接口能否删除、内联、合并、复用、下沉或收紧契约。
-6. 最终 patch 冻结后填写报告 `## 9. 提交 Commit`：必须提供一条描述整个 patch 的多行中文 `git commit -m` **建议命令**；随后执行 `verify`。报告中的建议命令只是审计契约，不代表 Guard 或执行模型获准实际提交。缺失 Commit、占位 Commit、patch 变化后的旧 Commit 或身份覆盖命令都按 QG984 拒绝。`audit` 只负责生成/刷新报告，报告未完成时退出码为 3（UNVERIFIED），不得当成通过；只有只读 `verify` 可以给出最终 PASS/REVIEW_REQUIRED/REJECT。实际执行 `git commit` 只服从当前任务的明确授权；`REVIEW_REQUIRED` 的人工确认是质量裁决，不等价于 Git 提交确认。
+RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并提供 API catalog、RelationGraph、接口差分、测试契约分析、报告完整性和 release integrity 检查。机器扫描负责事实与候选；需要源码语义判断的项目保留在审计账本中，由使用者完成裁决后再交给 `verify` 重新验证。
 
-## 审计交付闭环
+## 1. 稳定命令
 
-- 任何代码修改任务，无论用户要求直接修改、patch、diff、mbox、commit、bundle、zip 或完整仓库，**代码交付形式都不能替代质量审计交付**。必须生成并完成仓库根目录 `修改说明.md`，按报告要求修代码、复跑 `audit`、完成 Reduction Pass，再以 `verify` 得出最终状态。
-- `修改说明.md` 是**必须交付给用户的审计附件**，但默认是审计运行产物，**不进入业务 Git patch/commit/mbox**；除非用户明确要求纳入 Git。`.gitignore` 忽略它不等于可以不生成、不填写或不交付。
-- `audit GENERATED`、退出码 3、报告仍有 `PENDING`/占位、报告 validator 未通过，均表示审计**未完成**。不能因为 mbox/patch 已生成、replay tree 一致、测试通过或工作区 clean 就结束。
-- 最终回复必须同时给出：代码交付物、`修改说明.md`、报告门禁结果、静态事实门禁、模型语义/最终状态，以及未执行或因环境阻断的验证。只给 mbox/patch/zip 链接而不报告质量结论，视为任务未完成。
-- 若最终 `verify` 后又修改任何代码、测试、配置或 `修改说明.md`，必须重新 `audit`/补报告并再次 `verify`；不得沿用陈旧结论。
-
-## Git 持久化闭环
-
-- 仓库内 `.agents/skills/repository-quality-guard/**` 是**必须被 Git 持久化的协作运行时**，不是本机安装缓存。根 `AGENTS.md` 属于宿主共享协调状态；QG 不拥有覆盖权，只有在文件原本缺失且本轮 deploy 创建了模板时才可能属于同一次升级提交；普通项目没有对应模板时不得创建、覆盖或强行纳入 Agent 专用根指令。只在当前工作区 deploy 成功但未纳入 Git，视为 Skill 升级未完成：其他同事 `git pull` / fresh clone 后无法执行 Guard，等同于没有部署。
-- 用户要求安装或升级仓库内 Repository Quality Guard 时，**默认且正式的升级方式永远是全量替换**：不要求目标仓库先处于相邻版本，无论旧 `.agents` 是 v0.8、v0.13、v0.17、残缺安装或带废弃布局，都以当前正式 Skill 的安装态 manifest 为唯一目标树，使用 staging + 原子替换删除所有目标版本不存在的旧文件。增量 patch 不是安装前置条件。
-- deploy 后将**整个** `.agents/skills/repository-quality-guard` 用 `git add -A --` 纳入一次独立 Skill 升级提交；若 deploy 本轮确实同步了根 `AGENTS.md`，再把该文件一并纳入。必须同时记录新增、修改与旧版删除，不能只提交已跟踪旧文件，也不得为了通用仓库升级而创建/覆盖 Agent 专用 `AGENTS.md`。该提交使用实际执行者当前 Git identity，不伪装成设计基线作者。用户明确要求“只安装到本机、不提交”时才可例外，并必须明确说明该工作区不能作为可 pull 的完整交付。
-- deploy 后提交前必须检查 `git status --short --untracked-files=all` 与 `git check-ignore`；任何必需 `.agents` 文件为 untracked/ignored 都不得声称升级完成。提交后必须用 `git ls-files` / `git cat-file` 证明 `scripts/quality_guard.py`、`runtime/src/workflow.py`、`runtime/src/integrity.py` 与 `SKILL.md` 已存在于 `HEAD`；只有本轮同步过根 `AGENTS.md` 时才要求同时验证它。
-- 最终还必须从该 **Git commit** 做 fresh-clone/replay smoke：clone 中无需原 `.skill.zip` 即能找到完整 `.agents` 第一方 runtime，并实际执行 `doc-generate → audit → 完成修改说明.md → audit READY_FOR_VERIFY → verify`。第三方依赖缺失时运行 `.agents/.../runtime/install_dependencies.py` 安装锁定环境；不得把 Git-tracked launcher/runtime 缺失解释为依赖问题。
-- 托管 `pre-push` hook 是可选协作门禁；项目或 Profile 明确要求时运行 `.agents/skills/repository-quality-guard/scripts/git_hook_install.py <repo>`。hook 不进入 Git、不得覆盖已有非托管 hook，并调用当前安装策略下的 `verify <repo>`；报告缺失/未完成/陈旧或 verify REJECT 时拒绝 push。
-- `修改说明.md` 与上述 Git 持久化相反：它仍是必须交付的审计附件，默认不进入业务或 Skill 升级 commit。**运行时必须进 Git，审计报告必须交付但默认不进 Git。**
-
-## 合并协作基线
-
-- 通用任务按用户指定 revision 或任务起点冻结 accepted design baseline；不得按 author 姓名推导“权威提交”。
-- 若某项目需要额外的协作/合并语义，应由该项目的 Profile/AGENTS 明确声明；Core 不内置任何组织、作者、仓库或分支身份规则。
-- 设计权威与 Git 作者身份解耦：新提交使用实际贡献者 identity，历史提交遵守 Git 原生 author/committer 语义。
-
-## 唯一四个质量命令
+Agent-facing CLI 只保留四个一级命令：
 
 ```bash
 QG=.agents/skills/repository-quality-guard
@@ -50,43 +27,232 @@ python "$QG/scripts/quality_guard.py" audit <repo>
 python "$QG/scripts/quality_guard.py" verify <repo>
 ```
 
-环境与本地 Git hook 是安装辅助入口，不增加质量命令：
+Portable 模式下，也可以直接从解压后的 Skill 根目录运行：
 
 ```bash
-python "$QG/runtime/install_dependencies.py"
-python "$QG/scripts/git_hook_install.py" <repo>
+python scripts/quality_guard.py audit /path/to/repository
+python scripts/quality_guard.py audit /path/to/repository --profile my-profile
 ```
 
-Portable 模式可显式追加 `--profile <name-or-path>`；未显式指定时，只在“仓库目录名与一个实际存在的 Profile 名完全一致”时自动选择，并把选择原因打印给用户。Installed 模式使用 deploy 时冻结并受 seal 保护的 Profile，不接受运行期 `--profile`。接口文档支持 `doc-generate --files path/a.py,path/b.py` 范围刷新；`doc-search` 会自动检查 catalog 新鲜度并只重解析变化文件。
+### `doc-generate`
 
-## Profile 扩展开发
+生成或增量刷新仓库 API catalog。支持：
 
-- Profile 是可选项目策略插件，不是 JSON DSL。`profile.json` 只声明名称、版本、`entrypoint`、模板与少量数据配置；复杂规则必须写 Python。
-- `entrypoint` 只允许模块路径，模块必须固定导出 `class Profile(QualityGuardProfile)`；不得由 JSON 指定任意类名，也不得在 `__init__` 中产生注册副作用。项目策略在 `configure()` 中显式注册，并在构建后冻结。
-- 组合规则使用 `RulePack`；自定义规则继承 `QualityRule`，只读取只读 `RuleContext` 并返回标准 `Finding`。Profile 可以追加 `SearchStrategy` / `ReportExtension`，但不得接管 exit code、release seal、最终门禁或报告可信边界。
-- 新增自定义规则的稳定身份首先是 `rule key`；显示编号使用 `QG10000+`。未显式编号的规则只能在 authoring 阶段由 `runtime/profile_build.py` 分配并写入 `PROFILE.lock`，运行时不得动态重新编号；历史编号不回收。
-- Portable 模式可以显式 `--profile` 或按仓库目录名精确自动匹配；Installed 模式只使用 deploy 时冻结并受完整性 seal 保护的 Profile。
+```bash
+python scripts/quality_guard.py doc-generate <repo> --files path/a.py,path/b.py
+```
 
-## 不可绕过
+Catalog 用于新增接口前的复用检索和 owner 定位，不替代源码阅读。
 
-- Critical/Error/Warning 分档独立；历史下降不能抵消本轮新增/升级。
-- 本轮 fallback、宽松契约、return-shape、suppression、依赖面、启发式候选按报告要求做语义裁决。
-- 不得用报告文字豁免未授权 QG178；不得以“用户体验”为理由吞掉未知程序错误或伪造成功。
-- 报告写完不是终点；Reduction Pass 必须实际检查还能否进一步削减；没有最终 `verify` 结果就没有质量结论。
-- accepted design baseline 是 revision/用户明确设计授权，不是某个作者身份；无本轮明确需求时优先保持该基线已有 public interface、protocol 与 owner，不能因为实现方便自行漂移。
-- 不得直接修改 Skill runtime、manifest 或 release lock 来规避检查。
-- tests 不是实现快照：纯实现重构不应驱动测试同步漂移；源码字符串/private helper/“确保刚删除的名字永不出现”只可作为语义候选，除非能证明长期稳定架构/安全/协议不变量。
-- 行为正确、测试通过和静态 Delta=0 不足以证明质量通过；若存在有源码依据、能直接减少 concept/branch/helper/mode/layer/state/coupling 的更简单设计，必须在 Reduction Pass 中实现，或用真实调用链说明为何当前方案更简单。不得用拆函数、拆文件、薄 wrapper 或新增 mode 把复杂度从一个指标搬到另一个指标。
-- 语义 finding 必须遵循 `hypothesis → trace → evidence → finding`：能沿 owner/caller/protocol/state/test 路径验证的必须追到底。未经验证的“如果/可能/假如”不得升级为 BLOCKING；高严重度结论必须给出完整失败路径和可观察后果。
+### `doc-search`
 
-## 发布与安装边界
+在 API catalog 中执行能力检索：
 
-- 正式发布只提供一个**完整、全量、可离线独立运行的 `.skill.zip`**：包含第一方 QG 代码、规则、模板、精确依赖锁，以及 `offline/wheelhouse` / `offline/node_modules.zip` 离线依赖介质；不包含 tests、缓存或历史 release 布局。
-- **`.skill.zip` 与安装态 `.agents` 是两种不同使用模式。** 外部 Skill 必须在无网络且宿主缺少锁定 Python/Node 包时仍可用随包离线介质完成 bootstrap；`runtime/deploy.py` 安装到仓库时则必须裁掉 `offline/`、wheel、`node_modules`，只保留完整第一方运行时。不得为了 `.agents` 瘦身而删除 `.skill.zip` 的离线能力。
-- 项目内 `.agents/skills/repository-quality-guard` 必须直接包含 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py`、依赖锁、全部 `runtime/src/*.py` 与 `runtime/src/multilang_parser.js`。这些文件进入完整性 manifest；任一缺失都不是可运行安装。
-- `python runtime/deploy.py <skill-root> <repo>/.agents/skills/repository-quality-guard [--profile <name-or-path>]` 是通用且唯一的全量升级入口。它先验证正式源包与锁定依赖，再在 staging 构造完整目标树并原子替换旧目录；目标仓库当前 QG 版本不构成前置条件，旧版独有文件不会残留。根 `AGENTS.md` 属于宿主共享协调文件：已存在时必须逐字节保留；仅当缺失时才创建，优先使用 Profile 的 `AGENTS.template.md`，否则使用通用 `templates/AGENTS.template.md`。Profile 与策略在安装阶段冻结并进入 release seal，安装后运行时不再接受 `--profile`。
-- fresh clone 缺少第三方依赖时运行 `python .agents/skills/repository-quality-guard/runtime/install_dependencies.py`。安装器按 `runtime/dependencies.lock.json` 复用精确宿主版本，否则用 pip/npm 在线安装精确版本；依赖 cache 位于仓库外，不进入业务 Git。`RQG_OFFLINE_ONLY=1` 只允许已有精确依赖/cache并在缺失时 fail-loud。
-- Node.js/npm/Clang 是宿主系统能力；只有显式 `--install-system` 或 `RQG_INSTALL_SYSTEM_DEPS=1` 才允许安装器调用 apt/dnf/yum/pacman/brew。不存在因为系统能力缺失而偷偷降级到弱解析。
-- 如果用户明确要求针对某个旧仓库交付 patch/mbox，必须先对该仓库**真实当前 HEAD 执行全量升级**，再导出 HEAD→完整目标树的差异；不能要求用户先逐版本升级，也不能提供只包含相邻版本局部文件的“安装补丁”。
+```bash
+python scripts/quality_guard.py doc-search <repo> "state transaction ownership"
+```
 
-以下路径**均相对于本 Skill 根目录 `repository-quality-guard/`，不是被审计仓库根目录**：`references/RULES.md`、`references/AUDIT.md`、`references/CODING_GUIDE.md`。
+默认检索策略保持稳定；Profile 可以注册可选 `SearchStrategy` 对现有候选进行重排或过滤。
+
+### `audit`
+
+扫描当前仓库与固定 Git baseline，生成/刷新仓库根目录的 `修改说明.md`：
+
+```bash
+python scripts/quality_guard.py audit <repo> --diff-base <commit>
+```
+
+`audit` 会写入机器事实，并保留需要人工完成的 ADD / SEM / TEST-CHANGE / Reduction / Commit 等语义字段。报告未完成时返回 `UNVERIFIED`，不能作为最终质量结论。
+
+### `verify`
+
+只读重新扫描源码并校验最新报告：
+
+```bash
+python scripts/quality_guard.py verify <repo> --diff-base <commit>
+```
+
+`verify` 不补写报告、不修改源码，也不会把未完成或 BLOCKING 的裁决自动改成 JUSTIFIED。最终状态为 `PASS`、`REVIEW_REQUIRED` 或 `REJECT`。
+
+## 2. 标准开发流程
+
+RQG 的推荐闭环如下：
+
+1. 冻结 accepted design baseline。用户明确指定 revision 时使用该 revision；否则使用任务开始时最后一个可确认的目标分支基线。
+2. 新增 function / method / class / helper 前先执行 `doc-generate` 与 `doc-search`，检查已有 owner、调用方和可复用能力。
+3. 实现变更并先运行受影响的既有测试。测试默认代表稳定行为或契约，不应为了迁就当前实现而机械修改。
+4. 执行 `audit`，阅读机器事实和真实源码，完成新增接口、语义候选、测试契约和历史风险裁决。
+5. 执行 Reduction Pass，检查新增 concept、branch、helper、mode、layer、state 或 coupling 是否仍能删除、内联、合并、复用、下沉或收紧。
+6. 冻结最终 patch，并在报告中填写覆盖整个 patch 的提交建议。
+7. 执行只读 `verify` 得到最终质量状态。
+
+`修改说明.md` 是审计交付物，默认不进入业务 Git commit，除非项目明确要求。
+
+## 3. 退出码
+
+稳定 CLI 使用以下主要退出码：
+
+| Exit code | 含义 |
+|---:|---|
+| `0` | 命令成功；`audit` 为 `READY_FOR_VERIFY`，或 `verify` 为 `PASS` |
+| `1` | `verify REJECT`：静态或语义门禁拒绝 |
+| `2` | CLI、Profile、依赖或运行环境错误 |
+| `3` | 报告门禁未完成或报告契约拒绝 |
+| `4` | Skill / Installed release 完整性失败 |
+| `5` | `verify REVIEW_REQUIRED`：接口/协议账本需要人工确认，但不是 REJECT |
+
+调用方应按退出码和日志中的状态共同判断结果，不应把 `audit` 的报告生成动作视作最终通过。
+
+## 4. Portable 与 Installed 模式
+
+### Portable
+
+Portable `.skill.zip` 是完整、自包含、可离线 bootstrap 的发行物。它保留：
+
+- 第一方 runtime；
+- `offline/wheelhouse`；
+- `offline/node_modules.zip`；
+- 依赖锁；
+- 可选 Profile catalog。
+
+Portable 模式可显式使用：
+
+```bash
+--profile <name-or-path>
+```
+
+若未显式指定 Profile，RQG 只在**仓库目录名与一个实际存在的 Profile 名完全一致**时自动选择，并明确向用户打印自动匹配原因；否则使用 generic policy，不根据项目文件特征猜测 Profile。
+
+### Installed
+
+安装入口：
+
+```bash
+python runtime/deploy.py \
+  <skill-root> \
+  <repo>/.agents/skills/repository-quality-guard \
+  [--profile <name-or-path>]
+```
+
+安装器验证源 Skill、构造 staging tree、裁掉 Portable-only 离线介质、冻结所选 Profile 与 Policy，并原子替换旧安装。
+
+Installed 模式的 Profile selection 是不可变安装状态。运行时再次传入 `--profile` 会被拒绝；修改 installed policy 或 Profile payload 会触发 release integrity 门禁。
+
+## 5. Profile 扩展系统
+
+Profile 是项目策略插件，不是 JSON DSL。
+
+推荐布局：
+
+```text
+profiles/<profile-name>/
+├── profile.json
+├── extension.py
+├── PROFILE.lock        # 存在自定义规则时使用
+└── AGENTS.template.md  # 可选，仅安装时 create-if-missing
+```
+
+`profile.json` 只负责名称、版本、entrypoint 和少量声明式配置。复杂规则与策略写在 Python 中。
+
+`extension.py` 固定导出：
+
+```python
+class Profile(QualityGuardProfile):
+    def configure(self) -> None:
+        super().configure()
+        ...
+```
+
+主要扩展接口：
+
+- `QualityGuardProfile`：项目策略与规则装配；
+- `RulePack`：组合一组相关规则；
+- `QualityRule`：自定义规则；
+- `RuleContext`：RQG 提供的只读仓库事实模型；
+- `Finding`：规则的标准输出；
+- `SearchStrategy`：可选检索重排；
+- `ReportExtension`：可选报告扩展。
+
+Profile rule 的稳定身份首先是 `rule key`。自定义显示编号使用 `QG10000+`。未显式指定编号时，只能在 authoring 阶段由：
+
+```bash
+python runtime/profile_build.py profiles/<profile-name>
+```
+
+分配并冻结到 `PROFILE.lock`；运行时不得重新编号，历史编号不回收。
+
+Profile 可以关闭普通项目规则或追加自定义规则，但不能关闭 release integrity、报告完整性等 Guard 自身可信边界。
+
+## 6. `AGENTS.md` 所有权
+
+RQG 不拥有宿主仓库根 `AGENTS.md`。
+
+部署规则固定为：
+
+- 根 `AGENTS.md` 已存在：逐字节保留，不覆盖、不 merge、不 append；
+- 根 `AGENTS.md` 不存在且 Profile 提供 `AGENTS.template.md`：创建 Profile 模板；
+- 根 `AGENTS.md` 不存在且 Profile 未提供模板：创建通用 `templates/AGENTS.template.md`；
+- 并发部署期间若文件被其他进程抢先创建：安装失败并回滚，不覆盖新出现的宿主文件。
+
+Profile 的模板是 deploy-time bootstrap 资源，不进入 Installed runtime Profile payload。
+
+## 7. Git 持久化
+
+项目内：
+
+```text
+.agents/skills/repository-quality-guard/
+```
+
+是需要被 Git 持久化的第一方协作运行时，不是本地缓存。正式升级应全量替换旧 Skill，并用：
+
+```bash
+git add -A -- .agents/skills/repository-quality-guard
+```
+
+记录新增、修改和删除。
+
+`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。
+
+## 8. 完整性与依赖
+
+RQG release 通过 `runtime/MANIFEST.sha256`、`runtime/RELEASE.lock` 和 launcher seal 校验受保护文件。Portable Skill 与 Installed tree 使用不同 distribution policy：
+
+- `skill`：允许并要求正式离线依赖介质；
+- `agents`：只保留第一方 runtime 与锁，不携带完整 wheelhouse / node_modules archive。
+
+依赖 bootstrap：
+
+```bash
+python runtime/install_dependencies.py
+```
+
+安装器按 `runtime/dependencies.lock.json` 使用精确版本。`RQG_OFFLINE_ONLY=1` 时只能使用已有精确依赖或随包离线介质，缺失即 fail-loud。
+
+Node.js/npm/Clang 属于宿主系统能力；只有显式 `--install-system` 或 `RQG_INSTALL_SYSTEM_DEPS=1` 才允许安装系统依赖。
+
+## 9. Release 结构
+
+正式 public `.skill.zip`：
+
+- 包含完整第一方 Skill 与离线依赖；
+- 不包含 source-only tests、builder、缓存或私有 dogfood Profiles。
+
+Internal build 可以额外带本地 Profile catalog，用于组织内部 dogfood / parity 验证；它不改变 public Git tree。
+
+## 10. 审计原则
+
+- Critical / Error / Warning 独立计数，历史下降不能抵消本轮新增或升级；
+- 语义 finding 需要沿 owner / caller / protocol / state / test 路径给出可验证证据；
+- fallback、宽松契约、suppression、return-shape、依赖面与启发式行为必须进入相应语义裁决；
+- 不得通过修改 Skill runtime、manifest、release lock 或测试断言来规避门禁；
+- 行为正确和测试通过不等于 Reduction 完成；存在更小、更直接的可验证设计时应继续收敛；
+- 最终质量结论只来自最新源码上的 `verify`。
+
+## 11. 参考文档
+
+以下路径相对于 Repository Quality Guard Skill 根目录：
+
+- `references/RULES.md`：QG 规则与严重度说明；
+- `references/AUDIT.md`：报告、审计和验证契约；
+- `references/CODING_GUIDE.md`：开发、接口、测试和 Reduction 约束。

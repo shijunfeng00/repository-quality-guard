@@ -51,7 +51,7 @@ class TestReleaseBuild(unittest.TestCase):
                 self.assertNotIn("profiles/", joined)
                 self.assertFalse(any("dev-tests/" in name for name in names))
                 self.assertFalse(any("tools/" in name for name in names))
-                self.assertFalse(any(".private/" in name for name in names))
+                self.assertFalse(any("profiles/" in name for name in names))
                 self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in names))
 
     def test_internal_release_includes_private_profiles_without_caches(self) -> None:
@@ -62,7 +62,7 @@ class TestReleaseBuild(unittest.TestCase):
                 names = set(archive.namelist())
                 private_names = sorted(
                     item.name
-                    for item in (ROOT / ".private" / "profiles").iterdir()
+                    for item in (ROOT / "profiles").iterdir()
                     if item.is_dir() and (item / "profile.json").is_file()
                 )
                 self.assertTrue(private_names)
@@ -71,7 +71,7 @@ class TestReleaseBuild(unittest.TestCase):
                     self.assertIn(prefix + "profile.json", names)
                     self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in names))
                     self.assertNotIn(prefix + "AGENTS.md", names)
-                    template = ROOT / ".private" / "profiles" / private_name / "AGENTS.template.md"
+                    template = ROOT / "profiles" / private_name / "AGENTS.template.md"
                     if template.is_file():
                         self.assertIn(prefix + "AGENTS.template.md", names)
 
@@ -83,7 +83,7 @@ class TestReleaseBuild(unittest.TestCase):
                 manifest = archive.read("repository-quality-guard/runtime/MANIFEST.sha256").decode("utf-8")
                 private_names = [
                     item.name
-                    for item in (ROOT / ".private" / "profiles").iterdir()
+                    for item in (ROOT / "profiles").iterdir()
                     if item.is_dir()
                 ]
                 for private_name in private_names:

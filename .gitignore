@@ -1,6 +1,6 @@
-/.private/
+/profiles/
 /equivalence-fixtures/
-/.qg-work/
+.qg-work/
 *.pyc
 __pycache__/
 .pytest_cache/

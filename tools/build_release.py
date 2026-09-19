@@ -15,7 +15,7 @@ FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 ROOT_NAME = "repository-quality-guard"
 _SOURCE_EXCLUDES = {
     ".git",
-    ".private",
+    "profiles",
     ".qg-work",
     ".pytest_cache",
     ".ruff_cache",
@@ -66,7 +66,7 @@ def _stage_source(source: Path, staging: Path, *, internal: bool) -> Path:
     if profiles.exists():
         shutil.rmtree(profiles)
     if internal:
-        private_profiles = source / ".private" / "profiles"
+        private_profiles = source / "profiles"
         if private_profiles.is_dir():
             shutil.copytree(
                 private_profiles,

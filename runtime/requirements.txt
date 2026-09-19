@@ -1,0 +1,5 @@
+# Required semantic-analysis dependencies; no optional or weak-mode fallback.
+apted==1.0.3
+tree-sitter==0.26.0
+tree-sitter-python==0.25.0
+ruff==0.15.20

@@ -1,0 +1,7 @@
+/.private/
+/equivalence-fixtures/
+/.qg-work/
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/

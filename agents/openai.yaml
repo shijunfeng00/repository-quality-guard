@@ -1,0 +1,12 @@
+interface:
+  display_name: repository quality guard
+  short_description: 对 Git 仓库执行接口复用检索、增量接口文档、Python/JS/TS/CSS/HTML/C++ 质量审计、语义裁决与最终只读门禁。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

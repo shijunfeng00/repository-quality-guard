@@ -123,3 +123,19 @@ class TestProfileContract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestTestQualityProjection(unittest.TestCase):
+    def test_nonblocking_paths_do_not_expand_test_baseline_projection(self) -> None:
+        from runtime.src.cli import _filter_test_quality_findings
+        from runtime.src.model import Finding
+
+        findings = [
+            Finding("QG190", "critical", "high", "tests/conftest.py", 1, 1, "dynamic import"),
+            Finding("QG003", "error", "high", "utils/tracing.py", 2, 1, "mapping access"),
+            Finding("QG149", "warning", "high", "tests/test_x.py", 3, 1, "private member"),
+        ]
+        projected = _filter_test_quality_findings(findings, ("utils/tracing.py",))
+        self.assertEqual(
+            [(item.code, item.path) for item in projected],
+            [("QG003", "utils/tracing.py"), ("QG149", "tests/test_x.py")],
+        )

@@ -25,7 +25,7 @@ from .analysis_snapshot import (
 from .api_catalog import build_api_catalog, search_api_catalog
 from .architecture_diff import compare_git_architecture
 from .call_chain_rules import single_use_chain_findings
-from .config import GuardConfig, is_profile_nonblocking_path, is_test_path
+from .config import GuardConfig, is_test_path
 from .fallback_laundering import fallback_laundering_findings
 from .git_utils import run_readonly_git
 from .integrity import INTEGRITY_RULE_CODE, verify_release_integrity
@@ -76,6 +76,23 @@ _PORCELAIN_STATUS_PREFIX_LENGTH = 3
 _AUDIT_ONLY_PREFIXES = (".agents/", ".pytest_cache/", ".ruff_cache/")
 _INTERFACE_DEFINITION_KINDS = frozenset({"class", "function", "method"})
 _INTERFACE_POLICY_CODES = frozenset({"QG161", "QG180", "QG181", "QG182"})
+
+
+def _filter_test_quality_findings(
+    findings: list[Finding],
+    passthrough_patterns: tuple[str, ...],
+) -> list[Finding]:
+    """Apply the one canonical test-quality baseline projection."""
+    return [
+        item
+        for item in findings
+        if any(
+            fnmatch(Path(item.path).as_posix().lstrip("./"), pattern)
+            for pattern in passthrough_patterns
+        )
+        or item.code in {"QG000", "QG149"}
+        or item.source in {"ruff", "integration"}
+    ]
 
 
 @dataclass(slots=True, frozen=True)
@@ -1027,14 +1044,10 @@ def _compute_git_baseline(
             if is_test_path(path.relative_to(baseline_root), config.project_name)
         }
         test_report = test_scanner.scan(selected_files=test_files)
-        passthrough_patterns = config.profile_test_baseline_passthrough_paths
-        test_report.findings = [
-            item
-            for item in test_report.findings
-            if any(fnmatch(Path(item.path).as_posix().lstrip("./"), pattern) for pattern in passthrough_patterns)
-            or item.code in {"QG000", "QG149"}
-            or item.source in {"ruff", "integration"}
-        ]
+        test_report.findings = _filter_test_quality_findings(
+            test_report.findings,
+            config.profile_test_baseline_passthrough_paths,
+        )
         merge_findings(
             test_report,
             (
@@ -1787,13 +1800,10 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     if selected_files is not None:
         test_files &= selected_files
     test_report = test_scanner.scan(selected_files=test_files)
-    test_report.findings = [
-        item
-        for item in test_report.findings
-        if is_profile_nonblocking_path(item.path, base_config.project_name)
-        or item.code in {"QG000", "QG149"}
-        or item.source in {"ruff", "integration"}
-    ]
+    test_report.findings = _filter_test_quality_findings(
+        test_report.findings,
+        base_config.profile_test_baseline_passthrough_paths,
+    )
 
     if target.git_enabled:
         architecture_findings = []

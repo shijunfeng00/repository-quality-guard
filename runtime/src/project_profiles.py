@@ -484,6 +484,22 @@ def available_profile_names(*, release_root: Any | None = None) -> tuple[str, ..
     ))
 
 
+def _clear_profile_bytecode_cache(module_path: Any) -> None:
+    """Remove stale local bytecode for a Profile entrypoint before and after loading."""
+    from pathlib import Path
+
+    path = Path(module_path)
+    cache_dir = path.parent / "__pycache__"
+    if not cache_dir.is_dir():
+        return
+    for cached in cache_dir.glob(f"{path.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
+    try:
+        cache_dir.rmdir()
+    except OSError:
+        pass
+
+
 def load_quality_profile(reference: str | None, *, release_root: Any | None = None) -> QualityGuardProfile | None:
     """从名字或显式目录加载 Profile；JSON 只负责 manifest/entrypoint。"""
     if not reference:
@@ -504,11 +520,15 @@ def load_quality_profile(reference: str | None, *, release_root: Any | None = No
     if not module_path.is_file():
         raise ValueError(f"profile entrypoint module missing: {module_path}")
     unique = f"rqg_profile_{abs(hash(str(module_path.resolve())))}"
+    _clear_profile_bytecode_cache(module_path)
     spec = importlib_util.spec_from_file_location(unique, module_path)
     if spec is None or spec.loader is None:
         raise ValueError(f"cannot import profile module: {module_path}")
     module = importlib_util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        _clear_profile_bytecode_cache(module_path)
     profile_cls = module.Profile
     if not isinstance(profile_cls, type) or not issubclass(profile_cls, QualityGuardProfile):
         raise TypeError(f"profile module must export Profile(QualityGuardProfile): {entrypoint}")

@@ -20,6 +20,7 @@ RQG organizes repository understanding, capability reuse, implementation, struct
 - **AI semantic review** — gives context-dependent findings and their evidence to an AI reviewer, using stable review questions about necessity, capability reuse, ownership, interface synchronization, hidden fallbacks, test weakening, lifecycle constraints, and unauthorized semantic heuristics.
 - **Project Profiles** — let repositories define rule levels, disabled rules, path policy, and project-specific static-analysis extensions.
 - **Unified quality gate** — reports the final audit result as `ACCEPT`, `REVIEW_REQUIRED`, or `REJECT`.
+- **Git push gate** — a managed `pre-push` hook re-runs read-only `verify` before every `git push`; `REJECT`, invalid reports, and verification failures block the push, while `REVIEW_REQUIRED` keeps its human-confirmation semantics without being promoted to `ACCEPT`.
 
 ### How AI semantic review works
 
@@ -57,6 +58,7 @@ flowchart TD
     I[Check test contracts and compare with the historical baseline]
     J[Run AI semantic review]
     K[Produce the audit report and change record]
+    P[Managed pre-push re-runs verify before git push]
     L{Final quality gate}
     M[ACCEPT]
     N[REVIEW_REQUIRED]
@@ -65,13 +67,19 @@ flowchart TD
     A --> B --> C --> D --> E --> F
     F --> G
     C --> G
-    G --> H --> I --> J --> K --> L
+    G --> H --> I --> J --> K --> P --> L
     L --> M
     L --> N
     L --> O
 ```
 
-Each change starts from repository structure and existing capabilities, then re-checks structural impact, interface contracts, test contracts, historical quality changes, and semantic risks before delivery.
+Each change starts from repository structure and existing capabilities, then re-checks structural impact, interface contracts, test contracts, historical quality changes, and semantic risks before delivery. On a fresh clone or at the start of a development task, the Agent must also confirm that the managed `pre-push` gate is installed; Git hooks are local metadata and do not travel with normal repository commits.
+
+```bash
+python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
+```
+
+If an unmanaged `pre-push` already exists, the installer reports the conflict and leaves it untouched. Agents must not bypass the gate with `git push --no-verify`. The managed hook re-runs `verify` before every push: `ACCEPT` and `REVIEW_REQUIRED` may continue, while `REJECT`, an invalid report contract, or a verification failure blocks the push.
 
 ## Audit results
 
@@ -97,7 +105,13 @@ Install the public Skill with the standard Skill CLI:
 npx skills add shijunfeng00/repository-quality-guard
 ```
 
-This installs the RQG Core with the generic quality policy. It is intended for repositories that do not need project-specific rule policy, path policy, or static-analysis extensions.
+This installs the RQG Core with the generic quality policy. It is intended for repositories that do not need project-specific rule policy, path policy, or static-analysis extensions. After installing the Skill, confirm the managed push gate in the target Git repository:
+
+```bash
+python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
+```
+
+This step is required once per fresh clone. RQG does not overwrite an existing unmanaged `pre-push` hook.
 
 ### Build a project Profile
 
@@ -156,7 +170,7 @@ python .agents/skills/repository-quality-guard/scripts/quality_guard.py \
   audit . --profile my-project-profile
 ```
 
-The installed `.agents/skills/repository-quality-guard` directory is protected audit infrastructure. Direct changes to the Core, installed Profile, manifest, or other protected files fail QG990 integrity validation. To update, replace, or add a Profile, edit the Profile source and run the custom installation again so the installer creates a new valid installed state.
+The installed `.agents/skills/repository-quality-guard` directory is protected audit infrastructure. Direct changes to the Core, installed Profile, manifest, or other protected files fail QG990 integrity validation. To update, replace, or add a Profile, edit the Profile source and run the custom installation again so the installer creates a new valid installed state. After custom installation, confirm the managed `pre-push` gate in the target repository as well so every push re-runs the final `verify`.
 
 ```mermaid
 flowchart TD

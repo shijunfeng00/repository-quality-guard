@@ -20,6 +20,7 @@ RQG 将“理解现有系统、检索并复用已有能力、实施修改、分�
 - **AI 语义审计**：把静态规则无法独立决定的问题连同证据交给 AI，按照固定审判问题检查需求必要性、既有能力复用、职责所有权、接口同步、隐藏 fallback、测试弱化、生命周期约束以及未经授权的语义启发式等问题。
 - **项目 Profile**：允许项目定义规则等级、规则关闭、路径策略和项目特有静态分析扩展。
 - **统一质量门禁**：以 `ACCEPT`、`REVIEW_REQUIRED`、`REJECT` 汇总最终审计结论。
+- **Git 推送门禁**：托管 `pre-push` hook 在每次 `git push` 前重新执行只读 `verify`；`REJECT`、报告无效或运行失败会阻断 push，`REVIEW_REQUIRED` 保留人工复核语义但不会被擅自升级为 `ACCEPT`。
 
 ### AI 语义审计如何工作
 
@@ -57,6 +58,7 @@ flowchart TD
     I[检查测试契约并比较历史基线]
     J[执行 AI 语义审计]
     K[生成审计报告与修改说明]
+    P[git push 前托管 pre-push 重跑 verify]
     L{最终质量门禁}
     M[ACCEPT]
     N[REVIEW_REQUIRED]
@@ -65,13 +67,19 @@ flowchart TD
     A --> B --> C --> D --> E --> F
     F --> G
     C --> G
-    G --> H --> I --> J --> K --> L
+    G --> H --> I --> J --> K --> P --> L
     L --> M
     L --> N
     L --> O
 ```
 
-代码修改从仓库结构和已有能力出发，并在交付前重新检查结构影响、接口契约、测试契约、历史质量变化和语义风险。
+代码修改从仓库结构和已有能力出发，并在交付前重新检查结构影响、接口契约、测试契约、历史质量变化和语义风险。fresh clone 或开发任务开始时，Agent 还必须确认托管 `pre-push` 已安装；Git hook 本身不会随仓库提交自动复制到新的 clone。
+
+```bash
+python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
+```
+
+已有非托管 `pre-push` 时安装器会明确报冲突并保持原文件不覆盖。Agent 不得使用 `git push --no-verify` 绕过质量门禁。托管 hook 会在每次 push 前重新执行 `verify`：`ACCEPT` 与 `REVIEW_REQUIRED` 可以继续，`REJECT`、报告契约不完整或验证运行失败会阻断 push。
 
 ## 审计结果
 
@@ -97,7 +105,13 @@ RQG 提供两种使用方式：通用安装适用于采用默认 Generic 策略�
 npx skills add shijunfeng00/repository-quality-guard
 ```
 
-这种方式安装 RQG Core，并使用通用质量策略。它适合没有项目特有规则、路径策略或静态分析扩展的仓库。
+这种方式安装 RQG Core，并使用通用质量策略。它适合没有项目特有规则、路径策略或静态分析扩展的仓库。安装 Skill 后，在目标 Git 仓库中确认托管推送门禁：
+
+```bash
+python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
+```
+
+这个步骤需要在每个 fresh clone 中执行一次；如果仓库已经有非托管 `pre-push`，RQG 不会覆盖它。
 
 ### 开发自己的 Profile
 
@@ -156,7 +170,7 @@ python .agents/skills/repository-quality-guard/scripts/quality_guard.py \
   audit . --profile my-project-profile
 ```
 
-安装完成后的 `.agents/skills/repository-quality-guard` 属于受保护的审计基础设施。直接修改 Core、已安装 Profile、manifest 或其他受保护内容会触发 QG990 完整性拒绝。Profile 需要更新、替换或新增时，修改 Profile 源并重新运行定制安装流程，由安装器生成新的合法安装状态。
+安装完成后的 `.agents/skills/repository-quality-guard` 属于受保护的审计基础设施。直接修改 Core、已安装 Profile、manifest 或其他受保护内容会触发 QG990 完整性拒绝。Profile 需要更新、替换或新增时，修改 Profile 源并重新运行定制安装流程，由安装器生成新的合法安装状态。定制安装完成后同样需要在目标仓库确认托管 `pre-push`，使每次 push 都重新执行最终 `verify`。
 
 ```mermaid
 flowchart TD

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-RELEASE_SEAL = "f32521c1d5078c7b2ad2856557e3aae2fda89aa2347c041f4a4b1352f7f4ac37"
+RELEASE_SEAL = "25ea7067553656fd7167106dc5c628793bb5539a9421f2aaec91b2340f33fec6"
 
 
 def _prepare_dependencies() -> None:

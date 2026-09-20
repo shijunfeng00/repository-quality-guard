@@ -95,6 +95,10 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertIn("qg-example-profile", readme_zh)
         self.assertIn("REVIEW_REQUIRED", readme)
         self.assertIn("REVIEW_REQUIRED", readme_zh)
+        self.assertIn("pre-push", readme)
+        self.assertIn("pre-push", readme_zh)
+        self.assertIn("git_hook_install.py", readme)
+        self.assertIn("git_hook_install.py", readme_zh)
         self.assertIn("requires human confirmation", readme)
         self.assertIn("需要人确认其可接受性的变动", readme_zh)
         self.assertNotIn("Human review", readme)
@@ -104,6 +108,29 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertIn("/profiles/*", ignore)
         self.assertIn("!/profiles/qg-example-profile/", ignore)
         self.assertIn("!/profiles/qg-example-profile/**", ignore)
+
+    def test_managed_pre_push_gate_is_part_of_agent_contract(self) -> None:
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        agents = (ROOT / "templates" / "AGENTS.template.md").read_text(
+            encoding="utf-8"
+        )
+        for text in (skill, agents):
+            self.assertIn("pre-push", text)
+            self.assertIn("git_hook_install.py", text)
+            self.assertIn("--no-verify", text)
+
+    def test_rule_tables_have_markdown_headers(self) -> None:
+        lines = (ROOT / "references" / "RULES.md").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        for index, line in enumerate(lines):
+            if not line.startswith("| `QG"):
+                continue
+            if index > 0 and lines[index - 1].startswith("| `QG"):
+                continue
+            self.assertGreaterEqual(index, 2)
+            self.assertEqual("| 规则 | 检查内容 |", lines[index - 2])
+            self.assertEqual("|---|---|", lines[index - 1])
 
     def test_deploy_cli_has_one_profile_switch_and_no_ignore(self) -> None:
         result = subprocess.run(

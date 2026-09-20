@@ -268,6 +268,11 @@
 | `QG188` | **Warning**：模块级全大写常量在全仓没有静态读取、属性访问或显式导入。应 grep/检索真实调用方后删除死常量；仓库外 API 或动态入口须以显式导出/注册证据说明。历史存量不妨碍 ACCEPT，本轮新增由 QG179 拒绝。 |
 
 > 绝对阻断只作用于生产审计域；Profile 显式声明的非阻断路径仍完整报告，但不进入最终硬门槛。
+
+### 测试代码审计
+
+| 规则 | 检查内容 |
+|---|---|
 | `QG170` | 删除含既有测试用例的测试文件。 |
 | `QG171` | 删除 Git 基线中已有的 `test_*` 测试用例。 |
 | `QG172` | 测试断言数量相对基线减少，需检查是否弱化回归门禁。 |
@@ -277,6 +282,11 @@
 | `QG192` | **Info 语义候选**：本轮新增或修改测试读取/解析 production source、检查源码字符串存在/不存在、使用 `inspect.getsource/signature`、历史 `REMOVED_*`/removed/deleted/no_longer/legacy tombstone 等，疑似把实现历史固化为测试。它不直接判错；命中用例必须进入 `TEST-CHANGE-*`，若不能证明长期稳定架构不变量则必须 BLOCKING，修正为稳定行为/契约验证后重新审计。 |
 | `QG193` | **Info 关系语义候选**：本轮修改或删除的既有测试用例，经 RepositoryRelationGraph 证明属于同轮生产变更的 affected RUN set。它不直接判定测试改错；Q11 必须说明旧断言为何因明确需求、Bug 修复或测试缺陷而失效，并给出先运行 accepted-baseline 测试的可观察证据，禁止把 affected tests 当成自动 EDIT set。 |
 | `QG194` | **Info 关系语义候选**：本轮函数/方法/类接口变化存在静态可达生产依赖，但 RepositoryRelationGraph 无法证明任何既有测试覆盖。该规则只声明 `coverage relation unknown`，不等于“没有测试”；Q2/Q11 必须给出动态注册、fixture、HTTP/框架入口等真实行为测试路径，或补充稳定接口/返回契约回归测试。 |
+
+### 报告与完整性门禁
+
+| 规则 | 检查内容 |
+|---|---|
 | `QG980` | `修改说明.md` 缺少当前报告 schema 的固定章节、章节顺序错误，或应答的通用/profile 专项审判标题缺失、重复、改名。 |
 | `QG981` | 报告 schema、change digest、tool_status 或 `RQG:AUTO` 自动事实块与当前 Git/接口/架构事实不一致。 |
 | `QG982` | 生产 FILE/ARTIFACT/ADD/ARCH/DELTA/INTERFACE/PROTOCOL、测试 TEST-FILE/TEST-RISK/TEST-CHANGE、存量削减结论、通用/profile 专项审判或最终语义结论不完整；自动事实覆盖或符号不一致、重复套话、模型抬高静态状态、QG179 DELTA/QG168/正接口净额未标记 BLOCKING、新增/参数/核心协议变化缺少必要性与验证证据，或存量一个未减却没有范围级说明。 |
@@ -285,6 +295,10 @@
 | `QG985` | 模型抄写的生产新增函数、变量、类数量或二次减法复审 ADD 数量与工具事实不一致。 |
 | `QG990` | Skill 发布清单、release seal、受保护文件数量或文件 SHA-256 不一致，或者受保护目录出现未登记的非派生文件；工具在扫描业务仓库前直接拒绝。`__pycache__`、`*.pyc`、`*.pyo`、`.pytest_cache`、`.ruff_cache`、`.mypy_cache` 等可再生执行缓存不参与 runtime integrity；正式 release builder 仍必须剥离这些缓存。 |
 
+### Profile 当前树绝对阻断与协议语义规则
+
+| 规则 | 检查内容 |
+|---|---|
 | `QG189` | **Critical，Profile 可启用的当前树绝对阻断**：除 Profile 声明的权威状态类型内部及已登记的受控事务/流水账 API 外，调用方不得通过下标/属性赋值、嵌套容器方法、局部别名、`getattr/setattr/vars/__dict__`、`dict/list/object` 基类写入口、动态成员调用或 ctypes/id 反射修改状态。当前树存在即 REJECT，不适用历史债务豁免。 |
 | `QG190` | **Critical，Profile 可启用的当前树绝对阻断**：生产代码禁止 `eval`、`exec`、`compile`、`__import__` 与 `importlib.import_module`。Profile 非阻断域仍扫描并独立分账；生产当前树存在即 REJECT。 |
 | `QG191` | **语义候选**：本轮代码手工拼装已有协议/传输对象（例如 OpenAI tool-call wire）而没有复用既有协议 owner；要求先检索并复用唯一所有者，确有独立长期契约时再以 Q3/Q5 证据裁决。 |

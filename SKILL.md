@@ -89,15 +89,17 @@ python scripts/quality_guard.py verify <repo> --diff-base <commit>
 
 RQG 的推荐闭环如下：
 
-1. 冻结 accepted design baseline。用户明确指定 revision 时使用该 revision；否则使用任务开始时最后一个可确认的目标分支基线。
-2. 新增 function / method / class / helper 前先执行 `doc-generate` 与 `doc-search`，检查已有 owner、调用方和可复用能力。
-3. 实现变更并先运行受影响的既有测试。测试默认代表稳定行为或契约，不应为了迁就当前实现而机械修改。
-4. 执行 `audit`，阅读机器事实和真实源码，完成新增接口、语义候选、测试契约和历史风险裁决。
-5. 执行 Reduction Pass，检查新增 concept、branch、helper、mode、layer、state 或 coupling 是否仍能删除、内联、合并、复用、下沉或收紧。
-6. 冻结最终 patch，并在报告中填写覆盖整个 patch 的提交建议。
-7. 执行只读 `verify` 得到最终质量状态。
+1. fresh clone 或开发任务开始时确认 RQG 环境与托管 `pre-push` 门禁。缺 hook 时运行 `python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .`；已有非托管 `pre-push` 时必须明确报告冲突，不得覆盖，也不得使用 `git push --no-verify` 绕过门禁。
+2. 冻结 accepted design baseline。用户明确指定 revision 时使用该 revision；否则使用任务开始时最后一个可确认的目标分支基线。
+3. 新增 function / method / class / helper 前先执行 `doc-generate` 与 `doc-search`，检查已有 owner、调用方和可复用能力。
+4. 实现变更并先运行受影响的既有测试。测试默认代表稳定行为或契约，不应为了迁就当前实现而机械修改。
+5. 执行 `audit`，阅读机器事实和真实源码，完成新增接口、语义候选、测试契约和历史风险裁决。
+6. 执行 Reduction Pass，检查新增 concept、branch、helper、mode、layer、state 或 coupling 是否仍能删除、内联、合并、复用、下沉或收紧。
+7. 冻结最终 patch，并在报告中填写覆盖整个 patch 的提交建议。
+8. 执行只读 `verify` 得到最终质量状态。
+9. `git push` 时由托管 `pre-push` 对即将推送的 HEAD 再次执行只读 `verify`。退出码 `0`（ACCEPT）与 `5`（REVIEW_REQUIRED）可以继续；`REJECT`、报告门禁失败、完整性失败或其他验证错误必须阻断 push。
 
-`修改说明.md` 是审计交付物，默认不进入业务 Git commit，除非项目明确要求。
+`修改说明.md` 是审计交付物，默认不进入业务 Git commit，除非项目明确要求。Git hook 属于 clone 本地元数据，不会随普通 Git commit 自动复制，因此每个 fresh clone 都必须重新确认安装状态。
 
 ## 3. 退出码
 
@@ -225,7 +227,7 @@ git add -A -- .agents/skills/repository-quality-guard
 
 记录新增、修改和删除。
 
-`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。
+`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。托管 `.git/hooks/pre-push` 同样不进入 Git 历史；Agent 必须在 fresh clone / 任务开始时确认它存在，并通过 `scripts/git_hook_install.py` 安装缺失 hook。已有非托管 hook 不得被覆盖。
 
 ## 8. 完整性与依赖
 
@@ -263,6 +265,7 @@ Internal build 可以额外带本地 Profile catalog，用于组织内部 dogfoo
 - 不得通过修改 Skill runtime、manifest、release lock 或测试断言来规避门禁；
 - 行为正确和测试通过不等于 Reduction 完成；存在更小、更直接的可验证设计时应继续收敛；
 - 最终质量结论只来自最新源码上的 `verify`。
+- Agent 不得使用 `git push --no-verify` 或其他方式绕过托管 `pre-push`；推送前必须让 hook 对待推送 HEAD 重新执行 `verify`。
 
 ## 11. 参考文档
 

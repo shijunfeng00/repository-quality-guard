@@ -66,6 +66,33 @@ class TestProfileContract(unittest.TestCase):
         self.assertEqual(built.test_baseline_passthrough_paths, ("utils/tracing.py",))
 
 
+    def test_public_example_profile_is_executable_and_keeps_policy_in_json(self) -> None:
+        profile_dir = ROOT / "profiles" / "qg-example-profile"
+        profile = load_quality_profile(str(profile_dir), release_root=ROOT)
+        self.assertIsNotNone(profile)
+        assert profile is not None
+        snapshot = profile.build()
+
+        self.assertEqual(snapshot.rule_levels["QG203"], "blocker")
+        self.assertEqual(snapshot.rule_levels["QG205"], "semantic")
+        self.assertIn("QG187", snapshot.disabled_rules)
+        self.assertEqual(
+            snapshot.nonblocking_paths, ("tests/**", "tools/tracing.py")
+        )
+        self.assertEqual(len(snapshot.stable_mapping_contracts), 1)
+        self.assertEqual(len(snapshot.callable_contracts), 2)
+        self.assertEqual(
+            snapshot.stable_mapping_contracts[0].qualname, "RuntimeState"
+        )
+        self.assertEqual(
+            snapshot.callable_contracts[0].qualname, "ModelAdapter.generate"
+        )
+
+        extension = (profile_dir / "extension.py").read_text(encoding="utf-8")
+        self.assertNotIn("set_rule_level", extension)
+        self.assertNotIn("disable_rule", extension)
+        self.assertNotIn("add_nonblocking_path", extension)
+
     def test_geek_ai_agent_nonblocking_policy_is_declared_only_in_json(self) -> None:
         profile_dir = ROOT / "profiles" / "geek-ai-agent"
         built = load_quality_profile(str(profile_dir))

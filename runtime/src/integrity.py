@@ -33,6 +33,7 @@ _PROTECTED_PREFIXES = (
     "runtime/src/",
     "templates/",
     "installed/",
+    "profiles/qg-example-profile/",
 )
 _IGNORED_SUFFIXES = (".pyc", ".pyo")
 _IGNORED_CACHE_PARTS = frozenset(

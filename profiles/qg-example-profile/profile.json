@@ -1,0 +1,28 @@
+{
+  "schema": "repository-quality-guard/profile-v1",
+  "name": "qg-example-profile",
+  "version": "1",
+  "entrypoint": "extension.py",
+  "rules": {
+    "levels": {
+      "QG203": "BLOCKER",
+      "QG205": "SEMANTIC"
+    },
+    "disable": [
+      "QG187"
+    ]
+  },
+  "nonblocking_paths": [
+    "tests/**",
+    "tools/tracing.py"
+  ],
+  "test_baseline_passthrough_paths": [
+    "tools/tracing.py"
+  ],
+  "settings": {
+    "state_contract_path": "app/runtime/state.py",
+    "state_contract_type": "RuntimeState",
+    "adapter_path": "app/model_adapter.py",
+    "adapter_type": "ModelAdapter"
+  }
+}

@@ -91,8 +91,9 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertIn("项目 Profile", readme_zh)
         self.assertNotIn("## Quick start", readme)
         self.assertNotIn("## 快速开始", readme_zh)
-        self.assertIn("/profiles/", ignore)
-        self.assertFalse(any(line.startswith("/profiles/") and line != "/profiles/" for line in ignore))
+        self.assertIn("/profiles/*", ignore)
+        self.assertIn("!/profiles/qg-example-profile/", ignore)
+        self.assertIn("!/profiles/qg-example-profile/**", ignore)
 
     def test_deploy_cli_has_one_profile_switch_and_no_ignore(self) -> None:
         result = subprocess.run(

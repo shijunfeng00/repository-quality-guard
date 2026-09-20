@@ -1,4 +1,6 @@
-/profiles/
+/profiles/*
+!/profiles/qg-example-profile/
+!/profiles/qg-example-profile/**
 /equivalence-fixtures/
 .qg-work/
 *.pyc

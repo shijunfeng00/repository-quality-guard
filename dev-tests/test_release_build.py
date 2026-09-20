@@ -192,13 +192,23 @@ class TestReleaseBuild(unittest.TestCase):
             self._build(out)
             with zipfile.ZipFile(out) as archive:
                 names = set(archive.namelist())
-                joined = "\n".join(sorted(names))
-                self.assertNotIn("profiles/", joined)
                 self.assertTrue(any("dev-tests/" in name for name in names))
                 self.assertTrue(any("tools/" in name for name in names))
                 self.assertIn("repository-quality-guard/README.md", names)
                 self.assertIn("repository-quality-guard/README_zh.md", names)
-                self.assertFalse(any("profiles/" in name for name in names))
+                public_prefix = (
+                    "repository-quality-guard/profiles/qg-example-profile/"
+                )
+                self.assertIn(public_prefix + "profile.json", names)
+                self.assertIn(public_prefix + "extension.py", names)
+                self.assertIn(public_prefix + "README.md", names)
+                profile_entries = {
+                    name for name in names if "/profiles/" in name
+                }
+                self.assertTrue(profile_entries)
+                self.assertTrue(
+                    all(name.startswith(public_prefix) for name in profile_entries)
+                )
                 self.assertFalse(
                     any(
                         any(
@@ -228,7 +238,9 @@ class TestReleaseBuild(unittest.TestCase):
                 private_names = sorted(
                     item.name
                     for item in (ROOT / "profiles").iterdir()
-                    if item.is_dir() and (item / "profile.json").is_file()
+                    if item.is_dir()
+                    and item.name != "qg-example-profile"
+                    and (item / "profile.json").is_file()
                 )
                 self.assertTrue(private_names)
                 for private_name in private_names:
@@ -314,7 +326,9 @@ class TestReleaseBuild(unittest.TestCase):
                     "repository-quality-guard/runtime/MANIFEST.sha256"
                 ).decode("utf-8")
                 private_names = [
-                    item.name for item in (ROOT / "profiles").iterdir() if item.is_dir()
+                    item.name
+                    for item in (ROOT / "profiles").iterdir()
+                    if item.is_dir() and item.name != "qg-example-profile"
                 ]
                 for private_name in private_names:
                     self.assertNotIn(private_name, manifest)

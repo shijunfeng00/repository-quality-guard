@@ -15,6 +15,7 @@ from pathlib import Path
 
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 ROOT_NAME = "repository-quality-guard"
+PUBLIC_PROFILE_NAME = "qg-example-profile"
 _SOURCE_EXCLUDES = {
     ".git",
     "profiles",
@@ -88,14 +89,22 @@ def _stage_source(source: Path, staging: Path, *, internal: bool) -> Path:
     profiles = target / "profiles"
     if profiles.exists():
         shutil.rmtree(profiles)
-    if internal:
-        private_profiles = source / "profiles"
-        if private_profiles.is_dir():
-            shutil.copytree(
-                private_profiles,
-                profiles,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-            )
+    source_profiles = source / "profiles"
+    public_profile = source_profiles / PUBLIC_PROFILE_NAME
+    if not (public_profile / "profile.json").is_file():
+        raise RuntimeError(f"public example Profile missing: {public_profile}")
+    shutil.copytree(
+        public_profile,
+        profiles / PUBLIC_PROFILE_NAME,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
+    if internal and source_profiles.is_dir():
+        shutil.copytree(
+            source_profiles,
+            profiles,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
     _clean_caches(target)
     integrity = _load_integrity(target)
     integrity.seal_release_tree(target, "skill")

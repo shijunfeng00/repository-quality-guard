@@ -74,26 +74,23 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertNotIn("Profile 模板覆盖", texts["references/AUDIT.md"])
 
 
-    def test_bilingual_readmes_document_workflow_and_profile_authoring(self) -> None:
+    def test_bilingual_readmes_present_human_facing_project_overview(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         readme_zh = (ROOT / "README_zh.md").read_text(encoding="utf-8")
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
         self.assertIn("[简体中文](README_zh.md)", readme)
         self.assertIn("[English](README.md)", readme_zh)
+        for heading in ("## Capabilities", "## Language support", "## Development workflow", "## Installation", "## Outputs"):
+            self.assertIn(heading, readme)
+        for heading in ("## 功能", "## 语言支持", "## 开发流程", "## 安装", "## 产物"):
+            self.assertIn(heading, readme_zh)
         self.assertIn("```mermaid", readme)
         self.assertIn("```mermaid", readme_zh)
-        self.assertIn("## Development workflow", readme)
-        self.assertIn("## 开发流程", readme_zh)
-        self.assertIn("## Authoring a project profile", readme)
-        self.assertIn("## 开发自定义 Profile", readme_zh)
-        for text in (readme, readme_zh):
-            self.assertIn("QualityGuardProfile", text)
-            self.assertIn("QualityRule", text)
-            self.assertIn("RuleContext", text)
-            self.assertIn("Finding", text)
-            self.assertIn("PROFILE.lock", text)
-            self.assertIn('"agents_file": "AGENTS.md"', text)
+        self.assertIn("Project Profiles", readme)
+        self.assertIn("项目 Profile", readme_zh)
+        self.assertNotIn("## Quick start", readme)
+        self.assertNotIn("## 快速开始", readme_zh)
         self.assertIn("/profiles/", ignore)
         self.assertFalse(any(line.startswith("/profiles/") and line != "/profiles/" for line in ignore))
 
@@ -128,13 +125,13 @@ class TestHostAgentsContract(unittest.TestCase):
             "allowed-tools",
         }
         self.assertLessEqual(top_level, allowed)
-        self.assertIn('  version: "0.20.1"', frontmatter)
+        self.assertIn('  version: "0.20.2"', frontmatter)
         self.assertIn("  status: stable", frontmatter)
 
     def test_skill_describes_stable_commands_and_version(self) -> None:
         text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         lock = (ROOT / "runtime" / "RELEASE.lock").read_text(encoding="utf-8")
-        self.assertIn("version=0.20.1", lock)
+        self.assertIn("version=0.20.2", lock)
         for command in ("doc-generate", "doc-search", "audit", "verify"):
             self.assertIn(command, text)
         self.assertIn("Portable", text)

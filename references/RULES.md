@@ -283,7 +283,7 @@
 | `QG983` | 验证章节缺少 Guard、`git diff --check` 或项目验证命令，记录仍为空泛，或任一命令退出码非零。 |
 | `QG984` | 提交章节缺少描述整个 accepted-baseline→target patch 的可直接执行多行中文 `git commit -m` 命令，主题/至少两条中文摘要不完整，patch digest 变化后继续沿用旧命令，或提交命令试图用 `git config user.*`、`--author`、`GIT_AUTHOR_*` / `GIT_COMMITTER_*` 覆盖当前贡献者 identity。设计基线按 revision/用户授权确定，绝不以 author 姓名确定；任何身份覆盖均使 `verify` REJECT。 |
 | `QG985` | 模型抄写的生产新增函数、变量、类数量或二次减法复审 ADD 数量与工具事实不一致。 |
-| `QG990` | Skill 发布清单、release seal、受保护文件数量或文件 SHA-256 不一致，或者受保护目录出现未登记文件；工具在扫描业务仓库前直接拒绝。 |
+| `QG990` | Skill 发布清单、release seal、受保护文件数量或文件 SHA-256 不一致，或者受保护目录出现未登记的非派生文件；工具在扫描业务仓库前直接拒绝。`__pycache__`、`*.pyc`、`*.pyo`、`.pytest_cache`、`.ruff_cache`、`.mypy_cache` 等可再生执行缓存不参与 runtime integrity；正式 release builder 仍必须剥离这些缓存。 |
 
 | `QG189` | **Critical，Profile 可启用的当前树绝对阻断**：除 Profile 声明的权威状态类型内部及已登记的受控事务/流水账 API 外，调用方不得通过下标/属性赋值、嵌套容器方法、局部别名、`getattr/setattr/vars/__dict__`、`dict/list/object` 基类写入口、动态成员调用或 ctypes/id 反射修改状态。当前树存在即 REJECT，不适用历史债务豁免。 |
 | `QG190` | **Critical，Profile 可启用的当前树绝对阻断**：生产代码禁止 `eval`、`exec`、`compile`、`__import__` 与 `importlib.import_module`。Profile 非阻断域仍扫描并独立分账；生产当前树存在即 REJECT。 |

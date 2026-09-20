@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build deterministic public/internal Repository Quality Guard .skill.zip releases."""
+
 from __future__ import annotations
 
 import argparse
@@ -19,6 +20,7 @@ _SOURCE_EXCLUDES = {
     ".qg-work",
     ".pytest_cache",
     ".ruff_cache",
+    ".mypy_cache",
     "equivalence-fixtures",
 }
 _FILE_EXCLUDES = {"修改说明.md"}
@@ -50,8 +52,9 @@ def _load_integrity(root: Path):
 
 
 def _clean_caches(root: Path) -> None:
-    for directory in sorted(root.rglob("__pycache__"), reverse=True):
-        shutil.rmtree(directory, ignore_errors=True)
+    for cache_name in ("__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"):
+        for directory in sorted(root.rglob(cache_name), reverse=True):
+            shutil.rmtree(directory, ignore_errors=True)
     for path in root.rglob("*"):
         if path.is_file() and path.suffix in {".pyc", ".pyo"}:
             path.unlink()
@@ -79,11 +82,15 @@ def _stage_source(source: Path, staging: Path, *, internal: bool) -> Path:
     result = integrity.verify_release_integrity(
         {
             integrity.RELEASE_HOME_ENV: str(target),
-            integrity.RELEASE_SEAL_ENV: integrity._sha256(target / integrity.MANIFEST_NAME),
+            integrity.RELEASE_SEAL_ENV: integrity._sha256(
+                target / integrity.MANIFEST_NAME
+            ),
         }
     )
     if not result.passed:
-        raise RuntimeError("built release integrity failed: " + "; ".join(result.issues))
+        raise RuntimeError(
+            "built release integrity failed: " + "; ".join(result.issues)
+        )
     return target
 
 
@@ -105,7 +112,12 @@ def _zip_tree(tree: Path, destination: Path) -> None:
             info.external_attr = ((0o755 if executable else 0o644) & 0xFFFF) << 16
             info.create_system = 3
             info.flag_bits |= 0x800
-            archive.writestr(info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+            archive.writestr(
+                info,
+                path.read_bytes(),
+                compress_type=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
+            )
 
 
 def build(source: Path, destination: Path, *, internal: bool = False) -> Path:
@@ -120,9 +132,13 @@ def build(source: Path, destination: Path, *, internal: bool = False) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", nargs="?", default=str(Path(__file__).resolve().parents[1]))
+    parser.add_argument(
+        "source", nargs="?", default=str(Path(__file__).resolve().parents[1])
+    )
     parser.add_argument("output")
-    parser.add_argument("--internal", action="store_true", help="include ignored local dogfood Profiles")
+    parser.add_argument(
+        "--internal", action="store_true", help="include ignored local dogfood Profiles"
+    )
     args = parser.parse_args(argv)
     path = build(Path(args.source), Path(args.output), internal=args.internal)
     print(path)

@@ -35,6 +35,9 @@ _PROTECTED_PREFIXES = (
     "installed/",
 )
 _IGNORED_SUFFIXES = (".pyc", ".pyo")
+_IGNORED_CACHE_PARTS = frozenset(
+    {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
+)
 _MANIFEST_PARTS = 2
 _SHA256_HEX_LENGTH = 64
 
@@ -124,7 +127,9 @@ def _protected_candidates(root: Path) -> set[str]:
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        if "__pycache__" in path.parts or relative.endswith(_IGNORED_SUFFIXES):
+        if _IGNORED_CACHE_PARTS.intersection(path.parts) or relative.endswith(
+            _IGNORED_SUFFIXES
+        ):
             continue
         if relative in _PROTECTED_ROOT_FILES or relative.startswith(
             _PROTECTED_PREFIXES
@@ -202,17 +207,6 @@ def _legacy_payload_issues(root: Path) -> list[str]:
                     issues.append(
                         f"安装态 `.agents` 不得包含 source/authoring 资产 `{relative}`。"
                     )
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        if path.suffix in {".pyc", ".pyo"} or path.name in {
-            ".ruff_cache",
-            ".pytest_cache",
-        }:
-            issues.append(
-                f"正式发布包含构建缓存 `{path.relative_to(root).as_posix()}`。"
-            )
-            break
     return issues
 
 

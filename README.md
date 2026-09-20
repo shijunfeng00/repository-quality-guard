@@ -4,8 +4,6 @@ English | [简体中文](README_zh.md)
 
 Repository Quality Guard (RQG) is a repository-level quality gate and development workflow for AI-assisted software engineering. It combines reuse discovery, API cataloging, multilingual static analysis, project-specific policy, semantic adjudication, reduction, and a final read-only verification step around one repository snapshot.
 
-Current stable version: **v0.20.1**.
-
 RQG is not only a linter. It is intended to govern the full path from “understand the repository before changing it” to “prove the finished change is acceptable before release.” Machine checks produce facts and candidates; semantic decisions remain explicit and auditable.
 
 ## Development workflow

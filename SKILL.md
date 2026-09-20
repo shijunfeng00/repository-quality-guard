@@ -229,7 +229,7 @@ git add -A -- .agents/skills/repository-quality-guard
 
 ## 8. 完整性与依赖
 
-RQG release 通过 `runtime/MANIFEST.sha256`、`runtime/RELEASE.lock` 和 launcher seal 校验受保护文件。Portable Skill 与 Installed tree 使用不同 distribution policy：
+RQG release 通过 `runtime/MANIFEST.sha256`、`runtime/RELEASE.lock` 和 launcher seal 校验受保护文件。运行过程中生成的 `__pycache__`、`*.pyc`、`*.pyo`、`.pytest_cache`、`.ruff_cache`、`.mypy_cache` 属于可再生缓存，不参与 QG990 runtime integrity；release builder 仍会在正式发行介质中剥离它们。Portable Skill 与 Installed tree 使用不同 distribution policy：
 
 - `skill`：允许并要求正式离线依赖介质；
 - `agents`：只保留第一方 runtime 与锁，不携带完整 wheelhouse / node_modules archive。

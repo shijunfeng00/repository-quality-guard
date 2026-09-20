@@ -100,6 +100,27 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertNotIn("--agents-profile", result.stdout)
         self.assertNotIn("--ignore", result.stdout)
 
+    def test_skill_frontmatter_matches_agent_skills_spec(self) -> None:
+        text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("---\n"))
+        frontmatter = text.split("---\n", 2)[1]
+        top_level = {
+            line.split(":", 1)[0]
+            for line in frontmatter.splitlines()
+            if line and not line[0].isspace() and ":" in line
+        }
+        allowed = {
+            "name",
+            "description",
+            "license",
+            "compatibility",
+            "metadata",
+            "allowed-tools",
+        }
+        self.assertLessEqual(top_level, allowed)
+        self.assertIn('  version: "0.20.1"', frontmatter)
+        self.assertIn("  status: stable", frontmatter)
+
     def test_skill_describes_stable_commands_and_version(self) -> None:
         text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         lock = (ROOT / "runtime" / "RELEASE.lock").read_text(encoding="utf-8")

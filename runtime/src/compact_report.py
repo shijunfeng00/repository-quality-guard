@@ -399,7 +399,9 @@ def _append_metadata_and_changes(
                             "- 多语言事实："
                             + ", ".join(
                                 f"{language}={count}"
-                                for language, count in report.multilang_summary["files"].items()
+                                for language, count in report.multilang_summary[
+                                    "files"
+                                ].items()
                             )
                             + f"；multilang findings={report.multilang_summary['findings']}"
                         ]
@@ -482,7 +484,15 @@ def _absolute_blocker_rows(report: ScanReport) -> list[str]:
     rows = ["| Rule | Path | Symbol | Evidence path |", "|---|---|---|---|"]
     blockers = absolute_blocker_codes()
     for finding in sorted(
-        (item for item in report.findings if item.code in blockers),
+        (
+            item
+            for item in report.findings
+            if item.code in blockers
+            or (
+                "absolute_blocker" in item.evidence
+                and item.evidence["absolute_blocker"] is True
+            )
+        ),
         key=lambda item: (item.code, item.path, item.line, item.symbol),
     ):
         relation_path = (
@@ -490,7 +500,15 @@ def _absolute_blocker_rows(report: ScanReport) -> list[str]:
             if finding.code == "QG168" and "chain" in finding.evidence
             else ()
         )
-        path_text = " → ".join(str(item) for item in relation_path) or "—"
+        if relation_path:
+            path_text = " → ".join(str(item) for item in relation_path)
+        elif (
+            "profile_rule_level" in finding.evidence
+            and finding.evidence["profile_rule_level"] == "blocker"
+        ):
+            path_text = "profile-rule=BLOCKER"
+        else:
+            path_text = "—"
         rows.append(
             f"| `{finding.code}` | `{escape(finding.path)}:{finding.line}` | `{escape(finding.symbol)}` | {escape(path_text)} |"
         )
@@ -749,6 +767,8 @@ def _append_semantic_and_questions(
             *_auto("semantic_delta", delta_rows),
             "",
             *_auto("semantic_summary", summary),
+            "",
+            "> Release/version identity 候选不得按 token 形态直接定罪。先判断 identity owner 与用途：依赖、外部 API、协议、schema、数据迁移/兼容、内容寻址/完整性和密码学测试向量可以 JUSTIFIED；只有证据证明项目自身 release/tag/SHA 正在决定当前实现行为、测试真值或长期 fixture 身份时才 BLOCKING。",
             "",
         ]
     )

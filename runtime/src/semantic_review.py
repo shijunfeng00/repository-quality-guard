@@ -20,6 +20,8 @@ _REVIEW_ROUTES = {
     "QG194": ("Q2,Q11", "interface-test-coverage-unknown"),
     "QG196": ("Q4,Q5,Q9", "giant-owner-worsening"),
     "QG197": ("Q3,Q4,Q5,Q9", "nested-helper-laundering"),
+    "QG203": ("Q1,Q2,Q6,Q11", "release-identity-coupling-high-signal"),
+    "QG205": ("Q1,Q2,Q6,Q11", "release-identity-coupling"),
 }
 
 
@@ -103,6 +105,20 @@ def semantic_review_key(finding: Finding) -> str:
         )
         if key in evidence
     }
+    if finding.code in {"QG203", "QG205"}:
+        if "token" in evidence:
+            relevant["identity_tokens"] = [str(evidence["token"])]
+        elif "tokens" in evidence:
+            relevant["identity_tokens"] = [str(item) for item in evidence["tokens"]]
+        elif "matches" in evidence:
+            relevant["identity_tokens"] = [
+                {
+                    "kind": str(item["kind"]) if "kind" in item else "",
+                    "token": str(item["token"]) if "token" in item else "",
+                }
+                for item in evidence["matches"]
+                if isinstance(item, dict)
+            ]
     payload = {
         "path": finding.path,
         "code": finding.code,

@@ -347,6 +347,15 @@ accepted design baseline 是默认契约，但本轮明确需求可以有证据�
 10. fixture、stub、mock、替身字段和嵌套 helper 不进入生产接口 `ADD-*`；不要为测试方便扩大 production public API。
 
 
+## Release identity 不得成为项目契约
+
+正式源码、测试、fixture、artifact path、配置和运行分支应描述稳定能力、协议与领域身份，而不是某次发布的版本、RC、Git tag、commit SHA 或固定实现 digest。README.md 可面向人类说明当前版本，因此是唯一文档豁免；仓库外独立 release evidence 不进入扫描域。
+
+- `QG203` 是通用 CRITICAL：只检查路径/文件名中的 release-like identity，例如版本化测试、fixture、artifact、history/release 目录名；它继续服从 baseline/history-aware delta，不把历史 CRITICAL 自动升级成绝对阻断。
+- `QG205` 是通用 SEMANTIC 候选：依赖/API/协议/schema/迁移版本、普通源码/配置/正式文档中的版本、tag、commit/SHA/digest 可能完全合理，也可能是 release lineage 污染，必须逐项裁决；静态命中本身不直接 REJECT。
+- Git tag 会被读取为额外证据；项目代码或测试如果显式依赖仓库已有 tag，不能因为“tag 确实存在”就自动合理化。
+- `QG192` 与本规则不同：QG192 关注测试读取 production source、private helper、legacy/removed tombstone 等实现历史快照；QG203/QG205 关注具体 release identity。一个测试可以同时命中两类规则。
+
 ## 新增接口删除审判
 
 新增文件、类、函数、方法、字段或全局变量前，必须依次回答：完全删除是否仍能满足契约；能否内联到唯一调用方；能否与相邻逻辑合并；能否复用 Git HEAD、父类、MRO、兄弟子类或公共协作者。连续单调用私有链默认内联，不允许仅以“封装、解耦、可维护性”为理由拆分。

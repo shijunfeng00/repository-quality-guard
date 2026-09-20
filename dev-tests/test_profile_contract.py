@@ -8,6 +8,9 @@ from pathlib import Path
 from runtime.profile_build import build_profile_lock
 from runtime.src.profile_api import Finding, QualityGuardProfile, QualityRule, RulePack, RuleContext, SearchStrategy
 from runtime.src.project_profiles import load_quality_profile
+from runtime.src.config import GuardConfig, is_test_path
+from runtime.src.gate_status import code_status
+from runtime.src.model import ScanReport
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,6 +64,59 @@ class TestProfileContract(unittest.TestCase):
         ).build()
         self.assertEqual(built.nonblocking_paths, ("tests/**", "utils/tracing.py"))
         self.assertEqual(built.test_baseline_passthrough_paths, ("utils/tracing.py",))
+
+
+    def test_geek_ai_agent_nonblocking_policy_is_declared_only_in_json(self) -> None:
+        profile_dir = ROOT / "profiles" / "geek-ai-agent"
+        built = load_quality_profile(str(profile_dir))
+        self.assertIsNotNone(built)
+        snapshot = built.build() if built is not None else None
+        self.assertIsNotNone(snapshot)
+        assert snapshot is not None
+        self.assertEqual(snapshot.nonblocking_paths, ("tests/**", "utils/tracing.py"))
+        self.assertEqual(snapshot.test_baseline_passthrough_paths, ("utils/tracing.py",))
+        extension = (profile_dir / "extension.py").read_text(encoding="utf-8")
+        self.assertNotIn("add_nonblocking_path", extension)
+
+    def test_agent_unit_tests_and_tracing_path_are_nonblocking_but_still_classified(self) -> None:
+        profile = load_quality_profile(str(ROOT / "profiles" / "geek-ai-agent"))
+        self.assertIsNotNone(profile)
+        assert profile is not None
+        snapshot = profile.build()
+        GuardConfig().with_project_profile(snapshot)
+
+        self.assertTrue(is_test_path("tests/unit/test_runtime.py", "geek-ai-agent"))
+        self.assertTrue(is_test_path("utils/tracing.py", "geek-ai-agent"))
+
+        findings = [
+            Finding(
+                "QG183",
+                "critical",
+                "high",
+                "tests/unit/test_runtime.py",
+                1,
+                1,
+                "unit-test reflection",
+            ),
+            Finding(
+                "QG186",
+                "critical",
+                "high",
+                "utils/tracing.py",
+                1,
+                1,
+                "trace hook patch",
+            ),
+        ]
+        report = ScanReport(
+            root=Path("."),
+            files_scanned=2,
+            findings=findings,
+            definitions=0,
+            project_name="geek-ai-agent",
+            baseline=object(),  # type: ignore[arg-type]
+        )
+        self.assertEqual(code_status(report), "ACCEPT")
 
     def test_integrity_rules_are_not_suppressible(self) -> None:
         profile = QualityGuardProfile(manifest={"name": "sample"})

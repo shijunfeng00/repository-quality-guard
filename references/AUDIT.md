@@ -69,6 +69,12 @@ Tests 与 production 分账，但变更 tests 不是默认动作。机器只对�
 
 既有测试默认应先原样运行：失败首先视为 production regression 候选，而不是自动修改 tests。历史删除记录不等于长期需求；“确保被删除参数/helper 永不出现”不得仅凭删除历史成为永久测试契约。应优先验证稳定可观察行为；确属长期架构不变量时由架构门禁表达。负向测试只有在验证长期稳定的安全、协议或公开行为不变量时才是正常回归测试。
 
+## Release identity coupling
+
+审计时把项目自身 release lineage 与稳定版本化契约分开。通用规则中，QG203 只检查**路径/文件名**里的 release identity，并以 CRITICAL 进入正常 baseline/history-aware 静态门禁；QG205 检查**文件内容**里的版本/provenance，并默认只进入 SEMANTIC 复核，不因静态命中直接 REJECT。语义裁决必须先识别 identity owner：外部 API、协议、schema、依赖、数据迁移/兼容、内容寻址或密码学测试向量可以合理。Profile 可以把任一规则通过 JSON `rules.levels` 提升为 BLOCKER；BLOCKER 是独立绝对门禁，不受历史 baseline 抵消。README.md 明确豁免；其他资产不按目录名自动豁免。
+
+QG192 与 QG203/QG205 分账：`legacy/removed/no_longer` 等测试名主要是 implementation-history/change-detector 风险；只有当测试同时写入具体 `vX.Y/rcN/SHA/tag` 身份时才进入 release-identity 审计。
+
 ## Reduction Pass
 
 填写报告后继续审查剩余 Warning、SEM 和新增接口。能安全删除、内联、复用、合并、下沉、收紧类型/契约的必须处理；不设机械“必须减少 N 条”配额。全部确有必要时允许 0 个额外修改，但 KEEP 必须有源码证据。

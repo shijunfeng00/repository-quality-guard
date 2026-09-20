@@ -23,6 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="repo-quality-guard-scan-worker")
     parser.add_argument("--path", required=True)
     parser.add_argument("--profile", default="")
+    parser.add_argument("--resolved-profile-reference", default="")
+    parser.add_argument("--resolved-profile-name", default="")
+    parser.add_argument("--resolved-profile-source", default="")
     parser.add_argument("--diff-base", default="")
     parser.add_argument("--output", required=True)
     parser.add_argument("--staged", action="store_true")
@@ -43,7 +46,12 @@ def _legacy_args(options: argparse.Namespace) -> argparse.Namespace:
         argv.extend(["--diff-base", options.diff_base])
     if options.staged:
         argv.append("--staged")
-    return cli.build_parser().parse_args(argv)
+    args = cli.build_parser().parse_args(argv)
+    if options.resolved_profile_source:
+        args.resolved_profile_reference = options.resolved_profile_reference
+        args.resolved_profile_name = options.resolved_profile_name
+        args.resolved_profile_source = options.resolved_profile_source
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:

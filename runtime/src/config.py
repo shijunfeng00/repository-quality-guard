@@ -60,6 +60,7 @@ class GuardConfig:
     profile_nonblocking_paths: tuple[str, ...] = ()
     profile_test_baseline_passthrough_paths: tuple[str, ...] = ()
     disabled_rules: tuple[str, ...] = ()
+    profile_rule_levels: tuple[tuple[str, str], ...] = ()
     profile_settings: tuple[tuple[str, Any], ...] = ()
     short_max_lines: int = 10
     low_use_max_calls: int = 1
@@ -167,6 +168,7 @@ class GuardConfig:
             "profile_nonblocking_paths",
             "profile_test_baseline_passthrough_paths",
             "disabled_rules",
+            "profile_rule_levels",
             "profile_settings",
         }
         allowed = {item.name for item in fields(cls)} - internal_profile_fields
@@ -238,6 +240,7 @@ class GuardConfig:
             profile_nonblocking_paths=tuple(profile.nonblocking_paths),
             profile_test_baseline_passthrough_paths=tuple(profile.test_baseline_passthrough_paths),
             disabled_rules=tuple(profile.disabled_rules),
+            profile_rule_levels=tuple(sorted(dict(profile.rule_levels).items())),
             profile_settings=settings,
             forced_interface_symbols=merged(
                 self.forced_interface_symbols, profile.forced_interface_symbols

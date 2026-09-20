@@ -4,7 +4,9 @@ from .config import is_test_path
 from .model import ScanReport
 from .report_schema import BASELINE_GATE_EXEMPT_CODES, SEVERITY_RANK
 
-_ABSOLUTE_BLOCKERS = frozenset({"QG168", "QG179", "QG183", "QG186", "QG187", "QG189", "QG190"})
+_ABSOLUTE_BLOCKERS = frozenset(
+    {"QG168", "QG179", "QG183", "QG186", "QG187", "QG189", "QG190"}
+)
 
 
 def absolute_blocker_codes() -> frozenset[str]:
@@ -29,6 +31,11 @@ def code_status(report: ScanReport) -> str:
     if (
         report.baseline_error
         or any(
+            "absolute_blocker" in finding.evidence
+            and finding.evidence["absolute_blocker"] is True
+            for finding in report.findings
+        )
+        or any(
             finding.code in _ABSOLUTE_BLOCKERS
             and not is_test_path(finding.path, report.project_name)
             for finding in report.findings
@@ -47,13 +54,14 @@ def code_status(report: ScanReport) -> str:
             and change.kind != "file"
         )
         protocol_review = any(
-            finding.code == "QG182" and not is_test_path(finding.path, report.project_name)
+            finding.code == "QG182"
+            and not is_test_path(finding.path, report.project_name)
             for finding in interface_diff.contract_findings
         )
     has_review = bool(review_changes or protocol_review)
     current_quality = any(
         finding.severity in SEVERITY_RANK
-        and not finding.code.startswith("QG98")
+        and not finding.code.startswith(("QG98", "QG99"))
         and finding.code not in BASELINE_GATE_EXEMPT_CODES
         for finding in report.findings
     )

@@ -1,19 +1,29 @@
 ---
 name: repository-quality-guard
 description: 对 Git 仓库执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
-version: 0.20.0
+version: 0.20.1
 status: stable
 ---
 
 # Repository Quality Guard
 
-**Version:** 0.20.0
+**Version:** 0.20.1
 **Status:** Stable
 **Distribution:** Portable `.skill.zip` / repository-installed `.agents`
 
 Repository Quality Guard（RQG）是一套面向 Git 仓库的代码质量审计与开发闭环工具。它把可机械验证的代码事实、接口变化、测试契约和多语言静态分析统一到同一份仓库快照中，再通过结构化审计报告完成语义裁决、Reduction Pass 与最终只读验证。
 
 RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并提供 API catalog、RelationGraph、接口差分、测试契约分析、报告完整性和 release integrity 检查。机器扫描负责事实与候选；需要源码语义判断的项目保留在审计账本中，由使用者完成裁决后再交给 `verify` 重新验证。
+
+## Release identity audit
+
+`v0.20.1` 新增通用 release-identity coupling 审计：
+
+- `QG203`：通用 **CRITICAL**，只覆盖仓库路径/文件名中的 release-like identity（例如版本化测试、fixture、artifact、history/release 目录名）。它属于普通 severity，继续服从 Git baseline/history-aware delta；历史已有 CRITICAL 不会因为严重度本身变成绝对阻断。
+- `QG205`：通用 **SEMANTIC** 候选，覆盖文件内容中的依赖/API/协议/schema/迁移版本，以及其他版本、tag、commit/SHA/digest 引用；静态命中本身不直接触发 REJECT。
+- `README.md` 是唯一文档豁免；仓库内 migration/release/history 文档不因命名自动豁免。
+
+`QG192` 仍独立负责 implementation-history/change-detector test；只有写入具体版本、RC、tag 或 SHA 身份时，才同时进入 QG203/QG205。
 
 ## 1. 稳定命令
 

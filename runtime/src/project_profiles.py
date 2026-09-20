@@ -129,13 +129,22 @@ class SSEProtocolContract:
     review_kind: str = ""
 
 
-
 _RULE_CODE_RE = re.compile(r"^QG(?P<number>\d{3,5})$")
 # Report/release integrity is part of the guard's trust boundary, not project policy.
 UNSUPPRESSIBLE_RULE_PREFIXES = ("QG98", "QG99")
 CUSTOM_RULE_CODE_MIN = 10000
 CUSTOM_RULE_CODE_MAX = 99999
 PROFILE_LOCK_SCHEMA = "repository-quality-guard/profile-lock-v1"
+RULE_LEVELS = frozenset({"info", "warning", "error", "critical", "semantic", "blocker"})
+_PROFILE_MANIFEST_DEFAULTS: Mapping[str, Any] = MappingProxyType(
+    {
+        "rules": MappingProxyType({"disable": (), "levels": MappingProxyType({})}),
+        "capabilities": (),
+        "nonblocking_paths": (),
+        "test_baseline_passthrough_paths": (),
+        "settings": MappingProxyType({}),
+    }
+)
 
 
 def _validate_rule_code(code: str, *, custom: bool = False) -> str:
@@ -151,9 +160,53 @@ def _validate_rule_code(code: str, *, custom: bool = False) -> str:
     return normalized
 
 
+def _string_sequence(value: Any) -> tuple[str, ...]:
+    """Normalize one JSON scalar-or-array setting to a stable string tuple."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    return tuple(str(item) for item in value)
+
+
+def _prepare_profile_manifest(
+    manifest: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    """Complete optional JSON Profile fields once at the input boundary.
+
+    Args:
+        manifest: Parsed ``profile.json`` mapping, or None for a generic Profile.
+
+    Returns:
+        Read-only manifest whose optional policy fields are always present.
+
+    Raises:
+        ValueError: A structured field has an incompatible JSON type.
+    """
+    raw = dict(manifest or {})
+    normalized: dict[str, Any] = dict(_PROFILE_MANIFEST_DEFAULTS)
+    normalized.update(raw)
+
+    rules = normalized["rules"]
+    if not isinstance(rules, Mapping):
+        raise ValueError("profile rules must be an object")
+    normalized_rules = {"disable": (), "levels": {}}
+    normalized_rules.update(rules)
+    if not isinstance(normalized_rules["levels"], Mapping):
+        raise ValueError("profile rules.levels must be an object")
+    normalized["rules"] = MappingProxyType(normalized_rules)
+
+    settings = normalized["settings"]
+    if not isinstance(settings, Mapping):
+        raise ValueError("profile settings must be an object")
+    normalized["settings"] = MappingProxyType(dict(settings))
+    return MappingProxyType(normalized)
+
+
 def _profile_lock_codes(source: str) -> Mapping[str, str]:
     """Read immutable rule-key -> code assignments without mutating the Profile."""
     from pathlib import Path
+
     if not source:
         return MappingProxyType({})
     path = Path(source) / "PROFILE.lock"
@@ -169,7 +222,6 @@ def _profile_lock_codes(source: str) -> Mapping[str, str]:
     for key, code in raw.items():
         result[str(key)] = _validate_rule_code(str(code), custom=True)
     return MappingProxyType(result)
-
 
 
 @dataclass(slots=True, frozen=True)
@@ -264,6 +316,7 @@ class ProjectProfile:
     nonblocking_paths: tuple[str, ...] = ()
     test_baseline_passthrough_paths: tuple[str, ...] = ()
     disabled_rules: tuple[str, ...] = ()
+    rule_levels: Mapping[str, str] = MappingProxyType({})
     capabilities: tuple[str, ...] = ()
     settings: Mapping[str, Any] = MappingProxyType({})
     custom_rules: tuple[type[QualityRule], ...] = ()
@@ -289,12 +342,15 @@ class QualityGuardProfile:
     version = "1"
     agents_file = ""
 
-    def __init__(self, *, manifest: Mapping[str, Any] | None = None, source: str = "") -> None:
-        self.manifest = MappingProxyType(dict(manifest or {}))
+    def __init__(
+        self, *, manifest: Mapping[str, Any] | None = None, source: str = ""
+    ) -> None:
+        self.manifest = _prepare_profile_manifest(manifest)
         self.source = source
-        self.settings: dict[str, Any] = dict(self.manifest.get("settings") or {})
+        self.settings: dict[str, Any] = dict(self.manifest["settings"])
         self._configured = False
         self._disabled_rules: list[str] = []
+        self._rule_levels: dict[str, str] = {}
         self._capabilities: list[str] = []
         self._nonblocking_paths: list[str] = []
         self._test_baseline_passthrough_paths: list[str] = []
@@ -322,31 +378,17 @@ class QualityGuardProfile:
         self.semantic_authorization_path = ""
 
     def configure(self) -> None:
-        """Apply declarative manifest policy; subclasses extend it via super().configure()."""
-        rules = self.manifest.get("rules") or {}
-        if rules and not isinstance(rules, Mapping):
-            raise ValueError("profile rules must be an object")
-        disabled = rules.get("disable", ()) if isinstance(rules, Mapping) else ()
-        if isinstance(disabled, str):
-            disabled = (disabled,)
-        for code in disabled or ():
-            self.disable_rule(str(code))
+        """Apply normalized declarative policy; subclasses extend via ``super()``."""
+        rules = self.manifest["rules"]
+        for code in _string_sequence(rules["disable"]):
+            self.disable_rule(code)
+        for code, level in rules["levels"].items():
+            self.set_rule_level(str(code), str(level))
 
-        capabilities = self.manifest.get("capabilities") or ()
-        if isinstance(capabilities, str):
-            capabilities = (capabilities,)
-        self.add_capability(*(str(item) for item in capabilities))
-
-        nonblocking = self.manifest.get("nonblocking_paths") or ()
-        if isinstance(nonblocking, str):
-            nonblocking = (nonblocking,)
-        self.add_nonblocking_path(*(str(item) for item in nonblocking))
-
-        passthrough = self.manifest.get("test_baseline_passthrough_paths") or ()
-        if isinstance(passthrough, str):
-            passthrough = (passthrough,)
+        self.add_capability(*_string_sequence(self.manifest["capabilities"]))
+        self.add_nonblocking_path(*_string_sequence(self.manifest["nonblocking_paths"]))
         self._test_baseline_passthrough_paths.extend(
-            str(item) for item in passthrough if str(item)
+            _string_sequence(self.manifest["test_baseline_passthrough_paths"])
         )
 
     def add_values(self, field: str, *values: Any) -> None:
@@ -367,8 +409,37 @@ class QualityGuardProfile:
         """声明该 Profile 不适用的可抑制规则；信任边界规则不可关闭。"""
         normalized = _validate_rule_code(code)
         if normalized.startswith(UNSUPPRESSIBLE_RULE_PREFIXES):
-            raise ValueError(f"rule {normalized} is part of the guard trust boundary and cannot be disabled")
+            raise ValueError(
+                f"rule {normalized} is part of the guard trust boundary and cannot be disabled"
+            )
         self._disabled_rules.append(normalized)
+
+    def set_rule_level(self, code: str, level: str) -> None:
+        """为某条通用规则设置项目级处置等级。
+
+        ``BLOCKER`` 是独立硬门禁：无论问题来自当前工作树还是 Git 基线，
+        只要该 finding 存在就必须 REJECT。``SEMANTIC`` 只要求进入语义审计，
+        不把静态匹配本身当作有罪结论。
+
+        Args:
+            code: 需要重映射的 QG 规则编码。
+            level: JSON Profile 声明的目标等级。
+
+        Returns:
+            None。
+        """
+        normalized = _validate_rule_code(code)
+        normalized_level = str(level).strip().lower()
+        if normalized_level not in RULE_LEVELS:
+            allowed = ", ".join(sorted(item.upper() for item in RULE_LEVELS))
+            raise ValueError(
+                f"invalid rule level {level!r}; expected one of: {allowed}"
+            )
+        if normalized.startswith(UNSUPPRESSIBLE_RULE_PREFIXES):
+            raise ValueError(
+                f"rule {normalized} is part of the guard trust boundary and cannot be remapped"
+            )
+        self._rule_levels[normalized] = normalized_level
 
     def add_capability(self, *names: str) -> None:
         """启用由通用 Core 实现、Profile 选择的能力。"""
@@ -386,7 +457,9 @@ class QualityGuardProfile:
 
     def add_report_extension(self, extension: type[ReportExtension]) -> None:
         """注册报告扩展。"""
-        if not isinstance(extension, type) or not issubclass(extension, ReportExtension):
+        if not isinstance(extension, type) or not issubclass(
+            extension, ReportExtension
+        ):
             raise TypeError("report extension must subclass ReportExtension")
         self._report_extensions.append(extension)
 
@@ -414,7 +487,11 @@ class QualityGuardProfile:
         resolved_codes: dict[str, str] = {}
         seen_codes: set[str] = set()
         for rule_cls in self._custom_rules:
-            code = _validate_rule_code(rule_cls.code, custom=True) if rule_cls.code else locked_codes.get(rule_cls.key)
+            code = (
+                _validate_rule_code(rule_cls.code, custom=True)
+                if rule_cls.code
+                else locked_codes.get(rule_cls.key)
+            )
             if not code:
                 raise ValueError(
                     f"custom rule {rule_cls.key!r} has no code; run the Profile authoring lock builder first"
@@ -428,26 +505,40 @@ class QualityGuardProfile:
             version=version,
             source=self.source,
             tool_base_classes=tuple(dict.fromkeys(self._legacy["tool_base_classes"])),
-            tool_registration_methods=tuple(dict.fromkeys(self._legacy["tool_registration_methods"])),
+            tool_registration_methods=tuple(
+                dict.fromkeys(self._legacy["tool_registration_methods"])
+            ),
             state_types=tuple(dict.fromkeys(self._legacy["state_types"])),
             state_writer_names=tuple(dict.fromkeys(self._legacy["state_writer_names"])),
             history_markers=tuple(dict.fromkeys(self._legacy["history_markers"])),
             trace_markers=tuple(dict.fromkeys(self._legacy["trace_markers"])),
-            config_module_markers=tuple(dict.fromkeys(self._legacy["config_module_markers"])),
-            boundary_module_markers=tuple(dict.fromkeys(self._legacy["boundary_module_markers"])),
-            forced_interface_symbols=tuple(dict.fromkeys(self._legacy["forced_interface_symbols"])),
+            config_module_markers=tuple(
+                dict.fromkeys(self._legacy["config_module_markers"])
+            ),
+            boundary_module_markers=tuple(
+                dict.fromkeys(self._legacy["boundary_module_markers"])
+            ),
+            forced_interface_symbols=tuple(
+                dict.fromkeys(self._legacy["forced_interface_symbols"])
+            ),
             stable_mapping_contracts=tuple(self._legacy["stable_mapping_contracts"]),
             callable_contracts=tuple(self._legacy["callable_contracts"]),
             frozen_sse_contracts=tuple(self._legacy["frozen_sse_contracts"]),
             sse_contracts=tuple(self._legacy["sse_contracts"]),
             route_contracts=tuple(self._legacy["route_contracts"]),
             header_contracts=tuple(self._legacy["header_contracts"]),
-            semantic_heuristic_exemptions=tuple(dict.fromkeys(self._legacy["semantic_heuristic_exemptions"])),
+            semantic_heuristic_exemptions=tuple(
+                dict.fromkeys(self._legacy["semantic_heuristic_exemptions"])
+            ),
             semantic_authorization_path=self.semantic_authorization_path,
-            enable_semantic_heuristic_candidates="semantic-heuristic-candidates" in self._capabilities,
+            enable_semantic_heuristic_candidates="semantic-heuristic-candidates"
+            in self._capabilities,
             nonblocking_paths=tuple(dict.fromkeys(self._nonblocking_paths)),
-            test_baseline_passthrough_paths=tuple(dict.fromkeys(self._test_baseline_passthrough_paths)),
+            test_baseline_passthrough_paths=tuple(
+                dict.fromkeys(self._test_baseline_passthrough_paths)
+            ),
             disabled_rules=tuple(dict.fromkeys(self._disabled_rules)),
+            rule_levels=MappingProxyType(dict(sorted(self._rule_levels.items()))),
             capabilities=tuple(dict.fromkeys(self._capabilities)),
             settings=MappingProxyType(dict(self.settings)),
             custom_rules=tuple(self._custom_rules),
@@ -460,11 +551,13 @@ class QualityGuardProfile:
 
 def _release_root() -> Any:
     from pathlib import Path
+
     return Path(__file__).resolve().parents[2]
 
 
 def _profile_dir(reference: str, *, release_root: Any | None = None) -> Any:
     from pathlib import Path
+
     root = Path(release_root or _release_root())
     candidate = Path(reference).expanduser()
     if candidate.is_dir():
@@ -475,13 +568,17 @@ def _profile_dir(reference: str, *, release_root: Any | None = None) -> Any:
 def available_profile_names(*, release_root: Any | None = None) -> tuple[str, ...]:
     """列出当前 Portable release 内实际存在的 Profile 名称。"""
     from pathlib import Path
+
     root = Path(release_root or _release_root()) / "profiles"
     if not root.is_dir():
         return ()
-    return tuple(sorted(
-        item.name for item in root.iterdir()
-        if item.is_dir() and (item / "profile.json").is_file()
-    ))
+    return tuple(
+        sorted(
+            item.name
+            for item in root.iterdir()
+            if item.is_dir() and (item / "profile.json").is_file()
+        )
+    )
 
 
 def _clear_profile_bytecode_cache(module_path: Any) -> None:
@@ -500,8 +597,15 @@ def _clear_profile_bytecode_cache(module_path: Any) -> None:
         pass
 
 
-def load_quality_profile(reference: str | None, *, release_root: Any | None = None) -> QualityGuardProfile | None:
-    """从名字或显式目录加载 Profile；JSON 只负责 manifest/entrypoint。"""
+def load_quality_profile(
+    reference: str | None, *, release_root: Any | None = None
+) -> QualityGuardProfile | None:
+    """从名字或显式目录加载 Profile。
+
+    ``profile.json`` 是声明式策略的唯一真相源；只有需要自定义 AST 规则、
+    contract 或搜索扩展时才提供 ``entrypoint``。纯规则等级/开关 Profile
+    不需要 Python extension。
+    """
     if not reference:
         return None
     directory = _profile_dir(reference, release_root=release_root)
@@ -511,7 +615,14 @@ def load_quality_profile(reference: str | None, *, release_root: Any | None = No
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") not in {None, "repository-quality-guard/profile-v1"}:
         raise ValueError(f"unsupported profile schema: {manifest.get('schema')!r}")
-    entrypoint = str(manifest.get("entrypoint") or "extension.py").strip()
+
+    raw_entrypoint = manifest.get("entrypoint")
+    if raw_entrypoint is None:
+        profile = QualityGuardProfile(manifest=manifest, source=str(directory))
+        profile._configure_once()
+        return profile
+
+    entrypoint = str(raw_entrypoint).strip()
     if not entrypoint or ":" in entrypoint:
         raise ValueError(
             "profile entrypoint must name one module only; the exported class is fixed as Profile"
@@ -530,18 +641,21 @@ def load_quality_profile(reference: str | None, *, release_root: Any | None = No
     finally:
         _clear_profile_bytecode_cache(module_path)
     profile_cls = module.Profile
-    if not isinstance(profile_cls, type) or not issubclass(profile_cls, QualityGuardProfile):
-        raise TypeError(f"profile module must export Profile(QualityGuardProfile): {entrypoint}")
+    if not isinstance(profile_cls, type) or not issubclass(
+        profile_cls, QualityGuardProfile
+    ):
+        raise TypeError(
+            f"profile module must export Profile(QualityGuardProfile): {entrypoint}"
+        )
     profile = profile_cls(manifest=manifest, source=str(directory))
-    # configure is intentionally explicit and happens here, never in __init__.
     profile._configure_once()
     return profile
-
 
 
 def _release_distribution(*, release_root: Any | None = None) -> str:
     """读取当前 release 的 distribution；未知时按 Portable skill 处理。"""
     from pathlib import Path
+
     root = Path(release_root or _release_root())
     lock = root / "runtime" / "RELEASE.lock"
     if not lock.is_file():
@@ -557,6 +671,7 @@ def _release_distribution(*, release_root: Any | None = None) -> str:
 def _installed_policy(*, release_root: Any | None = None) -> Mapping[str, Any]:
     """读取 sealed Installed Policy；安装态缺失时拒绝静默降级。"""
     from pathlib import Path
+
     root = Path(release_root or _release_root())
     path = root / "installed" / "POLICY.json"
     if not path.is_file():
@@ -569,7 +684,9 @@ def _installed_policy(*, release_root: Any | None = None) -> Mapping[str, Any]:
 
 def _installed_profile_dir(*, release_root: Any | None = None) -> Any:
     from pathlib import Path
+
     return Path(release_root or _release_root()) / "installed" / "profile"
+
 
 @dataclass(slots=True, frozen=True)
 class ProfileSelection:
@@ -653,9 +770,39 @@ def resolve_profile_reference(
     )
 
 
-def get_project_profile(name: str | None) -> ProjectProfile | None:
-    """返回动态 Profile 的冻结兼容策略快照。"""
-    profile = load_quality_profile(name)
+def get_project_profile(
+    name: str | None, release_root: Any | None = None
+) -> ProjectProfile | None:
+    """返回 Portable 或 sealed-installed Profile 的冻结策略快照。
+
+    Args:
+        name: Profile 名称或 sealed-installed Profile 目录。
+        release_root: 可选 release 根目录，主要供安装态与测试显式绑定。
+
+    Returns:
+        冻结后的项目策略；通用策略或安装态 generic policy 返回 None。
+    """
+    from pathlib import Path
+
+    if not name:
+        return None
+    if _release_distribution(release_root=release_root) == "agents":
+        policy = _installed_policy(release_root=release_root)
+        policy_name = str(policy["profile_name"])
+        if not policy_name:
+            return None
+        directory = _installed_profile_dir(release_root=release_root)
+        reference = str(name)
+        if (
+            reference != policy_name
+            and Path(reference).resolve() != directory.resolve()
+        ):
+            raise ValueError(
+                f"sealed installation is bound to profile {policy_name!r}, not {reference!r}"
+            )
+        profile = load_quality_profile(str(directory), release_root=release_root)
+    else:
+        profile = load_quality_profile(name, release_root=release_root)
     return profile.build() if profile is not None else None
 
 
@@ -669,10 +816,12 @@ def apply_project_profile(
     profile = get_project_profile(name)
     if profile is None:
         from dataclasses import replace
+
         return replace(config, profile_source=selection_source or "generic")
     merged = config.with_project_profile(profile)
     if selection_source:
         from dataclasses import replace
+
         merged = replace(merged, profile_source=selection_source)
     return merged
 

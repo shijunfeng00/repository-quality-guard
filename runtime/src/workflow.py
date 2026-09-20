@@ -36,7 +36,7 @@ def _common_target_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--diff-base", default=None, metavar="COMMIT")
     parser.add_argument("--staged", action="store_true")
     parser.add_argument(
-        "--files", default=None, metavar="FILES", help="逗号分隔的 Python 文件范围。"
+        "--files", default=None, metavar="FILES", help="逗号分隔的文件范围。"
     )
 
 
@@ -84,10 +84,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _scoped_file_arguments(options: argparse.Namespace) -> str:
-    """把相对 ``--files`` 转为以位置仓库为基准的绝对 Python 文件列表。"""
+    """把相对 ``--files`` 转为以位置目标目录为基准的绝对文件列表。"""
     base = Path(options.path).expanduser().resolve()
     if not base.is_dir():
-        raise ValueError(f"目标仓库目录不存在: {base}")
+        raise ValueError(f"目标目录不存在: {base}")
     resolved: list[str] = []
     for raw in options.files.split(","):
         value = raw.strip()
@@ -101,7 +101,7 @@ def _scoped_file_arguments(options: argparse.Namespace) -> str:
         )
         resolved.append(str(path))
     if not resolved:
-        raise ValueError("--files 没有解析到任何 Python 文件")
+        raise ValueError("--files 没有解析到任何文件")
     return ",".join(resolved)
 
 

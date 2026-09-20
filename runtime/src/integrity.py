@@ -32,7 +32,6 @@ _PROTECTED_PREFIXES = (
     "runtime/src/",
     "offline/",
     "templates/",
-    "profiles/",
     "installed/",
 )
 _IGNORED_SUFFIXES = (".pyc", ".pyo")

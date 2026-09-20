@@ -103,7 +103,7 @@ class TestHostAgentsContract(unittest.TestCase):
     def test_skill_describes_stable_commands_and_version(self) -> None:
         text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         lock = (ROOT / "runtime" / "RELEASE.lock").read_text(encoding="utf-8")
-        self.assertIn("version=0.20.0", lock)
+        self.assertIn("version=0.20.1", lock)
         for command in ("doc-generate", "doc-search", "audit", "verify"):
             self.assertIn(command, text)
         self.assertIn("Portable", text)

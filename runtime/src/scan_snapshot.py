@@ -231,23 +231,33 @@ def _run_worker(args: Any, target: cli.AuditTarget) -> tuple[ScanReport, str]:
         prefix="scan-", suffix=".pkl", dir=worker_dir, delete=False
     ) as stream:
         output = Path(stream.name)
+    # Preserve the user's focus scope across the worker boundary.  Passing only
+    # ``target.root`` widens positional single-file and Git-subdirectory audits
+    # back to the whole repository/directory inside the worker.
+    worker_path = target.focus_roots[0] if len(target.focus_roots) == 1 else target.root
+    worker_files = args.files
+    if not worker_files and target.focus_files:
+        worker_files = ",".join(str(path) for path in sorted(target.focus_files))
     command = [
         sys.executable,
         "-m",
         "runtime.src.scan_worker",
         "--path",
-        str(target.root),
+        str(worker_path),
         "--output",
         str(output),
     ]
-    if args.profile:
-        command.extend(["--profile", args.profile])
+    selection = cli.resolve_profile_reference(target.root, args.profile)
+    command.extend(["--resolved-profile-source", selection.source])
+    command.extend(["--resolved-profile-name", selection.name])
+    if selection.reference:
+        command.extend(["--resolved-profile-reference", selection.reference])
     if args.diff_base:
         command.extend(["--diff-base", args.diff_base])
     if args.staged:
         command.append("--staged")
-    if args.files:
-        command.extend(["--files", args.files])
+    if worker_files:
+        command.extend(["--files", worker_files])
     environment = os.environ.copy()
     skill_root = str(Path(__file__).resolve().parents[2])
     # worker 只需要 Guard 自身源码；覆盖继承的 PYTHONPATH，避免外部模块污染扫描运行时。
@@ -284,7 +294,8 @@ def scan_target_cached(
         report, revision = _run_worker(args, target)
         return target, report, report.interface_diff, revision, "BYPASS"
 
-    profile = args.profile or "auto"
+    selection = cli.resolve_profile_reference(target.root, args.profile)
+    profile = selection.reference or selection.source
     focus_files = tuple(sorted(str(path.resolve()) for path in target.focus_files))
     release_seal = os.environ["REPO_QUALITY_GUARD_RELEASE_SEAL"]
     source_config = cli.api_catalog_config(target, args.profile)

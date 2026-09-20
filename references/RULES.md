@@ -185,6 +185,8 @@
 | `QG200` | **Info**：>=4 行 JS/TS definition 具有完全相同的规范化 AST 结构。只作为复用候选；对称操作、callback、类型适配和稳定语义谓词不得机械合并。 |
 | `QG201` | **Info**：CSS selector 存在 >=3 条完全相同 declaration block。只有语义 owner 一致时才建议合并；声明值巧合相同不构成错误。 |
 | `QG202` | **Error**：同一 HTML 文档出现重复 `id`。 |
+| `QG203` | **Critical，baseline-aware**：非 README 资产的仓库路径/文件名包含 release-like identity（如 `vX.Y`、`rcN` 及其组合）。它只针对结构性 identity，不扫描内容中的 API/协议/依赖版本；历史已有 Critical 继续按 baseline/history-aware 规则处理。 |
+| `QG205` | **Semantic**：非 README 正式资产的文件内容包含版本、Git tag、commit/SHA、固定 digest 或依赖版本身份。必须判断它是依赖/API/协议/schema/迁移/完整性等稳定契约，还是把项目自身某次 release lineage 固化成当前项目契约；默认静态命中不直接 REJECT。Profile 可用 JSON `rules.levels` 将其提升为普通 severity 或绝对 BLOCKER。 |
 | `QG204` | **Warning/Critical**：真实发生变更的 C/C++ function 经 Clang AST 证明函数长度/分支/嵌套越过阈值或相对基线恶化。`-Werror` 负责编译/类型 warning，QG204 负责结构复杂度，两者互不替代。 |
 | `QG207` | **Info**：JS/TS 显式 `any` JSDoc 逃逸数量较多，提醒 `checkJs PASS` 不能代替动态 owner contract 证明。 |
 

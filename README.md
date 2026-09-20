@@ -2,7 +2,7 @@
 
 Repository Quality Guard（RQG）是面向 Git 仓库的代码质量审计与开发闭环工具。它把接口复用检索、增量 API catalog、多语言静态分析、接口/测试契约变化、语义裁决、Reduction Pass 和最终只读验证放在同一套流程里。
 
-当前稳定版本：**v0.20.0**。
+当前稳定版本：**v0.20.1**。
 
 ## 快速开始
 
@@ -53,6 +53,17 @@ python runtime/deploy.py \
 ```
 
 Installed 模式把 Profile policy 与运行所需 payload seal 到 `.agents` 中，运行时不能再用 `--profile` 换策略。
+
+## v0.20.1：Release identity coupling 审计
+
+RQG 会把“某次发布的身份”与“长期稳定的项目契约”分开审计：
+
+- `QG203`：通用 **CRITICAL**，只检查仓库路径/文件名是否绑定 release-like identity（例如版本化测试、fixture、artifact、history/release 路径）。它仍走正常 baseline/history-aware delta：历史已有 CRITICAL 不自动成为绝对阻断。
+- `QG205`：通用 **SEMANTIC** 候选，覆盖文件内容里的依赖/API/协议/schema/迁移版本，以及其他需要判断长期合理性的版本、Git tag、commit/SHA/digest 引用；静态匹配本身不直接 REJECT。
+- `README.md` 是唯一文档豁免。仓库内 migration/release/history 文档不会因为“看起来像发布材料”自动跳过；真正独立的 release evidence 应位于仓库外。
+- Guard 会读取仓库已有 Git tags 作为证据。如果代码或测试显式依赖某个 tag，这个事实不会因为 tag 确实存在就自动合理化。
+
+这与 `QG192` 不同：QG192 管测试读取 production source、private helper、源码字符串以及 `legacy/removed/no_longer` tombstone 等 implementation-history/change-detector 风险；QG203/QG205 管具体 release identity。一个测试可以同时命中两类规则。
 
 ## 开发自定义 Profile
 
@@ -275,9 +286,9 @@ python tools/build_release.py . dist/repository-quality-guard-public.skill.zip
 python tools/build_release.py . dist/repository-quality-guard-internal.skill.zip --internal
 ```
 
-两种 release 都会重新 seal；public build 不会把本地私有 Profile 名称或内容写入 manifest。
+两种 release 都会重新 seal。`profiles/` 属于可选的发布/作者资产，不属于 QG990 自完整性保护面：Portable Skill 可以携带并直接使用 Profile catalog，也可以完全不携带；QG990 不负责证明 Profile “必须存在”或“必须不存在”。安装器会在生成 `.agents` 安装态时只冻结选中 Profile 的运行必需内容，且不会保留 `profiles/` catalog。
 
-> Git-ready source checkout 是开发工作树，不是已经 seal 的运行发行物。由于 `/profiles/` 可以包含 Git ignored 私有内容，public Git tree 的 manifest 不会记录这些文件。要直接使用本地私有 Profile，请先构建 `--internal` Skill；要验证开源内容，请构建 public Skill。不要通过修改 public manifest 把本地私有 Profile 纳入 Git。
+> Git-ready source checkout 是开发工作树，不是已经 seal 的安装态运行目录。`/profiles/` 可以作为 Git ignored 的本地作者资产存在；是否随 Skill 发布由构建参数决定，而不是由 QG990 推导。
 
 ## 完整性与退出码
 

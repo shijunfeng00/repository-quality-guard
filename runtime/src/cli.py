@@ -40,7 +40,9 @@ from .model import (
     ScanReport,
 )
 from .project_contracts import validate_project_contracts
+from .release_identity_rules import release_identity_findings
 from .project_profiles import (
+    ProfileSelection,
     ProjectProfile,
     RuleContext,
     apply_project_profile,
@@ -159,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--files",
         metavar="FILES",
-        help="逗号分隔的 Python 文件路径；输出聚焦这些文件。",
+        help="逗号分隔的文件路径；输出聚焦这些文件。",
     )
     parser.add_argument(
         "--profile",
@@ -208,6 +210,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=10,
         help="--search-api 返回候选数，默认 10。",
+    )
+    parser.set_defaults(
+        resolved_profile_reference="",
+        resolved_profile_name="",
+        resolved_profile_source="",
     )
     return parser
 
@@ -508,13 +515,11 @@ def resolve_target(args: argparse.Namespace) -> AuditTarget:
             path = Path(item.strip()).expanduser().resolve()
             if not path.is_file():
                 raise ValueError(f"指定文件不存在: {path}")
-            if path.suffix != ".py":
-                raise ValueError(f"只能审计 Python 文件: {path}")
             if path not in seen:
                 files.append(path)
                 seen.add(path)
         if not files:
-            raise ValueError("--files 没有解析到任何 Python 文件")
+            raise ValueError("--files 没有解析到任何文件")
         lookups = [_git_root(path) for path in files]
         git_roots = {lookup.root for lookup in lookups if lookup.root is not None}
         if len(git_roots) == 1 and all(lookup.root is not None for lookup in lookups):
@@ -552,8 +557,27 @@ def resolve_target(args: argparse.Namespace) -> AuditTarget:
         )
     raw_target = args.project or args.path or "."
     target = Path(raw_target).expanduser().resolve()
+    if target.is_file():
+        git_lookup = _git_root(target)
+        if git_lookup.root is not None:
+            return AuditTarget(
+                root=git_lookup.root,
+                focus_files=frozenset({target}),
+                focus_roots=(),
+                notes=(f"按 Git 根目录 `{git_lookup.root}` 解析仓库事实；报告输出聚焦文件 `{target}`。",),
+                git_enabled=True,
+            )
+        return AuditTarget(
+            root=target.parent,
+            focus_files=frozenset({target}),
+            focus_roots=(),
+            notes=(git_lookup.issue_message, git_lookup.issue_suggestion),
+            git_enabled=False,
+            git_issue_message=git_lookup.issue_message,
+            git_issue_suggestion=git_lookup.issue_suggestion,
+        )
     if not target.is_dir():
-        raise ValueError(f"审计目录不存在: {target}")
+        raise ValueError(f"审计路径不存在: {target}")
     git_lookup = _git_root(target)
     if git_lookup.root is None:
         return AuditTarget(
@@ -684,23 +708,51 @@ def _apply_focus(report: ScanReport, target: AuditTarget) -> ScanReport:
     return report
 
 
-def _filter_disabled_findings(items, config: GuardConfig) -> list[Finding]:
-    """Apply the frozen Profile rule policy to a finding stream."""
-    disabled = frozenset(config.disabled_rules)
-    if not disabled:
-        return list(items)
-    return [item for item in items if item.code not in disabled]
+def _apply_rule_level(item: Finding, config: GuardConfig) -> Finding | None:
+    """Apply one declarative Profile rule level without changing core rule ownership.
+
+    ``SEMANTIC`` remains an Info finding but is forced into the semantic-review
+    ledger. ``BLOCKER`` remains a Critical finding for display while carrying an
+    independent absolute-blocker marker; this preserves the historical meaning
+    that Critical is baseline-aware while Blocker is not.
+    """
+    if item.code in frozenset(config.disabled_rules):
+        return None
+    levels = dict(config.profile_rule_levels)
+    level = levels.get(item.code)
+    if not level:
+        return item
+    evidence = dict(item.evidence)
+    evidence["profile_rule_level"] = level
+    if level in {"info", "warning", "error", "critical"}:
+        return replace(item, severity=level, evidence=evidence)
+    if level == "semantic":
+        evidence["semantic_review_required"] = True
+        evidence.setdefault("semantic_review_question", "Q1,Q2,Q6,Q11")
+        evidence.setdefault("semantic_review_kind", "profile-semantic")
+        return replace(item, severity="info", evidence=evidence)
+    if level == "blocker":
+        evidence["absolute_blocker"] = True
+        return replace(item, severity="critical", evidence=evidence)
+    raise ValueError(f"unsupported profile rule level: {level!r}")
 
 
 def _apply_profile_rule_policy(report: ScanReport, config: GuardConfig) -> None:
-    """Filter disabled rules from a report and its contract facts before gating."""
-    report.findings = _filter_disabled_findings(report.findings, config)
+    """Apply declarative disable/level policy before baseline and static gating."""
+    report.findings = [
+        mapped
+        for item in report.findings
+        if (mapped := _apply_rule_level(item, config)) is not None
+    ]
     if report.interface_diff is not None:
+        contract_findings = tuple(
+            mapped
+            for item in report.interface_diff.contract_findings
+            if (mapped := _apply_rule_level(item, config)) is not None
+        )
         report.interface_diff = replace(
             report.interface_diff,
-            contract_findings=tuple(
-                _filter_disabled_findings(report.interface_diff.contract_findings, config)
-            ),
+            contract_findings=contract_findings,
         )
     report.findings.sort(
         key=lambda item: (-SEVERITY_RANK[item.severity], item.path, item.line, item.code)
@@ -1074,6 +1126,11 @@ def _compute_git_baseline(
         )
         merge_findings(production_report, language_findings)
         production_report.multilang_summary = language_summary
+        identity_findings = release_identity_findings(baseline_root, production_config)
+        # Release/version identity is always a semantic-review concern. Keep test
+        # candidates in the main report so QG203/QG205 cannot become a hidden
+        # test-only static rejection path.
+        merge_findings(production_report, identity_findings)
         custom_findings = _profile_custom_findings(
             profile,
             RuleContext(
@@ -1418,6 +1475,28 @@ def _profile_selection(root: Path, explicit: str | None):
     return selection
 
 
+def _scan_profile_selection(
+    root: Path, args: argparse.Namespace
+) -> ProfileSelection:
+    """Use an inherited worker selection or resolve the normal user-facing Profile.
+
+    Args:
+        root: Resolved audit repository root.
+        args: Parsed scan arguments with internal resolved-Profile defaults.
+
+    Returns:
+        The exact Profile selection to apply to this scan.
+    """
+    if args.resolved_profile_source:
+        return ProfileSelection(
+            reference=args.resolved_profile_reference or None,
+            name=args.resolved_profile_name,
+            source=args.resolved_profile_source,
+            reason="profile selection inherited from the isolated scan parent",
+        )
+    return _profile_selection(root, args.profile)
+
+
 def api_catalog_context(
     target: AuditTarget, profile_name: str | None
 ) -> tuple[GuardConfig, ProjectProfile | None]:
@@ -1727,7 +1806,7 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     comparison = _comparison_plan(target, args)
     scan_args = copy.copy(args)
     scan_args.diff_base = comparison.base_revision
-    selection = _profile_selection(target.root, scan_args.profile)
+    selection = _scan_profile_selection(target.root, scan_args)
     scan_args.profile = selection.reference
     profile = get_project_profile(scan_args.profile)
     base_config = apply_project_profile(
@@ -1911,6 +1990,10 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     )
     merge_findings(report, language_findings)
     report.multilang_summary = language_summary
+    identity_findings = release_identity_findings(target.root, production_config)
+    # QG203/QG205 are semantic candidates regardless of whether the evidence
+    # lives in production code, tests, fixtures or configuration.
+    merge_findings(report, identity_findings)
     custom_findings = _profile_custom_findings(
         profile,
         RuleContext(
@@ -1947,10 +2030,6 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
 
     if target.git_enabled:
         _apply_git_quality_baseline(target, base_config, scan_args.diff_base, report, profile)
-    else:
-        report.baseline_error = (
-            "当前输入没有可用 Git 基线，不能证明 Critical/Error/Warning 历史债务净变化。"
-        )
     return target, report, interface_diff
 
 

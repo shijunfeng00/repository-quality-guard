@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,64 @@ def _sha(path: Path) -> str:
 
 
 class TestReleaseBuild(unittest.TestCase):
+    def test_git_source_does_not_track_release_binary_payloads(self) -> None:
+        result = subprocess.run(
+            ["git", "ls-files", "--", "offline"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        tracked = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        binaries = {
+            path
+            for path in tracked
+            if path.endswith(".whl") or path == "offline/node_modules.zip"
+        }
+        self.assertEqual(set(), binaries)
+
+    def test_integrity_manifest_does_not_bind_release_only_binary_payloads(self) -> None:
+        manifest = (ROOT / "runtime" / "MANIFEST.sha256").read_text(encoding="utf-8")
+        self.assertNotIn("  offline/", manifest)
+
+    def test_release_still_contains_local_offline_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "public.zip"
+            self._build(out)
+            with zipfile.ZipFile(out) as archive:
+                names = set(archive.namelist())
+            prefix = "repository-quality-guard/offline/"
+            self.assertIn(prefix + "node_modules.zip", names)
+            self.assertTrue(
+                any(name.startswith(prefix + "wheelhouse/") and name.endswith(".whl") for name in names)
+            )
+
+    def test_builder_refuses_source_without_local_offline_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(".git", "offline", "__pycache__", ".pytest_cache", ".ruff_cache"),
+            )
+            output = Path(temp) / "missing-offline.zip"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(source / "tools" / "build_release.py"),
+                    str(source),
+                    str(output),
+                ],
+                cwd=source,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("offline release payload", result.stderr + result.stdout)
+            self.assertFalse(output.exists())
+
     def _build(self, output: Path, *extra: str) -> None:
         subprocess.run(
             [

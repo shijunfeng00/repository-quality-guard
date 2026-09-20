@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import shutil
 import stat
 import sys
@@ -49,6 +50,27 @@ def _load_integrity(root: Path):
     except Exception:
         sys.modules.pop(spec.name, None)
         raise
+
+
+def _validate_offline_payload(source: Path) -> None:
+    """Require the local release-only payload without making it Git source."""
+    node_archive = source / "offline" / "node_modules.zip"
+    wheelhouse = source / "offline" / "wheelhouse"
+    missing: list[str] = []
+    if not node_archive.is_file():
+        missing.append("offline/node_modules.zip")
+    lock_path = source / "runtime" / "dependencies.lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    packages = lock["python"]
+    if not isinstance(packages, dict):
+        raise RuntimeError("offline release payload dependency lock is invalid")
+    wheels = tuple(wheelhouse.glob("*.whl")) if wheelhouse.is_dir() else ()
+    for package, version in sorted(packages.items()):
+        prefix = f"{str(package).replace('-', '_')}-{version}-"
+        if not any(path.name.startswith(prefix) for path in wheels):
+            missing.append(f"offline/wheelhouse/{prefix}*.whl")
+    if missing:
+        raise RuntimeError("offline release payload missing: " + ", ".join(missing))
 
 
 def _clean_caches(root: Path) -> None:
@@ -124,6 +146,7 @@ def build(source: Path, destination: Path, *, internal: bool = False) -> Path:
     source = source.resolve()
     if not (source / "SKILL.md").is_file():
         raise ValueError(f"not a Repository Quality Guard source tree: {source}")
+    _validate_offline_payload(source)
     with tempfile.TemporaryDirectory(prefix="rqg-release-") as temp:
         tree = _stage_source(source, Path(temp), internal=internal)
         _zip_tree(tree, destination.resolve())

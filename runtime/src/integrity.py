@@ -30,7 +30,6 @@ _PROTECTED_ROOT_FILES = frozenset(
 )
 _PROTECTED_PREFIXES = (
     "runtime/src/",
-    "offline/",
     "templates/",
     "installed/",
 )

@@ -704,19 +704,20 @@ def resolve_profile_reference(
     *,
     release_root: Any | None = None,
 ) -> ProfileSelection:
-    """解析 Profile：Installed 只读冻结策略；Portable 才允许显式/自动选择。"""
+    """解析 Profile：Installed 仅允许选择已安装策略；Portable 支持显式/自动选择。"""
     from pathlib import Path
 
     repo_root = Path(root).resolve()
     distribution = _release_distribution(release_root=release_root)
     if distribution == "agents":
-        if explicit:
-            raise ValueError(
-                "--profile is unavailable for a sealed installation; reinstall to change policy"
-            )
         policy = _installed_policy(release_root=release_root)
         name = str(policy.get("profile_name") or "")
         if not name:
+            if explicit:
+                raise ValueError(
+                    "installed generic policy has no selectable Profile; reinstall with "
+                    "deploy.py --profile to authorize one"
+                )
             return ProfileSelection(
                 reference=None,
                 name="",
@@ -724,6 +725,11 @@ def resolve_profile_reference(
                 reason="sealed installation is bound to generic policy",
             )
         directory = _installed_profile_dir(release_root=release_root)
+        if explicit and str(explicit).strip() != name:
+            raise ValueError(
+                f"installed policy authorizes Profile {name!r}, not {explicit!r}; "
+                "reinstall to change the installed Profile"
+            )
         profile = load_quality_profile(str(directory), release_root=release_root)
         if profile is None:
             raise ValueError("sealed installation profile payload is missing")
@@ -735,8 +741,12 @@ def resolve_profile_reference(
         return ProfileSelection(
             reference=str(directory),
             name=built.name,
-            source="sealed-installed",
-            reason="profile was frozen by deploy.py and protected by the release seal",
+            source="sealed-installed-explicit" if explicit else "sealed-installed",
+            reason=(
+                "explicit --profile selected the Profile authorized by deploy.py"
+                if explicit
+                else "profile was installed by deploy.py and protected by the release seal"
+            ),
         )
 
     if explicit:

@@ -118,6 +118,13 @@ class TestProfileResolution(unittest.TestCase):
             self.assertEqual(
                 (selected.name, selected.source), ("alpha", "sealed-installed")
             )
+            explicit = resolve_profile_reference(
+                repo, "alpha", release_root=release
+            )
+            self.assertEqual(
+                (explicit.name, explicit.source),
+                ("alpha", "sealed-installed-explicit"),
+            )
             by_name = get_project_profile("alpha", release_root=release)
             by_path = get_project_profile(str(profile), release_root=release)
             self.assertEqual(by_name.name if by_name else "", "alpha")
@@ -150,6 +157,8 @@ class TestProfileResolution(unittest.TestCase):
             self.assertEqual(
                 (selected.name, selected.source), ("", "sealed-installed-generic")
             )
+            with self.assertRaises(ValueError):
+                resolve_profile_reference(repo, "alpha", release_root=release)
 
 
 if __name__ == "__main__":

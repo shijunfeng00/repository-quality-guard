@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from runtime.deploy import _copy_agents_tree, _write_installed_policy
+from runtime.src import integrity
 
 
 class TestInstalledProfilePayload(unittest.TestCase):
@@ -33,6 +34,50 @@ class TestInstalledProfilePayload(unittest.TestCase):
 
             self.assertFalse((installed / "README.md").exists())
             self.assertFalse((installed / "README_zh.md").exists())
+
+
+    def test_installed_profile_mutation_breaks_release_integrity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "installed-skill"
+            (root / "runtime").mkdir(parents=True)
+            (root / "scripts").mkdir()
+            (root / "installed" / "profile").mkdir(parents=True)
+            (root / "SKILL.md").write_text("skill\n", encoding="utf-8")
+            (root / "runtime" / "RELEASE.lock").write_text(
+                "schema=repository-quality-guard/release-v1\n"
+                "version=1\n"
+                "distribution=agents\n"
+                "manifest_sha256=" + "0" * 64 + "\n"
+                "protected_file_count=0\n",
+                encoding="utf-8",
+            )
+            (root / "scripts" / "quality_guard.py").write_text(
+                'RELEASE_SEAL = "' + "0" * 64 + '"\n',
+                encoding="utf-8",
+            )
+            profile = root / "installed" / "profile" / "profile.json"
+            profile.write_text('{"name":"sample"}\n', encoding="utf-8")
+
+            seal = integrity.seal_release_tree(root, "agents")
+            result = integrity.verify_release_integrity(
+                {
+                    integrity.RELEASE_HOME_ENV: str(root),
+                    integrity.RELEASE_SEAL_ENV: seal,
+                }
+            )
+            self.assertTrue(result.passed, result.issues)
+
+            profile.write_text('{"name":"tampered"}\n', encoding="utf-8")
+            tampered = integrity.verify_release_integrity(
+                {
+                    integrity.RELEASE_HOME_ENV: str(root),
+                    integrity.RELEASE_SEAL_ENV: seal,
+                }
+            )
+            self.assertFalse(tampered.passed)
+            self.assertTrue(
+                any("installed/profile/profile.json" in issue for issue in tampered.issues)
+            )
 
     def test_authoring_assets_are_not_copied_into_installed_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

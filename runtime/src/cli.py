@@ -294,6 +294,8 @@ def _git_root(path: Path) -> GitRootLookup:
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
         )
     except FileNotFoundError:
@@ -393,6 +395,8 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
                 cwd=root,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
                 check=False,
                 timeout=8,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},

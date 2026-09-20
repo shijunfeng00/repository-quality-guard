@@ -77,6 +77,8 @@ def main() -> int:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
     )
     if result.returncode != 0:
         print("目标不是 Git 仓库，未安装 pre-push。", file=sys.stderr)

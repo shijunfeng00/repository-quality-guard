@@ -196,7 +196,15 @@ class RepositoryScanner:
             变更范围内 Python 文件的绝对路径集合。
         """
         command = ["git", "diff", "--name-only", f"{revision}...HEAD", "--", "*.py"]
-        result = subprocess.run(command, cwd=self.root, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            check=False,
+        )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "无法读取 Git 变更文件")
         return {self.root / line for line in result.stdout.splitlines() if line.strip()}
@@ -232,6 +240,8 @@ class RepositoryScanner:
             cwd=self.root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
         )
         if git_result.returncode == 0:

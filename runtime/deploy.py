@@ -266,6 +266,8 @@ def _git_persistence_preflight(repo: Path, destination: Path) -> None:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
     )
     if probe.returncode != 0 or probe.stdout.strip() != "true":
         return
@@ -293,6 +295,8 @@ def _git_persistence_preflight(repo: Path, destination: Path) -> None:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
     )
     if ignored.returncode not in {0, 1}:
         raise RuntimeError(

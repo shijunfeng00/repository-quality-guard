@@ -135,6 +135,8 @@ def _git_tags(root: Path) -> tuple[str, ...]:
         ["git", "tag", "--list"],
         cwd=root,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         capture_output=True,
         check=False,
     )

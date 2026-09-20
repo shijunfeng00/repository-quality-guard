@@ -125,6 +125,8 @@ class RuffRunner:
             [sys.executable, "-m", "pip", "install", *extra_args, "ruff==0.15.20"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
             env=self.subprocess_env,
         )
@@ -134,6 +136,8 @@ class RuffRunner:
             [sys.executable, "-c", "import ruff"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
             env=self.subprocess_env,
         )
@@ -165,6 +169,8 @@ class RuffRunner:
             cwd=self.root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
             env=self.subprocess_env,
         )
@@ -226,6 +232,8 @@ class RuffRunner:
             cwd=self.root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             check=False,
             env=self.subprocess_env,
         )

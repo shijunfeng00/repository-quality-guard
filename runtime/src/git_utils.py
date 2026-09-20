@@ -20,6 +20,8 @@ def run_readonly_git(root: Path, *args: str) -> subprocess.CompletedProcess[str]
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         check=False,
     )
 

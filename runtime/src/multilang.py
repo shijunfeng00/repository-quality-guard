@@ -86,6 +86,8 @@ def _node_facts(snapshot: RepositoryAnalysisSnapshot) -> list[dict[str, Any]]:
         [node, str(parser)],
         input=json.dumps(items, ensure_ascii=False),
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         capture_output=True,
         check=False,
         env=environment,
@@ -892,6 +894,8 @@ def _cpp_metrics(
                     command,
                     cwd=root,
                     text=True,
+                    encoding="utf-8",
+                    errors="surrogateescape",
                     stdout=subprocess.PIPE,
                     stderr=error_stream,
                 )

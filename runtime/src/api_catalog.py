@@ -167,6 +167,8 @@ def _discover_python_files(root: Path, config: GuardConfig) -> tuple[Path, ...]:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         check=False,
     )
     candidates = (

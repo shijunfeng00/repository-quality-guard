@@ -47,7 +47,6 @@ class TestReleaseBuild(unittest.TestCase):
                 ignore=shutil.ignore_patterns(
                     ".git",
                     "offline",
-                    "profiles",
                     "__pycache__",
                     ".pytest_cache",
                     ".ruff_cache",
@@ -56,6 +55,9 @@ class TestReleaseBuild(unittest.TestCase):
                     "*.pyo",
                 ),
             )
+            for profile in (source / "profiles").iterdir():
+                if profile.name != "qg-example-profile":
+                    shutil.rmtree(profile)
             subprocess.run(["git", "init", "-q"], cwd=source, check=True)
             subprocess.run(["git", "config", "user.name", "RQG Test"], cwd=source, check=True)
             subprocess.run(["git", "config", "user.email", "rqg@example.invalid"], cwd=source, check=True)

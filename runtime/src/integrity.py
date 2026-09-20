@@ -13,6 +13,7 @@ RELEASE_SEAL_ENV = "REPO_QUALITY_GUARD_RELEASE_SEAL"
 INTEGRITY_RULE_CODE = "QG990"
 _PROTECTED_ROOT_FILES = frozenset(
     {
+        ".gitattributes",
         "SKILL.md",
         "scripts/quality_guard.py",
         "scripts/git_hook_install.py",

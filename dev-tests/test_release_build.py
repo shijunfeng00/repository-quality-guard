@@ -38,6 +38,84 @@ class TestReleaseBuild(unittest.TestCase):
         manifest = (ROOT / "runtime" / "MANIFEST.sha256").read_text(encoding="utf-8")
         self.assertNotIn("  offline/", manifest)
 
+    def test_cross_platform_git_checkout_preserves_release_integrity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    ".git",
+                    "offline",
+                    "profiles",
+                    "__pycache__",
+                    ".pytest_cache",
+                    ".ruff_cache",
+                    ".mypy_cache",
+                    "*.pyc",
+                    "*.pyo",
+                ),
+            )
+            subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+            subprocess.run(["git", "config", "user.name", "RQG Test"], cwd=source, check=True)
+            subprocess.run(["git", "config", "user.email", "rqg@example.invalid"], cwd=source, check=True)
+            subprocess.run(["git", "add", "-A"], cwd=source, check=True)
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=source, check=True)
+
+            clones: dict[str, Path] = {}
+            for mode, autocrlf in (("windows", "true"), ("linux", "false")):
+                clone = Path(temp) / mode
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        f"core.autocrlf={autocrlf}",
+                        "clone",
+                        "-q",
+                        str(source),
+                        str(clone),
+                    ],
+                    check=True,
+                )
+                clones[mode] = clone
+
+            manifest_entries = [
+                line.split("  ", 1)[1]
+                for line in (source / "runtime" / "MANIFEST.sha256")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+            expected = {
+                relative: _sha(clones["linux"] / relative)
+                for relative in manifest_entries
+            }
+            actual = {
+                relative: _sha(clones["windows"] / relative)
+                for relative in manifest_entries
+            }
+            self.assertEqual(expected, actual)
+
+            for clone in clones.values():
+                sys.path.insert(0, str(clone))
+                try:
+                    from runtime.src import integrity
+
+                    result = integrity.verify_release_integrity(
+                        {
+                            integrity.RELEASE_HOME_ENV: str(clone),
+                            integrity.RELEASE_SEAL_ENV: hashlib.sha256(
+                                (clone / integrity.MANIFEST_NAME).read_bytes()
+                            ).hexdigest(),
+                        }
+                    )
+                finally:
+                    sys.path.pop(0)
+                    for name in tuple(sys.modules):
+                        if name == "runtime" or name.startswith("runtime."):
+                            sys.modules.pop(name, None)
+                self.assertTrue(result.passed, result.issues)
+
     def test_release_still_contains_local_offline_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "public.zip"

@@ -1,0 +1,18 @@
+# Repository Quality Guard uses byte-level release integrity seals.
+# Keep text checkouts LF-stable on Windows, Linux, and macOS.
+* text=auto eol=lf
+
+# Binary release/media payloads must never receive line-ending conversion.
+*.whl -text
+*.zip -text
+*.7z -text
+*.gz -text
+*.bz2 -text
+*.xz -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.webp -text
+*.ico -text
+*.pdf -text

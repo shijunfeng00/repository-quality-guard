@@ -125,13 +125,13 @@ class TestHostAgentsContract(unittest.TestCase):
             "allowed-tools",
         }
         self.assertLessEqual(top_level, allowed)
-        self.assertIn('  version: "0.20.2"', frontmatter)
+        self.assertIn('  version: "0.20.3"', frontmatter)
         self.assertIn("  status: stable", frontmatter)
 
     def test_skill_describes_stable_commands_and_version(self) -> None:
         text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         lock = (ROOT / "runtime" / "RELEASE.lock").read_text(encoding="utf-8")
-        self.assertIn("version=0.20.2", lock)
+        self.assertIn("version=0.20.3", lock)
         for command in ("doc-generate", "doc-search", "audit", "verify"):
             self.assertIn(command, text)
         self.assertIn("Portable", text)

@@ -31,16 +31,21 @@ class TestReleaseIdentityRules(unittest.TestCase):
         _git(root, "add", ".")
         return release_identity_findings(root, GuardConfig())
 
-    def test_readme_is_the_only_documentation_exemption(self) -> None:
+    def test_primary_readmes_are_the_only_documentation_exemptions(self) -> None:
         temp, root = self._repo()
         self.addCleanup(temp.cleanup)
         token = _release_token()
         (root / "README.md").write_text(f"release {token}\n", encoding="utf-8")
+        (root / "README_zh.md").write_text(f"release {token}\n", encoding="utf-8")
+        (root / "README_ja.md").write_text(f"release {token}\n", encoding="utf-8")
         (root / "ARCHITECTURE.md").write_text(f"frozen at {token}\n", encoding="utf-8")
 
         findings = self._scan(root)
 
-        self.assertFalse(any(item.path == "README.md" for item in findings))
+        paths = {item.path for item in findings}
+        self.assertNotIn("README.md", paths)
+        self.assertNotIn("README_zh.md", paths)
+        self.assertIn("README_ja.md", paths)
         self.assertTrue(any(item.code == "QG205" and item.path == "ARCHITECTURE.md" for item in findings))
 
     def test_release_bound_filename_is_generic_critical(self) -> None:

@@ -74,16 +74,26 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertNotIn("Profile 模板覆盖", texts["references/AUDIT.md"])
 
 
-    def test_readme_documents_profile_authoring_and_private_profile_boundary(self) -> None:
+    def test_bilingual_readmes_document_workflow_and_profile_authoring(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        readme_zh = (ROOT / "README_zh.md").read_text(encoding="utf-8")
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-        self.assertIn("## 开发自定义 Profile", readme)
-        self.assertIn("QualityGuardProfile", readme)
-        self.assertIn("QualityRule", readme)
-        self.assertIn("RuleContext", readme)
-        self.assertIn("Finding", readme)
-        self.assertIn("PROFILE.lock", readme)
-        self.assertIn('"agents_file": "AGENTS.md"', readme)
+
+        self.assertIn("[简体中文](README_zh.md)", readme)
+        self.assertIn("[English](README.md)", readme_zh)
+        self.assertIn("```mermaid", readme)
+        self.assertIn("```mermaid", readme_zh)
+        self.assertIn("## Development workflow", readme)
+        self.assertIn("## 开发流程", readme_zh)
+        self.assertIn("## Authoring a project profile", readme)
+        self.assertIn("## 开发自定义 Profile", readme_zh)
+        for text in (readme, readme_zh):
+            self.assertIn("QualityGuardProfile", text)
+            self.assertIn("QualityRule", text)
+            self.assertIn("RuleContext", text)
+            self.assertIn("Finding", text)
+            self.assertIn("PROFILE.lock", text)
+            self.assertIn('"agents_file": "AGENTS.md"', text)
         self.assertIn("/profiles/", ignore)
         self.assertFalse(any(line.startswith("/profiles/") and line != "/profiles/" for line in ignore))
 

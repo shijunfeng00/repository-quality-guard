@@ -22,7 +22,7 @@ RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并�
 
 - `QG203`：通用 **CRITICAL**，只覆盖仓库路径/文件名中的 release-like identity（例如版本化测试、fixture、artifact、history/release 目录名）。它属于普通 severity，继续服从 Git baseline/history-aware delta；历史已有 CRITICAL 不会因为严重度本身变成绝对阻断。
 - `QG205`：通用 **SEMANTIC** 候选，覆盖文件内容中的依赖/API/协议/schema/迁移版本，以及其他版本、tag、commit/SHA/digest 引用；静态命中本身不直接触发 REJECT。
-- `README.md` 是唯一文档豁免；仓库内 migration/release/history 文档不因命名自动豁免。
+- `README.md` 与 `README_zh.md` 是仅有的文档豁免；仓库内 migration/release/history 文档不因命名自动豁免。
 
 `QG192` 仍独立负责 implementation-history/change-detector test；只有写入具体版本、RC、tag 或 SHA 身份时，才同时进入 QG203/QG205。
 
@@ -248,10 +248,10 @@ Node.js/npm/Clang 属于宿主系统能力；只有显式 `--install-system` 或
 
 正式 public `.skill.zip`：
 
-- 包含完整第一方 Skill、`README.md`、`dev-tests/`、authoring/release tools 与离线依赖；
+- 包含完整第一方 Skill、`README.md`、`README_zh.md`、`dev-tests/`、authoring/release tools 与离线依赖；
 - 不包含构建缓存或私有 Profile catalog。
 
-这些 authoring 资产只属于完整 Skill 发行介质；deploy 到 `.agents` 时必须剥离 `README.md`、`dev-tests/`、`tools/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
+这些 authoring 资产只属于完整 Skill 发行介质；deploy 到 `.agents` 时必须剥离 `README.md`、`README_zh.md`、`dev-tests/`、`tools/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
 
 Internal build 可以额外带本地 Profile catalog，用于组织内部 dogfood / parity 验证；它不改变 public Git tree。
 

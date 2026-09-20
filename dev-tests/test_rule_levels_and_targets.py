@@ -11,7 +11,7 @@ from runtime.src.config import GuardConfig
 from runtime.src.gate_status import code_status
 from runtime.src.model import Finding, ScanReport
 from runtime.src.project_profiles import load_quality_profile
-from runtime.src.scan_snapshot import scan_target_cached
+from runtime.src.scan_snapshot import _relevant_worktree_paths, scan_target_cached
 from runtime.src.scan_worker import _legacy_args, build_parser as build_worker_parser
 
 
@@ -152,6 +152,17 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
         )
         self.assertEqual(args.resolved_profile_name, "geek-ai-agent")
         self.assertEqual(args.resolved_profile_source, "sealed-installed")
+
+
+    def test_chinese_readme_participates_in_snapshot_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            __import__("subprocess").run(["git", "init", "-q"], cwd=root, check=True)
+            (root / "README_zh.md").write_text("中文说明\n", encoding="utf-8")
+
+            relevant = _relevant_worktree_paths(root, GuardConfig())
+
+            self.assertIn("README_zh.md", relevant)
 
     def test_files_option_accepts_non_python_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

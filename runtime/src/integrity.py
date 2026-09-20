@@ -185,11 +185,13 @@ def _legacy_payload_issues(root: Path) -> list[str]:
             agents_forbidden = (
                 "offline",
                 "README.md",
+                "README_zh.md",
                 "dev-tests",
                 "tools",
                 "profiles",
                 "installed/profile/AGENTS.md",
                 "installed/profile/README.md",
+                "installed/profile/README_zh.md",
                 "installed/profile/tests",
                 "installed/profile/dev-tests",
                 "installed/profile/docs",

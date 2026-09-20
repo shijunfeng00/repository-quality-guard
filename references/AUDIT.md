@@ -4,7 +4,7 @@
 
 `.agents/skills/repository-quality-guard/**` 是仓库协作运行时，必须进入 Git；根 `AGENTS.md` 是宿主共享协调文件；QG 从不覆盖已有文件，仅当本轮 deploy 在原本缺失时创建了根 `AGENTS.md` 才可能属于同一升级提交。它们与默认不入 Git 的 `修改说明.md` 属于不同交付通道。正式升级默认始终是**从任意旧/残缺版本到当前 manifest 的全量替换**，不要求逐版本升级；deploy 用 staging 构造完整目标树并原子替换旧目录，目标版本不存在的历史文件必须消失。仅在本机 deploy 成功不证明可交付：必须至少 `git add -A -- .agents/skills/repository-quality-guard`，只有本轮同步过根 `AGENTS.md` 时才一并 stage，提交新增/修改/删除，并从 commit fresh clone。clone 中必须存在 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py`、完整 `runtime/src` 与 `SKILL.md`；根 `AGENTS.md` 仅对本轮受管理模板做条件验证，且必须能实跑报告闭环。若用户明确要求本机临时安装而不提交，必须把“不可由同事 pull 复现”列为显式非持久化状态，不得声称仓库升级完成。
 
-正式 `.skill.zip` 是外部独立运行与 authoring 介质：可以携带 `README.md`、`dev-tests/`、authoring/release tools，同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
+正式 `.skill.zip` 是外部独立运行与 authoring 介质：可以携带 `README.md`、`README_zh.md`、`dev-tests/`、authoring/release tools，同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
 
 ## 报告结构
 
@@ -71,7 +71,7 @@ Tests 与 production 分账，但变更 tests 不是默认动作。机器只对�
 
 ## Release identity coupling
 
-审计时把项目自身 release lineage 与稳定版本化契约分开。通用规则中，QG203 只检查**路径/文件名**里的 release identity，并以 CRITICAL 进入正常 baseline/history-aware 静态门禁；QG205 检查**文件内容**里的版本/provenance，并默认只进入 SEMANTIC 复核，不因静态命中直接 REJECT。语义裁决必须先识别 identity owner：外部 API、协议、schema、依赖、数据迁移/兼容、内容寻址或密码学测试向量可以合理。Profile 可以把任一规则通过 JSON `rules.levels` 提升为 BLOCKER；BLOCKER 是独立绝对门禁，不受历史 baseline 抵消。README.md 明确豁免；其他资产不按目录名自动豁免。
+审计时把项目自身 release lineage 与稳定版本化契约分开。通用规则中，QG203 只检查**路径/文件名**里的 release identity，并以 CRITICAL 进入正常 baseline/history-aware 静态门禁；QG205 检查**文件内容**里的版本/provenance，并默认只进入 SEMANTIC 复核，不因静态命中直接 REJECT。语义裁决必须先识别 identity owner：外部 API、协议、schema、依赖、数据迁移/兼容、内容寻址或密码学测试向量可以合理。Profile 可以把任一规则通过 JSON `rules.levels` 提升为 BLOCKER；BLOCKER 是独立绝对门禁，不受历史 baseline 抵消。README.md 与 README_zh.md 明确豁免；其他资产不按目录名自动豁免。
 
 QG192 与 QG203/QG205 分账：`legacy/removed/no_longer` 等测试名主要是 implementation-history/change-detector 风险；只有当测试同时写入具体 `vX.Y/rcN/SHA/tag` 身份时才进入 release-identity 审计。
 

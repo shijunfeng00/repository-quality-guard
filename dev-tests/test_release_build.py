@@ -52,6 +52,7 @@ class TestReleaseBuild(unittest.TestCase):
                 self.assertTrue(any("dev-tests/" in name for name in names))
                 self.assertTrue(any("tools/" in name for name in names))
                 self.assertIn("repository-quality-guard/README.md", names)
+                self.assertIn("repository-quality-guard/README_zh.md", names)
                 self.assertFalse(any("profiles/" in name for name in names))
                 self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in names))
 
@@ -62,6 +63,7 @@ class TestReleaseBuild(unittest.TestCase):
             with zipfile.ZipFile(out) as archive:
                 names = set(archive.namelist())
                 self.assertIn("repository-quality-guard/README.md", names)
+                self.assertIn("repository-quality-guard/README_zh.md", names)
                 self.assertTrue(any("dev-tests/" in name for name in names))
                 self.assertTrue(any("tools/" in name for name in names))
                 private_names = sorted(

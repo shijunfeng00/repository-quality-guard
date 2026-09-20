@@ -133,6 +133,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
             "dev-tests",
             "tools",
             "README.md",
+            "README_zh.md",
             "templates",
             "profiles",
             "installed",
@@ -149,6 +150,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
         target / "dev-tests",
         target / "tools",
         target / "README.md",
+        target / "README_zh.md",
         target / "runtime" / "releases",
         target / "runtime" / "CURRENT",
         target / "runtime" / "src" / "repo_quality_guard",
@@ -201,7 +203,7 @@ def _write_installed_policy(
             source_dir,
             installed / "profile",
             ignore=shutil.ignore_patterns(
-                "__pycache__", "*.pyc", "*.pyo", "AGENTS.md", "README.md",
+                "__pycache__", "*.pyc", "*.pyo", "AGENTS.md", "README.md", "README_zh.md",
                 "tests", "dev-tests", "docs", "examples",
             ),
         )

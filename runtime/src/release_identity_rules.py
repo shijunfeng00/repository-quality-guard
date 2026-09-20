@@ -24,6 +24,7 @@ from .config import GuardConfig
 from .model import Finding
 
 _SOURCE = "quality-guard-release-identity"
+_README_EXEMPT_FILENAMES = frozenset({"readme.md", "readme_zh.md"})
 _TEXT_LIMIT_BYTES = 2 * 1024 * 1024
 _SKIP_DIRS = frozenset(
     {
@@ -295,7 +296,7 @@ def release_identity_findings(root: Path, config: GuardConfig) -> tuple[Finding,
 
     for path in _repository_paths(root):
         relative = path.relative_to(root).as_posix()
-        if Path(relative).name.lower() == "readme.md":
+        if Path(relative).name.lower() in _README_EXEMPT_FILENAMES:
             continue
         if any(fnmatch(relative, pattern) for pattern in config.exclude):
             continue

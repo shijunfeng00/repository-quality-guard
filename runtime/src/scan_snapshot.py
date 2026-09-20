@@ -21,6 +21,7 @@ from .source_inputs import source_language
 SNAPSHOT_SCHEMA = "repository-quality-guard/current-scan-v2"
 _RELEVANT_EXACT = {
     "README.md",
+    "README_zh.md",
     "pyproject.toml",
     ".quality/semantic-heuristic-authorizations.toml",
 }

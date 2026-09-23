@@ -20,6 +20,7 @@ _NODE_ENV = "RQG_NODE_MODULES"
 _OFFLINE_ENV = "RQG_OFFLINE_ONLY"
 _CACHE_ENV = "RQG_DEPENDENCY_CACHE"
 _SYSTEM_ENV = "RQG_INSTALL_SYSTEM_DEPS"
+_NETWORK_INSTALL_TIMEOUT_SECONDS = 90
 
 
 def _read_lock(bundle: Path) -> dict[str, object]:
@@ -83,24 +84,43 @@ def _requirements(lock: dict[str, object]) -> list[str]:
     return [f"{name}=={version}" for name, version in sorted(packages.items())]
 
 
-def _run(command: list[str], *, environment: Mapping[str, str]) -> bool:
-    """执行安装命令并只返回成功状态；命令输出保留给调用者终端。"""
-    return subprocess.run(command, check=False, env=dict(environment)).returncode == 0
+def _run(
+    command: list[str],
+    *,
+    environment: Mapping[str, str],
+    timeout: float | None = None,
+) -> bool:
+    """执行安装命令并只返回成功状态；联网 bootstrap 必须受硬超时约束。"""
+    try:
+        return (
+            subprocess.run(
+                command,
+                check=False,
+                env=dict(environment),
+                timeout=timeout,
+            ).returncode
+            == 0
+        )
+    except subprocess.TimeoutExpired:
+        executable = Path(command[0]).name if command else "dependency command"
+        print(
+            f"Repository Quality Guard dependency bootstrap timed out: "
+            f"{executable} exceeded {timeout:g}s.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return False
 
 
 def _install_python(
     bundle: Path, lock: dict[str, object], environment: Mapping[str, str]
 ) -> None:
-    """在线优先安装 Python 依赖，失败后才使用 `.skill` 离线 wheelhouse。"""
+    """优先使用随包 wheelhouse；仅缺少/失效时才尝试有界联网安装。"""
     if _python_ready(lock):
         return
     base = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check"]
     requirements = _requirements(lock)
     offline_only = environment.get(_OFFLINE_ENV, "") == "1"
-    if not offline_only and _run([*base, *requirements], environment=environment):
-        importlib.invalidate_caches()
-        if _python_ready(lock):
-            return
     wheelhouse = bundle / _OFFLINE_WHEELS
     if wheelhouse.is_dir() and any(wheelhouse.glob("*.whl")):
         if _run(
@@ -110,7 +130,15 @@ def _install_python(
             importlib.invalidate_caches()
             if _python_ready(lock):
                 return
-    mode = "离线模式" if offline_only else "在线安装与离线 fallback"
+    if not offline_only and _run(
+        [*base, "--retries", "2", "--timeout", "10", *requirements],
+        environment=environment,
+        timeout=_NETWORK_INSTALL_TIMEOUT_SECONDS,
+    ):
+        importlib.invalidate_caches()
+        if _python_ready(lock):
+            return
+    mode = "离线模式" if offline_only else "本地介质与有界在线 fallback"
     raise RuntimeError(f"锁定 Python 依赖安装失败（{mode}）。")
 
 
@@ -220,7 +248,7 @@ def _existing_node_modules(
 def _install_node(
     bundle: Path, lock: dict[str, object], environment: Mapping[str, str]
 ) -> Path | None:
-    """在线优先安装 Node parser 依赖到用户 cache；无 Node 时推迟到真正需要时 fail-loud。"""
+    """优先使用随包 Node payload；仅缺少/失效时才尝试有界联网安装。"""
     node = shutil.which("node")
     if node is None:
         return None
@@ -231,6 +259,10 @@ def _install_node(
     if _node_probe(node_modules, lock, environment):
         return node_modules
     offline_only = environment.get(_OFFLINE_ENV, "") == "1"
+    if _copy_offline_node_modules(bundle, node_modules) and _node_probe(
+        node_modules, lock, environment
+    ):
+        return node_modules
     npm = shutil.which("npm")
     packages = _node_packages(lock)
     prefix = node_modules.parent
@@ -246,19 +278,19 @@ def _install_node(
             "--no-audit",
             "--no-fund",
             "--no-save",
+            "--fetch-retries=2",
+            "--fetch-timeout=15000",
             *specs,
         ]
-        if _run(command, environment=environment) and _node_probe(
-            node_modules, lock, environment
-        ):
+        if _run(
+            command,
+            environment=environment,
+            timeout=_NETWORK_INSTALL_TIMEOUT_SECONDS,
+        ) and _node_probe(node_modules, lock, environment):
             return node_modules
-    if _copy_offline_node_modules(bundle, node_modules) and _node_probe(
-        node_modules, lock, environment
-    ):
-        return node_modules
     if npm is None and not (bundle / _OFFLINE_NODE_ARCHIVE).is_file():
         return None
-    mode = "离线模式" if offline_only else "npm 在线安装与离线 fallback"
+    mode = "离线模式" if offline_only else "本地介质与有界 npm fallback"
     raise RuntimeError(f"锁定 Node parser 依赖安装失败（{mode}）。")
 
 

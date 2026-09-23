@@ -11,6 +11,38 @@
 
 同一规则在不同证据强度或上下文中可能动态调整级别，因此表格描述“检查内容”，不把级别写死。
 
+## 修复方向契约
+
+QG finding 不是“把命中的语法改没了”就算关闭。除非某条规则明确另有说明，**所有 `QGxxx` 都同时约束问题识别与修复方向**：先找出真正拥有该契约、状态、接口或行为的 owner，再决定在哪里修改。发现问题的位置只是 observation site，不自动等于 repair site。
+
+每次处理 finding，至少回答下面四件事；同一 owner / 同一契约的一组 finding 可以合并回答，不要求逐条写长篇说明：
+
+1. **问题是什么**：命中的是哪一个真实风险，而不只是哪个 AST/字符串模式。
+2. **希望怎么改**：沿 producer → schema/canonicalizer → consumer，或 owner → caller → adapter 的上下游追踪，优先在定义问题的边界修复；required contract 应 fail-fast，合法 optionality 应由正式 owner 明确定义。
+3. **不希望怎么改**：不得只为消除 QG 编号，把问题换成 helper、wrapper、membership branch、ternary、try/except、fallback、动态反射、兼容别名或另一种同义语法。若原风险语义仍在，只是写法变化，仍视为未解决。
+4. **关闭证据是什么**：至少给出 owner/调用链或 schema 事实、修改后的唯一契约，以及能区分“合法缺省”和“契约破坏”的验证。测试通过只能证明行为未明显回归，不能单独证明修复方向正确。
+
+如果无法证明某个 fallback、动态探测、兼容分支或宽契约是业务上合法的，默认方向是**向上追根因并收紧契约**，而不是在消费方继续容错。若确实必须保留例外，应指出唯一边界、长期语义和为什么不能由更上游 owner 统一处理。
+
+### 常见规则族修复卡
+
+下面不是新增 QG，也不改变既有 severity；它们给现有规则提供默认 remediation direction。没有命中专用卡的规则仍必须遵守上面的全局修复方向契约。
+
+| 规则族 | 问题是什么 | 希望怎么改 | 不希望怎么改 |
+|---|---|---|---|
+| **内部字段 / Mapping 契约**：`QG003`、`QG004`、`QG012`、`QG023`、`QG025`、`QG026`、`QG061`–`QG066`、`QG144`、`QG153`、`QG157` | consumer 在猜字段是否存在、形状是否稳定，或把契约错误当成正常缺省。 | 先追 producer、schema、canonicalizer 和所有合法构造路径。required 字段由 owner 保证并直接索引；真正 optional 字段在正式 contract 中声明，优先在唯一边界归一化；普通 lookup table 的 miss 则作为明确业务分支处理。 | 不要把 `.get()` 机械换成 `if key in`、三元式、`try/except KeyError`、`optional_*` helper 或默认合并；除非已证明 optional/lookup 语义，否则这些只是问题换皮。 |
+| **动态属性 / 反射 / 类型猜测**：`QG005`、`QG006`、`QG057`、`QG060`、`QG065`、`QG183`、`QG184`、`QG186` | caller 不知道自己拿到的到底是什么对象，或绕过静态接口修改/探测正式对象。 | 追构造来源和 declared type；单一类型就修正式接口，多个合法类型就建立 Protocol/ABC/discriminated union/typed dispatch；第三方或插件对象只允许在唯一 adapter 边界收敛成内部稳定类型。 | 不要在 `hasattr`、`getattr(default)`、`isinstance`、`__dict__`、`setattr`、反射 helper 之间互换，也不要把动态探测搬进“安全访问器”。 |
+| **异常、失败与 fallback**：`QG007`、`QG009`、`QG023`、`QG024`、`QG048`、`QG049`、`QG066`、`QG130`、`QG176`、`QG177` | 程序错误、外部输入错误和预期业务失败被混成同一条“继续运行”路径。 | 先判断失败属于内部 invariant、外部边界还是合法业务结果；内部错误应暴露或在 owner 修复，外部错误在 ingestion/adapter 转成正式 validation/domain error，合法失败用明确结果类型或状态表达。 | 不要从 `.get()` 换 `try/except`、从异常换空对象、从 fallback branch 换 helper；也不要仅因为测试期望旧兜底就保留旧路径。 |
+| **重复实现 / helper / 抽象层**：`QG001`、`QG002`、`QG008`、`QG010`、`QG013`–`QG019`、`QG021`、`QG080`–`QG098`、`QG154`、`QG156`、`QG162`–`QG168`、`QG185` | 能力 ownership 不清，或者复杂度只是在 helper、wrapper、子类和兼容层之间搬家。 | 先确认 authoritative owner；重复能力归并到真正 owner，shadow override 删除，长流程按独立职责拆 owner；若两个领域只是偶然相似则保持分离。优先删除/内联/复用，再考虑新增 abstraction。 | 不要为了降行数制造一次性 helper，不要为了 DRY 强行合并不同领域，也不要把旧实现包进 shared helper 后同时保留新旧两条路径。 |
+| **接口 / 参数 / 返回契约**：`QG031`–`QG050`、`QG145`–`QG152`、`QG159`–`QG161`、`QG169`、`QG180`–`QG182`、`QG191` | public/internal contract 漂移，调用方被迫兼容多种形状或新接口没有证明必要性。 | 先检索已有 owner 与调用方；能复用就不新增。必须修改时保持单一、显式、typed 的新契约，并同步所有 caller、文档和稳定行为测试；破坏性迁移按已授权目标删除旧形状。 | 不要用 `*args/**kwargs`、别名参数、兼容 wrapper、双返回结构或“旧/新都支持”来降低迁移痛感；不要把历史实现形状当成必须永久兼容的接口。 |
+| **配置 / Prompt / 环境边界**：`QG011`、`QG100`–`QG113` | 配置所有权分散、默认值掩盖部署错误，或本应由 schema/代码保证的约束泄漏进 Prompt。 | 配置集中到权威入口，必需项启动时 fail-fast；外部表示只在配置/adapter 边界解析。可机器表达的 Prompt 约束下沉到 schema、类型和代码。 | 不要在多个业务模块重复读同一环境变量，不要叠默认值链，也不要用更多 Prompt 禁令弥补代码契约缺失。 |
+| **Tool / State / History / Trace**：`QG120`–`QG135`、`QG189` | 状态写入、Tool 返回和执行历史缺少唯一 owner，导致多个组件直接修改同一事实。 | 找到统一 state transition / merge owner；Tool 返回稳定结构化结果，由唯一入口归并；读写模型字段由正式 schema 定义，History 与 Trace 保持职责分离。 | 不要让每个 Tool 自己 patch State，不要增加“兼容各种返回”的 merge helper，也不要用反射或容器别名绕过状态写入边界。 |
+| **测试变更**：`QG170`–`QG175`、`QG192`–`QG194` | 测试可能被当前实现牵着走，或把历史源码形状当成长期 contract。 | 先运行 accepted-baseline 测试，再判断旧断言保护的是仍有效的行为、明确废弃的形状还是测试自身缺陷；修改后验证稳定输入输出、协议和不变量。 | 不要为了过测试恢复已废弃实现，不要只删断言/skip/xfail，也不要以源码字符串、函数名、旧文件路径替代真实行为验证。 |
+| **多语言与结构复杂度**：`QG195`–`QG205`、`QG207` | 动态 owner、隐藏循环、重复结构、版本身份或复杂度恶化可能逃过单一语言的表面检查。 | 追真实 owner、调用/dispatch 关系和稳定协议语义；对版本/digest 区分项目 release identity 与合法依赖/API/schema/完整性契约；只在语义 owner 一致时合并重复结构。 | 不要为了清 finding 重命名版本字符串、拆小函数或机械合并相似 AST；不要把合法协议 digest 和项目 release lineage 混为一谈。 |
+| **运行环境 / 报告 / Release 完整性**：`QG000`、`QG900`–`QG902`、`QG980`–`QG985`、`QG990`、`QG998`、`RUF:FORMAT` | 审计事实、执行环境或交付证据本身不可信。 | 先修工具链、Git 基线、报告证据或 release seal，再讨论代码是否通过；所有结论必须来自最新源码和可重放验证。 | 不要删规则、改 manifest、降低断言、手填假 PASS 或绕过 hook 来让门禁变绿。 |
+
+特别地，**一个 finding 从扫描结果中消失，不等于 remediation 成功**。如果 diff 显示同一风险被迁移到新 helper、新 wrapper、新 fallback 或另一处 consumer，仍应按原规则继续追 owner；`QG176/QG177` 能自动识别的一部分只是这个全局原则的机器化子集。
+
 ## 完整规则索引
 
 ### 解析、基础结构与文档

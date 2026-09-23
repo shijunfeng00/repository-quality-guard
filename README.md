@@ -350,6 +350,20 @@ This configuration says:
 
 To see which `QGxxx` rules can be configured, read the **[complete QG rules](references/RULES.md)**. Do not disable a rule merely because the current patch cannot pass it; the Profile itself is protected quality configuration.
 
+### When adding a new QG rule, document the repair direction too
+
+A Profile answers **how strongly this repository treats a rule**; `references/RULES.md` answers **what the rule means and what a sound repair should look like**. When contributing a new core `QGxxx`, do not stop at the detector and severity. Add the rule to `RULES.md` and, when the repair is not obvious, state concisely:
+
+- what engineering problem the finding represents;
+- which owner / producer / schema / caller path should normally be inspected first;
+- what direction a real fix should move toward;
+- which common “fixes” merely hide or relocate the same problem;
+- what evidence is enough to close the finding.
+
+This does **not** mean writing an essay for every rule. Closely related rules can share one remediation card. The goal is to stop a Coding Agent from optimizing for “make the QG number disappear” instead of correcting the contract or ownership problem that produced it.
+
+Project-only constraints still belong in the project Profile. If a rule is general enough to enter RQG Core, its remediation intent should be understandable from `RULES.md` without requiring private project knowledge.
+
 ## When JSON is not enough, add `extension.py`
 
 Some project rules cannot be expressed as “raise or lower the severity of an existing rule.” For example:

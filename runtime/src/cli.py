@@ -1082,7 +1082,7 @@ def _compute_git_baseline(
             merge_findings(
                 production_report,
                 validate_project_contracts(
-                    production_config.project_name,
+                    profile,
                     sources,
                     sources,
                     symbols,
@@ -1283,6 +1283,7 @@ def _run_interface_diff(
     args: argparse.Namespace,
     base_analysis: RepositoryAnalysisSnapshot | None = None,
     target_analysis: RepositoryAnalysisSnapshot | None = None,
+    profile: ProjectProfile | None = None,
 ) -> InterfaceDiffReport:
     """执行不可关闭的 Git 接口差异审查。
 
@@ -1292,6 +1293,7 @@ def _run_interface_diff(
         args: 已解析命令行参数。
         base_analysis: 可选的 Git before 统一源码/AST 快照。
         target_analysis: 可选的 after 统一源码/AST 快照。
+        profile: 已由 CLI 解析完成的项目 Profile；内部不得按名称二次解析。
 
     Returns:
         已附加 QG180/QG181 与项目协议发现的接口差异报告。
@@ -1314,6 +1316,7 @@ def _run_interface_diff(
         target="staged" if args.staged else "worktree",
         base_analysis=base_analysis,
         target_analysis=target_analysis,
+        profile=profile,
     ).compare()
     interface_diff = _annotate_interface_changes(interface_diff)
     production_changes = [
@@ -1844,6 +1847,7 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
         scan_args,
         base_analysis=base_analysis,
         target_analysis=comparison_analysis,
+        profile=profile,
     )
 
     production_scanner = RepositoryScanner(

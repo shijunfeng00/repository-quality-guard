@@ -11,7 +11,7 @@ from .project_profiles import (
     RouteContract,
     SSEProtocolContract,
     StableMappingContract,
-    get_project_profile,
+    ProjectProfile,
 )
 
 
@@ -594,7 +594,7 @@ class _ReturnMappingAnalyzer:
 
 
 def validate_project_contracts(
-    project_name: str,
+    profile: ProjectProfile | None,
     base_sources: dict[str, str],
     target_sources: dict[str, str],
     target_symbols: dict[str, InterfaceSymbol],
@@ -605,7 +605,7 @@ def validate_project_contracts(
     校验显式项目档案声明的稳定接口契约。
 
     Args:
-        project_name: 显式选择的项目档案名称。
+        profile: 已由入口解析完成的项目档案；通用模式为 None。
         base_sources: 基准 Git 快照源码。
         target_sources: 当前工作区源码。
         target_symbols: 已过滤的目标接口符号。
@@ -615,7 +615,6 @@ def validate_project_contracts(
     Returns:
         项目专属的结构化契约发现；通用模式返回空元组。
     """
-    profile = get_project_profile(project_name)
     if profile is None:
         return ()
     findings: list[Finding] = []

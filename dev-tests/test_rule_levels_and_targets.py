@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.src.cli import _apply_profile_rule_policy, build_parser, resolve_target
 from runtime.src.compact_report import _absolute_blocker_rows
@@ -153,6 +154,54 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
         self.assertEqual(args.resolved_profile_name, "geek-ai-agent")
         self.assertEqual(args.resolved_profile_source, "sealed-installed")
 
+
+    def test_external_profile_path_survives_worker_and_contract_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo = root / "target-repo"
+            profile = root / "private-profile"
+            repo.mkdir()
+            profile.mkdir()
+            (profile / "profile.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "repository-quality-guard/profile-v1",
+                        "name": "private-profile",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / "example.py").write_text("VALUE = 1\n", encoding="utf-8")
+            subprocess = __import__("subprocess")
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "example.py"], cwd=repo, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=RQG Test",
+                    "-c",
+                    "user.email=rqg-test@example.invalid",
+                    "commit",
+                    "-q",
+                    "-m",
+                    "baseline",
+                ],
+                cwd=repo,
+                check=True,
+            )
+            args = build_parser().parse_args(
+                [str(repo), "--profile", str(profile), "--diff-base", "HEAD"]
+            )
+
+            with patch.dict(
+                __import__("os").environ,
+                {"REPO_QUALITY_GUARD_RELEASE_SEAL": "test-seal"},
+            ):
+                _target, report, _interface, _revision, _status = scan_target_cached(args)
+
+            self.assertEqual(report.project_name, "private-profile")
+            self.assertEqual(report.profile_source, "explicit-cli")
 
     def test_chinese_readme_participates_in_snapshot_fingerprint(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

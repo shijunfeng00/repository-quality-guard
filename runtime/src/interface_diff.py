@@ -25,6 +25,7 @@ from .model import (
     InterfaceSymbol,
 )
 from .project_contracts import validate_project_contracts
+from .project_profiles import ProjectProfile
 
 _CHANGE_ORDER = {"removed": 0, "modified": 1, "added": 2}
 _MAX_DECLARATION_TEXT = 240
@@ -672,6 +673,7 @@ class GitWorktreeInterfaceComparator:
         target: str = "worktree",
         base_analysis: RepositoryAnalysisSnapshot | None = None,
         target_analysis: RepositoryAnalysisSnapshot | None = None,
+        profile: ProjectProfile | None = None,
     ) -> None:
         """
         初始化 Git 工作区接口比较器。
@@ -684,6 +686,7 @@ class GitWorktreeInterfaceComparator:
             target: 目标快照，worktree 表示当前工作区，staged 表示 Git 暂存区。
             base_analysis: 可选的 Git 基线统一源码/AST 快照。
             target_analysis: 可选的目标统一源码/AST 快照。
+            profile: 已由 CLI 解析完成的项目 Profile；不得在 comparator 内按名称重载。
 
         Returns:
             None。
@@ -694,6 +697,7 @@ class GitWorktreeInterfaceComparator:
         self.include_private = include_private
         self.base_analysis = base_analysis
         self.target_analysis = target_analysis
+        self.profile = profile
         if target not in {"worktree", "staged"}:
             raise ValueError("target 必须是 worktree 或 staged")
         self.target = target
@@ -747,7 +751,7 @@ class GitWorktreeInterfaceComparator:
         target_symbols, target_errors = self._extract_snapshot(target_sources, target_trees)
         changes = _compare_symbols(base_symbols, target_symbols)
         contract_findings = validate_project_contracts(
-            self.config.project_name,
+            self.profile,
             base_sources,
             target_sources,
             target_symbols,

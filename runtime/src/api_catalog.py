@@ -464,8 +464,14 @@ def _changed_paths_from_state(
     root: Path,
     paths: tuple[Path, ...],
     cached: dict[str, _FileState],
+    strong_check: bool = False,
 ) -> tuple[set[str], dict[str, _FileState], int]:
-    """用 stat 快速筛选变化文件，并只对变化项读取内容计算摘要。"""
+    """Detect changed source files; search can require content-strong freshness.
+
+    ``strong_check`` hashes every current source file so a search can never reuse a
+    stale catalog merely because a tool preserved size/mtime while editing code.
+    Normal doc generation keeps the cheaper stat-first incremental path.
+    """
     current_by_relative = {path.relative_to(root).as_posix(): path for path in paths}
     changed = set(cached) - set(current_by_relative)
     states = dict(cached)
@@ -478,7 +484,7 @@ def _changed_paths_from_state(
             changed.add(relative)
             continue
         previous = cached[relative]
-        if previous.size == stat.st_size and previous.mtime_ns == stat.st_mtime_ns:
+        if not strong_check and previous.size == stat.st_size and previous.mtime_ns == stat.st_mtime_ns:
             continue
         state = _file_state(path)
         hashed += 1
@@ -509,9 +515,9 @@ def _refresh_catalog(
     root: Path,
     output: Path,
     config: GuardConfig,
-    *,
     changed_paths: tuple[str, ...] | None = None,
     force_full: bool = False,
+    strong_check: bool = False,
 ) -> tuple[list[_ApiRecord], dict[str, _FileState], dict[str, Any]]:
     """按全量、显式范围或自动变化检测刷新接口目录。"""
     started = time.perf_counter()
@@ -535,7 +541,9 @@ def _refresh_catalog(
         mode = "full"
     else:
         if changed_paths is None:
-            selected, states, hashed = _changed_paths_from_state(root, paths, cached_states)
+            selected, states, hashed = _changed_paths_from_state(
+                root, paths, cached_states, strong_check=strong_check
+            )
             mode = "auto-incremental" if selected else "noop"
         else:
             selected = _resolve_scoped_paths(root, changed_paths)
@@ -647,7 +655,13 @@ def search_api_catalog(
         候选接口及目录刷新、建索引和检索阶段耗时。
     """
     started = time.perf_counter()
-    records, _states, refresh = _refresh_catalog(root, output, config, changed_paths=changed_paths)
+    records, _states, refresh = _refresh_catalog(
+        root,
+        output,
+        config,
+        changed_paths=changed_paths,
+        strong_check=True,
+    )
     prepared = time.perf_counter()
     index = _ApiBm25Index(records)
     indexed = time.perf_counter()
@@ -658,6 +672,7 @@ def search_api_catalog(
         "refresh_mode": str(refresh["mode"]),
         "changed_files": int(refresh["changed_files"]),
         "hashed_files": int(refresh["hashed_files"]),
+        "source_digest": str(refresh["source_digest"]),
         "catalog_prepare_seconds": prepared - started,
         "index_seconds": indexed - prepared,
         "search_seconds": finished - indexed,

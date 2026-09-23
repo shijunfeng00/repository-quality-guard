@@ -96,3 +96,8 @@ Reduction 的核心问题是**复杂度被删除还是仅被重新排列**。至
 - `audit` / `verify` 的最终状态输出只在扫描结果、报告读写与门禁计算完成后产生。
 - 正常 CLI 返回路径在 stdout/stderr flush 后直接结束一次性进程，不执行与审计结果无关的解释器 teardown/atexit 清理；避免重 AST 或第三方退出钩子把已完成命令拖成长尾。
 - 入口与 scan worker 均启用 60 秒重复 faulthandler，并保持到进程实际终止；若 dependency/bootstrap/workflow/worker 或 DONE 后帧清理长期阻塞，会把 Python 栈写入 stderr，但不会降低规则或自动跳过阶段。
+
+
+### Generated API reference lifecycle
+
+`docs/api-reference/` is an RQG-owned disposable derivative, not repository product source. Audit, baseline selection and change-report accounting must exclude it. `doc-search` performs a strong source-content freshness check before every search; `doc-generate` starts a fresh search-evidence round and stale search-ledger entries are invalidated by source digest automatically.

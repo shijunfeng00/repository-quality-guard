@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -18,23 +19,33 @@ def _sha(path: Path) -> str:
 
 
 class TestReleaseBuild(unittest.TestCase):
-    def test_git_source_does_not_track_release_binary_payloads(self) -> None:
-        result = subprocess.run(
-            ["git", "ls-files", "--", "offline"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        tracked = {line.strip() for line in result.stdout.splitlines() if line.strip()}
-        binaries = {
-            path
-            for path in tracked
-            if path.endswith(".whl") or path == "offline/node_modules.zip"
-        }
-        self.assertEqual(set(), binaries)
+    def test_release_binary_payload_policy_is_declared_and_git_respects_it(
+        self,
+    ) -> None:
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("/offline/wheelhouse/*.whl", gitignore)
+        self.assertIn("/offline/node_modules.zip", gitignore)
+        if (ROOT / ".git").exists():
+            result = subprocess.run(
+                ["git", "ls-files", "--", "offline"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            tracked = {
+                line.strip() for line in result.stdout.splitlines() if line.strip()
+            }
+            binaries = {
+                path
+                for path in tracked
+                if path.endswith(".whl") or path == "offline/node_modules.zip"
+            }
+            self.assertEqual(set(), binaries)
 
-    def test_integrity_manifest_does_not_bind_release_only_binary_payloads(self) -> None:
+    def test_integrity_manifest_does_not_bind_release_only_binary_payloads(
+        self,
+    ) -> None:
         manifest = (ROOT / "runtime" / "MANIFEST.sha256").read_text(encoding="utf-8")
         self.assertNotIn("  offline/", manifest)
 
@@ -59,8 +70,14 @@ class TestReleaseBuild(unittest.TestCase):
                 if profile.name != "qg-example-profile":
                     shutil.rmtree(profile)
             subprocess.run(["git", "init", "-q"], cwd=source, check=True)
-            subprocess.run(["git", "config", "user.name", "RQG Test"], cwd=source, check=True)
-            subprocess.run(["git", "config", "user.email", "rqg@example.invalid"], cwd=source, check=True)
+            subprocess.run(
+                ["git", "config", "user.name", "RQG Test"], cwd=source, check=True
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "rqg@example.invalid"],
+                cwd=source,
+                check=True,
+            )
             subprocess.run(["git", "add", "-A"], cwd=source, check=True)
             subprocess.run(["git", "commit", "-qm", "fixture"], cwd=source, check=True)
 
@@ -127,7 +144,10 @@ class TestReleaseBuild(unittest.TestCase):
             prefix = "repository-quality-guard/offline/"
             self.assertIn(prefix + "node_modules.zip", names)
             self.assertTrue(
-                any(name.startswith(prefix + "wheelhouse/") and name.endswith(".whl") for name in names)
+                any(
+                    name.startswith(prefix + "wheelhouse/") and name.endswith(".whl")
+                    for name in names
+                )
             )
 
     def test_builder_refuses_source_without_local_offline_payloads(self) -> None:
@@ -136,7 +156,9 @@ class TestReleaseBuild(unittest.TestCase):
             shutil.copytree(
                 ROOT,
                 source,
-                ignore=shutil.ignore_patterns(".git", "offline", "__pycache__", ".pytest_cache", ".ruff_cache"),
+                ignore=shutil.ignore_patterns(
+                    ".git", "offline", "__pycache__", ".pytest_cache", ".ruff_cache"
+                ),
             )
             output = Path(temp) / "missing-offline.zip"
             result = subprocess.run(
@@ -156,16 +178,51 @@ class TestReleaseBuild(unittest.TestCase):
             self.assertIn("offline release payload", result.stderr + result.stdout)
             self.assertFalse(output.exists())
 
-    def _build(self, output: Path, *extra: str) -> None:
+    @staticmethod
+    def _seed_release_media(source: Path) -> None:
+        offline = source / "offline"
+        wheelhouse = offline / "wheelhouse"
+        wheelhouse.mkdir(parents=True, exist_ok=True)
+        node_archive = offline / "node_modules.zip"
+        if not node_archive.exists():
+            with zipfile.ZipFile(node_archive, "w") as archive:
+                archive.writestr("node_modules/.rqg-test-fixture", b"fixture")
+        lock = json.loads(
+            (source / "runtime" / "dependencies.lock.json").read_text(encoding="utf-8")
+        )
+        for package, version in lock["python"].items():
+            prefix = f"{str(package).replace('-', '_')}-{version}-"
+            if not any(wheelhouse.glob(prefix + "*.whl")):
+                (wheelhouse / f"{prefix}py3-none-any.whl").write_bytes(b"fixture")
+
+    def _build(self, output: Path, *extra: str, source: Path | None = None) -> None:
+        build_source = source or ROOT
+        if not (build_source / "offline" / "node_modules.zip").is_file():
+            with tempfile.TemporaryDirectory() as temp:
+                staged = Path(temp) / "source"
+                shutil.copytree(
+                    build_source,
+                    staged,
+                    ignore=shutil.ignore_patterns(
+                        ".git", "__pycache__", ".pytest_cache", ".ruff_cache"
+                    ),
+                )
+                self._seed_release_media(staged)
+                self._run_build(staged, output, *extra)
+            return
+        self._run_build(build_source, output, *extra)
+
+    @staticmethod
+    def _run_build(source: Path, output: Path, *extra: str) -> None:
         subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "tools" / "build_release.py"),
-                str(ROOT),
+                str(source / "tools" / "build_release.py"),
+                str(source),
                 str(output),
                 *extra,
             ],
-            cwd=ROOT,
+            cwd=source,
             check=True,
             text=True,
             capture_output=True,
@@ -198,15 +255,11 @@ class TestReleaseBuild(unittest.TestCase):
                 self.assertTrue(any("tools/" in name for name in names))
                 self.assertIn("repository-quality-guard/README.md", names)
                 self.assertIn("repository-quality-guard/README_zh.md", names)
-                public_prefix = (
-                    "repository-quality-guard/profiles/qg-example-profile/"
-                )
+                public_prefix = "repository-quality-guard/profiles/qg-example-profile/"
                 self.assertIn(public_prefix + "profile.json", names)
                 self.assertIn(public_prefix + "extension.py", names)
                 self.assertIn(public_prefix + "README.md", names)
-                profile_entries = {
-                    name for name in names if "/profiles/" in name
-                }
+                profile_entries = {name for name in names if "/profiles/" in name}
                 self.assertTrue(profile_entries)
                 self.assertTrue(
                     all(name.startswith(public_prefix) for name in profile_entries)
@@ -229,52 +282,59 @@ class TestReleaseBuild(unittest.TestCase):
 
     def test_internal_release_includes_private_profiles_without_caches(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    ".git", "__pycache__", ".pytest_cache", ".ruff_cache"
+                ),
+            )
+            private = source / "profiles" / "private-test-profile"
+            private.mkdir(parents=True)
+            (private / "profile.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "repository-quality-guard/profile-v1",
+                        "name": "private-test-profile",
+                        "version": "1",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (private / "README.md").write_text(
+                "# Private test profile\n", encoding="utf-8"
+            )
+            (private / "AGENTS.md").write_text("fixture\n", encoding="utf-8")
+            self._seed_release_media(source)
+
             out = Path(temp) / "internal.zip"
-            self._build(out, "--internal")
+            self._build(out, "--internal", source=source)
             with zipfile.ZipFile(out) as archive:
                 names = set(archive.namelist())
                 self.assertIn("repository-quality-guard/README.md", names)
                 self.assertIn("repository-quality-guard/README_zh.md", names)
                 self.assertTrue(any("dev-tests/" in name for name in names))
                 self.assertTrue(any("tools/" in name for name in names))
-                private_names = sorted(
-                    item.name
-                    for item in (ROOT / "profiles").iterdir()
-                    if item.is_dir()
-                    and item.name != "qg-example-profile"
-                    and (item / "profile.json").is_file()
-                )
-                self.assertTrue(private_names)
-                for private_name in private_names:
-                    prefix = f"repository-quality-guard/profiles/{private_name}/"
-                    self.assertIn(prefix + "profile.json", names)
-                    self.assertFalse(
+                prefix = "repository-quality-guard/profiles/private-test-profile/"
+                self.assertIn(prefix + "profile.json", names)
+                self.assertIn(prefix + "README.md", names)
+                self.assertIn(prefix + "AGENTS.md", names)
+                self.assertFalse(
+                    any(
                         any(
-                            any(
-                                part in name.split("/")
-                                for part in (
-                                    "__pycache__",
-                                    ".pytest_cache",
-                                    ".ruff_cache",
-                                    ".mypy_cache",
-                                )
+                            part in name.split("/")
+                            for part in (
+                                "__pycache__",
+                                ".pytest_cache",
+                                ".ruff_cache",
+                                ".mypy_cache",
                             )
-                            or name.endswith((".pyc", ".pyo"))
-                            for name in names
                         )
+                        or name.endswith((".pyc", ".pyo"))
+                        for name in names
                     )
-                    profile_root = ROOT / "profiles" / private_name
-                    agents_file = profile_root / "AGENTS.md"
-                    if agents_file.is_file():
-                        self.assertIn(prefix + "AGENTS.md", names)
-                    readme = profile_root / "README.md"
-                    if readme.is_file():
-                        self.assertIn(prefix + "README.md", names)
-                    tests_dir = profile_root / "tests"
-                    if tests_dir.is_dir():
-                        self.assertTrue(
-                            any(name.startswith(prefix + "tests/") for name in names)
-                        )
+                )
 
     def test_runtime_integrity_ignores_regenerable_python_and_tool_caches(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

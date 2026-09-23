@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import report_schema
-from .config import is_test_path
+from .config import is_test_path, is_tool_generated_path
 from .gate_status import code_status
 from .git_utils import run_readonly_git
 from .model import Finding, InterfaceChange, ScanReport
@@ -167,6 +167,7 @@ def _changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
         path
         for path in set(numbers) | set(statuses)
         if path not in excluded
+        and not is_tool_generated_path(path)
         and not generated_parts.intersection(Path(path).parts)
         and not path.endswith((".pyc", ".pyo"))
     )

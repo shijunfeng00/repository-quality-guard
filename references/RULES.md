@@ -304,3 +304,6 @@
 | `QG191` | **语义候选**：本轮代码手工拼装已有协议/传输对象（例如 OpenAI tool-call wire）而没有复用既有协议 owner；要求先检索并复用唯一所有者，确有独立长期契约时再以 Q3/Q5 证据裁决。 |
 
 生成阶段会立即检查报告；`--final-check` 会在不写文件的情况下重新计算事实。模型最终状态只能等于或严于 `tool_status`：可以把静态 `ACCEPT/REVIEW_REQUIRED` 降为 `REVIEW_REQUIRED/REJECT`，禁止抬高。存在 `BLOCKING` 时最终状态必须为 `REJECT`；接口/协议变化单独形成 `REVIEW_REQUIRED`，纯删除接口不触发；只读审计可让报告门禁通过并以退出码 1 如实拒绝代码。
+
+
+> RQG-generated `docs/api-reference/` is a disposable tool artifact and is excluded before QG203/QG205 and changed-file accounting. This exemption is path-scoped to the canonical generated output; it does not exempt ordinary project documentation.

@@ -6,7 +6,14 @@ import unittest
 from pathlib import Path
 
 from runtime.profile_build import build_profile_lock
-from runtime.src.profile_api import Finding, QualityGuardProfile, QualityRule, RulePack, RuleContext, SearchStrategy
+from runtime.src.profile_api import (
+    Finding,
+    QualityGuardProfile,
+    QualityRule,
+    RulePack,
+    RuleContext,
+    SearchStrategy,
+)
 from runtime.src.project_profiles import load_quality_profile
 from runtime.src.config import GuardConfig, is_test_path
 from runtime.src.gate_status import code_status
@@ -65,8 +72,9 @@ class TestProfileContract(unittest.TestCase):
         self.assertEqual(built.nonblocking_paths, ("tests/**", "utils/tracing.py"))
         self.assertEqual(built.test_baseline_passthrough_paths, ("utils/tracing.py",))
 
-
-    def test_public_example_profile_is_executable_and_keeps_policy_in_json(self) -> None:
+    def test_public_example_profile_is_executable_and_keeps_policy_in_json(
+        self,
+    ) -> None:
         profile_dir = ROOT / "profiles" / "qg-example-profile"
         profile = load_quality_profile(str(profile_dir), release_root=ROOT)
         self.assertIsNotNone(profile)
@@ -76,14 +84,10 @@ class TestProfileContract(unittest.TestCase):
         self.assertEqual(snapshot.rule_levels["QG203"], "blocker")
         self.assertEqual(snapshot.rule_levels["QG205"], "semantic")
         self.assertIn("QG187", snapshot.disabled_rules)
-        self.assertEqual(
-            snapshot.nonblocking_paths, ("tests/**", "tools/tracing.py")
-        )
+        self.assertEqual(snapshot.nonblocking_paths, ("tests/**", "tools/tracing.py"))
         self.assertEqual(len(snapshot.stable_mapping_contracts), 1)
         self.assertEqual(len(snapshot.callable_contracts), 2)
-        self.assertEqual(
-            snapshot.stable_mapping_contracts[0].qualname, "RuntimeState"
-        )
+        self.assertEqual(snapshot.stable_mapping_contracts[0].qualname, "RuntimeState")
         self.assertEqual(
             snapshot.callable_contracts[0].qualname, "ModelAdapter.generate"
         )
@@ -93,27 +97,33 @@ class TestProfileContract(unittest.TestCase):
         self.assertNotIn("disable_rule", extension)
         self.assertNotIn("add_nonblocking_path", extension)
 
-    def test_geek_ai_agent_nonblocking_policy_is_declared_only_in_json(self) -> None:
-        profile_dir = ROOT / "profiles" / "geek-ai-agent"
+    def test_public_profile_nonblocking_policy_is_declared_only_in_json(self) -> None:
+        profile_dir = ROOT / "profiles" / "qg-example-profile"
         built = load_quality_profile(str(profile_dir))
         self.assertIsNotNone(built)
         snapshot = built.build() if built is not None else None
         self.assertIsNotNone(snapshot)
         assert snapshot is not None
-        self.assertEqual(snapshot.nonblocking_paths, ("tests/**", "utils/tracing.py"))
-        self.assertEqual(snapshot.test_baseline_passthrough_paths, ("utils/tracing.py",))
+        self.assertEqual(snapshot.nonblocking_paths, ("tests/**", "tools/tracing.py"))
+        self.assertEqual(
+            snapshot.test_baseline_passthrough_paths, ("tools/tracing.py",)
+        )
         extension = (profile_dir / "extension.py").read_text(encoding="utf-8")
         self.assertNotIn("add_nonblocking_path", extension)
 
-    def test_agent_unit_tests_and_tracing_path_are_nonblocking_but_still_classified(self) -> None:
-        profile = load_quality_profile(str(ROOT / "profiles" / "geek-ai-agent"))
+    def test_profile_nonblocking_paths_are_still_classified(self) -> None:
+        profile = load_quality_profile(
+            str(ROOT / "profiles" / "qg-example-profile"), release_root=ROOT
+        )
         self.assertIsNotNone(profile)
         assert profile is not None
         snapshot = profile.build()
         GuardConfig().with_project_profile(snapshot)
 
-        self.assertTrue(is_test_path("tests/unit/test_runtime.py", "geek-ai-agent"))
-        self.assertTrue(is_test_path("utils/tracing.py", "geek-ai-agent"))
+        self.assertTrue(
+            is_test_path("tests/unit/test_runtime.py", "qg-example-profile")
+        )
+        self.assertTrue(is_test_path("tools/tracing.py", "qg-example-profile"))
 
         findings = [
             Finding(
@@ -129,7 +139,7 @@ class TestProfileContract(unittest.TestCase):
                 "QG186",
                 "critical",
                 "high",
-                "utils/tracing.py",
+                "tools/tracing.py",
                 1,
                 1,
                 "trace hook patch",
@@ -140,7 +150,7 @@ class TestProfileContract(unittest.TestCase):
             files_scanned=2,
             findings=findings,
             definitions=0,
-            project_name="geek-ai-agent",
+            project_name="qg-example-profile",
             baseline=object(),  # type: ignore[arg-type]
         )
         self.assertEqual(code_status(report), "ACCEPT")
@@ -167,7 +177,13 @@ class TestProfileContract(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp)
             (p / "profile.json").write_text(
-                json.dumps({"schema": "repository-quality-guard/profile-v1", "name": "x", "entrypoint": "extension.py:Other"}),
+                json.dumps(
+                    {
+                        "schema": "repository-quality-guard/profile-v1",
+                        "name": "x",
+                        "entrypoint": "extension.py:Other",
+                    }
+                ),
                 encoding="utf-8",
             )
             (p / "extension.py").write_text(
@@ -176,7 +192,6 @@ class TestProfileContract(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 load_quality_profile(str(p), release_root=ROOT)
-
 
     def test_agents_file_is_manifest_driven(self) -> None:
         class Profile(QualityGuardProfile):
@@ -201,7 +216,13 @@ class TestProfileContract(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp)
             (p / "profile.json").write_text(
-                json.dumps({"schema": "repository-quality-guard/profile-v1", "name": "x", "entrypoint": "extension.py"}),
+                json.dumps(
+                    {
+                        "schema": "repository-quality-guard/profile-v1",
+                        "name": "x",
+                        "entrypoint": "extension.py",
+                    }
+                ),
                 encoding="utf-8",
             )
             (p / "extension.py").write_text(
@@ -227,15 +248,22 @@ class TestProfileContract(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
 class TestTestQualityProjection(unittest.TestCase):
     def test_nonblocking_paths_do_not_expand_test_baseline_projection(self) -> None:
         from runtime.src.cli import _filter_test_quality_findings
         from runtime.src.model import Finding
 
         findings = [
-            Finding("QG190", "critical", "high", "tests/conftest.py", 1, 1, "dynamic import"),
-            Finding("QG003", "error", "high", "utils/tracing.py", 2, 1, "mapping access"),
-            Finding("QG149", "warning", "high", "tests/test_x.py", 3, 1, "private member"),
+            Finding(
+                "QG190", "critical", "high", "tests/conftest.py", 1, 1, "dynamic import"
+            ),
+            Finding(
+                "QG003", "error", "high", "utils/tracing.py", 2, 1, "mapping access"
+            ),
+            Finding(
+                "QG149", "warning", "high", "tests/test_x.py", 3, 1, "private member"
+            ),
         ]
         projected = _filter_test_quality_findings(findings, ("utils/tracing.py",))
         self.assertEqual(

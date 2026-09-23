@@ -25,7 +25,7 @@ from .analysis_snapshot import (
 from .api_catalog import build_api_catalog, search_api_catalog
 from .architecture_diff import compare_git_architecture
 from .call_chain_rules import single_use_chain_findings
-from .config import GuardConfig, is_test_path
+from .config import GuardConfig, is_test_path, is_tool_generated_path
 from .fallback_laundering import fallback_laundering_findings
 from .git_utils import run_readonly_git
 from .integrity import INTEGRITY_RULE_CODE, verify_release_integrity
@@ -75,7 +75,7 @@ INTEGRITY_GATE_EXIT_CODE = 4
 REVIEW_REQUIRED_EXIT_CODE = 5
 _AUDIT_ONLY_SUFFIXES = (".patch", ".diff", ".log", ".zip", ".tar", ".tgz", ".tar.gz")
 _PORCELAIN_STATUS_PREFIX_LENGTH = 3
-_AUDIT_ONLY_PREFIXES = (".agents/", ".pytest_cache/", ".ruff_cache/")
+_AUDIT_ONLY_PREFIXES = (".agents/", ".pytest_cache/", ".ruff_cache/", "docs/api-reference/")
 _INTERFACE_DEFINITION_KINDS = frozenset({"class", "function", "method"})
 _INTERFACE_POLICY_CODES = frozenset({"QG161", "QG180", "QG181", "QG182"})
 
@@ -465,6 +465,7 @@ def _comparison_plan(target: AuditTarget, args: argparse.Namespace) -> _GitCompa
         lowered = normalized.lower()
         audit_only = (
             normalized == MODIFICATION_REPORT_NAME
+            or is_tool_generated_path(normalized)
             or normalized.startswith(_AUDIT_ONLY_PREFIXES)
             or "/__pycache__/" in f"/{normalized}/"
             or any(lowered.endswith(suffix) for suffix in _AUDIT_ONLY_SUFFIXES)

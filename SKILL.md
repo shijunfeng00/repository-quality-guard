@@ -57,7 +57,7 @@ Catalog 用于新增接口前的复用检索和 owner 定位，不替代源码�
 
 ### `doc-search`
 
-在 API catalog 中执行能力检索：
+在 API catalog 中执行能力检索。每次检索前都会对当前生产源码执行强内容摘要保鲜；即使编辑工具保留了文件大小和 mtime，也不会复用过期 catalog。`docs/api-reference/` 是 RQG 拥有的可再生派生产物，不进入业务变更、release-identity 或质量门禁；`doc-generate` 会自动开启新的检索轮次，`doc-search` 会按当前源码 digest 自动淘汰旧 search ledger，无需 Agent 手工删除目录。
 
 ```bash
 python scripts/quality_guard.py doc-search <repo> "state transaction ownership"

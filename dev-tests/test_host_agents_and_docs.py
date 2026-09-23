@@ -81,30 +81,44 @@ class TestHostAgentsContract(unittest.TestCase):
 
         self.assertIn("[简体中文](README_zh.md)", readme)
         self.assertIn("[English](README.md)", readme_zh)
-        for heading in ("## Capabilities", "## Language support", "## Development workflow", "## Audit results", "## Installation and Profile customization", "## Outputs"):
+        for heading in (
+            "# Language support",
+            "## What Repository Quality Guard changes",
+            "# Quick start",
+            "# How RQG protects the quality of Agent-written code",
+            "# `修改说明.md`: the delivery answer sheet an Agent cannot skip",
+            "# Project customization: make RQG fit your repository",
+        ):
             self.assertIn(heading, readme)
-        for heading in ("## 功能", "## 语言支持", "## 开发流程", "## 审计结果", "## 安装与 Profile 定制", "## 产物"):
+        for heading in (
+            "# 支持语言",
+            "## 这正是 Repository Quality Guard 要解决的问题",
+            "# 快速开始",
+            "# RQG 如何确保 Agent 产出的代码质量",
+            "# `修改说明.md`：Agent 不能跳过的交付答卷",
+            "# 项目定制：让 RQG 适配你的仓库",
+        ):
             self.assertIn(heading, readme_zh)
         self.assertIn("```mermaid", readme)
         self.assertIn("```mermaid", readme_zh)
-        self.assertIn("Project Profiles", readme)
-        self.assertIn("项目 Profile", readme_zh)
-        self.assertIn("AI semantic review", readme)
-        self.assertIn("AI 语义审计", readme_zh)
+        self.assertIn("project **Profile**", readme)
+        self.assertIn("项目增加一个 **Profile**", readme_zh)
+        self.assertIn("semantic review", readme)
+        self.assertIn("语义审计", readme_zh)
         self.assertIn("qg-example-profile", readme)
         self.assertIn("qg-example-profile", readme_zh)
         self.assertIn("REVIEW_REQUIRED", readme)
         self.assertIn("REVIEW_REQUIRED", readme_zh)
-        self.assertIn("pre-push", readme)
-        self.assertIn("pre-push", readme_zh)
+        self.assertIn("Git delivery quality gate", readme)
+        self.assertIn("Git 交付质量门禁", readme_zh)
         self.assertIn("git_hook_install.py", readme)
         self.assertIn("git_hook_install.py", readme_zh)
-        self.assertIn("requires human confirmation", readme)
-        self.assertIn("需要人确认其可接受性的变动", readme_zh)
-        self.assertNotIn("Human review", readme)
-        self.assertNotIn("人工确认", readme_zh.split("```mermaid", 2)[1])
-        self.assertNotIn("## Quick start", readme)
-        self.assertNotIn("## 快速开始", readme_zh)
+        self.assertIn("human confirmation", readme)
+        self.assertIn("人工确认", readme_zh)
+        self.assertIn("doc-generate", readme)
+        self.assertIn("doc-search", readme)
+        self.assertIn("doc-generate", readme_zh)
+        self.assertIn("doc-search", readme_zh)
         self.assertIn("/profiles/*", ignore)
         self.assertIn("!/profiles/qg-example-profile/", ignore)
         self.assertIn("!/profiles/qg-example-profile/**", ignore)

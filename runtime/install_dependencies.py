@@ -86,7 +86,6 @@ def _requirements(lock: dict[str, object]) -> list[str]:
 
 def _run(
     command: list[str],
-    *,
     environment: Mapping[str, str],
     timeout: float | None = None,
 ) -> bool:
@@ -103,12 +102,11 @@ def _run(
         )
     except subprocess.TimeoutExpired:
         executable = Path(command[0]).name if command else "dependency command"
-        print(
-            f"Repository Quality Guard dependency bootstrap timed out: "
-            f"{executable} exceeded {timeout:g}s.",
-            file=sys.stderr,
-            flush=True,
+        sys.stderr.write(
+            "Repository Quality Guard dependency bootstrap timed out: "
+            f"{executable} exceeded {timeout:g}s.\n"
         )
+        sys.stderr.flush()
         return False
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -154,11 +155,15 @@ def _changed_paths(value: str | None) -> tuple[str, ...] | None:
 def _append_search_ledger(
     output: Path, query: str, hits: list[object], metrics: dict[str, object]
 ) -> None:
-    """把实际 doc-search 查询与 TopK 结果追加到机器 ledger。"""
+    """Append search evidence while automatically discarding stale source revisions."""
     output.mkdir(parents=True, exist_ok=True)
+    source_digest = str(metrics["source_digest"] or "")
+    if not source_digest:
+        raise ValueError("doc-search metrics missing source_digest")
     entry = {
         "schema": "repository-quality-guard/api-search-ledger-v1",
         "time_ns": time.time_ns(),
+        "source_digest": source_digest,
         "query": query,
         "metrics": metrics,
         "results": [
@@ -175,10 +180,25 @@ def _append_search_ledger(
         ],
     }
     ledger = output / "search-ledger.jsonl"
-    with ledger.open("a", encoding="utf-8") as stream:
-        stream.write(
-            json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n"
-        )
+    retained: list[str] = []
+    if ledger.is_file():
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            try:
+                previous = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            try:
+                previous_digest = previous["source_digest"]
+            except (KeyError, TypeError):
+                continue
+            if previous_digest == source_digest:
+                retained.append(
+                    json.dumps(previous, ensure_ascii=False, separators=(",", ":"))
+                )
+    retained.append(json.dumps(entry, ensure_ascii=False, separators=(",", ":")))
+    temporary = ledger.with_suffix(ledger.suffix + ".tmp")
+    temporary.write_text("\n".join(retained) + "\n", encoding="utf-8")
+    os.replace(temporary, ledger)
 
 
 def _run_doc_generate(options: argparse.Namespace) -> int:
@@ -192,6 +212,7 @@ def _run_doc_generate(options: argparse.Namespace) -> int:
         config,
         changed_paths=_changed_paths(options.files),
     )
+    (output / "search-ledger.jsonl").unlink(missing_ok=True)
     _write_cli_line(
         "doc-generate PASS "
         f"mode={metrics['mode']} symbols={metrics['symbols']} "

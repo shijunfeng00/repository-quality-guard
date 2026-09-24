@@ -253,7 +253,9 @@ def check_naming_rules(facts: ModuleFacts, tree: ast.Module) -> list[Finding]:
             symbol=item.name,
             evidence={
                 "name": item.name,
-                "allowed_mathematical_suffixes": sorted(MATHEMATICAL_NORMALIZE_SUFFIXES),
+                "allowed_mathematical_suffixes": sorted(
+                    MATHEMATICAL_NORMALIZE_SUFFIXES
+                ),
             },
         )
         for item in visitor.normalize_functions

@@ -100,7 +100,9 @@ def check_class_method_shape(
     """
     public = [method for method in methods if not method.name.startswith("_")]
     private = [
-        method for method in methods if method.name.startswith("_") and method.name != "__init__"
+        method
+        for method in methods
+        if method.name.startswith("_") and method.name != "__init__"
     ]
     static_like = [
         method
@@ -238,7 +240,9 @@ def method_does_not_use_self(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bo
     Returns:
         普通实例方法未使用首参数时返回 True。
     """
-    decorators = {name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)}
+    decorators = {
+        name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+    }
     if decorators & {"staticmethod", "classmethod", "abstractmethod", "property"}:
         return False
     positional = [*node.args.posonlyargs, *node.args.args]
@@ -246,7 +250,9 @@ def method_does_not_use_self(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bo
         return False
     receiver = positional[0].arg
     return not any(
-        isinstance(item, ast.Name) and isinstance(item.ctx, ast.Load) and item.id == receiver
+        isinstance(item, ast.Name)
+        and isinstance(item.ctx, ast.Load)
+        and item.id == receiver
         for item in direct_body_nodes(node)
     )
 
@@ -261,10 +267,14 @@ def is_single_field_dataclass(node: ast.ClassDef) -> bool:
     Returns:
         命中 dataclass 且只有一个字段时返回 True。
     """
-    decorators = {name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)}
+    decorators = {
+        name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+    }
     if "dataclass" not in decorators:
         return False
-    fields = [statement for statement in node.body if isinstance(statement, ast.AnnAssign)]
+    fields = [
+        statement for statement in node.body if isinstance(statement, ast.AnnAssign)
+    ]
     return len(fields) == 1
 
 
@@ -278,7 +288,9 @@ def is_passthrough_property(node: ast.FunctionDef | ast.AsyncFunctionDef) -> boo
     Returns:
         命中只读属性转发时返回 True。
     """
-    decorators = {name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)}
+    decorators = {
+        name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+    }
     body = body_without_docstring(node)
     return (
         "property" in decorators
@@ -364,7 +376,9 @@ def check_constructor_shape(
         for statement in body_without_docstring(node)
         if isinstance(statement, (ast.Assign, ast.AnnAssign))
         for target in (
-            statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            statement.targets
+            if isinstance(statement, ast.Assign)
+            else [statement.target]
         )
         if isinstance(target, ast.Attribute)
         and isinstance(target.value, ast.Name)
@@ -404,7 +418,9 @@ def check_field_locality(
     Returns:
         字段局部性发现列表。
     """
-    decorators = {name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)}
+    decorators = {
+        name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+    }
     methods = class_methods(node)
     if "dataclass" in decorators or len(methods) < MIN_CLASS_METHODS_FOR_FIELD_LOCALITY:
         return []
@@ -413,7 +429,9 @@ def check_field_locality(
         return []
     stored_fields = fields_stored_in_constructor(init)
     usages = field_method_usages(methods, stored_fields)
-    local_fields = sorted(field for field, method_names in usages.items() if len(method_names) == 1)
+    local_fields = sorted(
+        field for field, method_names in usages.items() if len(method_names) == 1
+    )
     if len(local_fields) < config.single_use_field_threshold:
         return []
     return [

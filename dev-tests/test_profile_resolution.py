@@ -118,9 +118,7 @@ class TestProfileResolution(unittest.TestCase):
             self.assertEqual(
                 (selected.name, selected.source), ("alpha", "sealed-installed")
             )
-            explicit = resolve_profile_reference(
-                repo, "alpha", release_root=release
-            )
+            explicit = resolve_profile_reference(repo, "alpha", release_root=release)
             self.assertEqual(
                 (explicit.name, explicit.source),
                 ("alpha", "sealed-installed-explicit"),

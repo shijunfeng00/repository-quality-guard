@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
+from .bootstrap_settings import node_parser_environment
 from .config import GuardConfig
 from .graph_utils import strongly_connected_components
 from .model import Finding
@@ -73,25 +73,28 @@ def _node_facts(snapshot: RepositoryAnalysisSnapshot) -> list[dict[str, Any]]:
         raise RuntimeError(
             "仓库包含 JS/TS/CSS，但系统缺少 Node.js；拒绝静默跳过多语言 AST。"
         )
-    node_modules = os.environ.get("RQG_NODE_MODULES", "").strip()
-    if not node_modules:
+    try:
+        environment = node_parser_environment()
+    except RuntimeError as error:
         raise RuntimeError(
             "仓库包含 JS/TS/CSS，但锁定 Node parser 依赖尚未安装；"
             "请运行 runtime/install_dependencies.py 或重新 deploy Skill。"
-        )
+        ) from error
     parser = Path(__file__).resolve().parent / "multilang_parser.js"
-    environment = dict(os.environ)
-    environment["RQG_NODE_MODULES"] = node_modules
-    result = subprocess.run(
-        [node, str(parser)],
-        input=json.dumps(items, ensure_ascii=False),
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        capture_output=True,
-        check=False,
-        env=environment,
-    )
+    try:
+        result = subprocess.run(
+            [node, str(parser)],
+            input=json.dumps(items, ensure_ascii=False),
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            capture_output=True,
+            check=False,
+            env=environment,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("多语言 AST parser 执行超过 60 秒，已终止。") from error
     if result.returncode != 0:
         detail = result.stderr.strip() or "unknown error"
         raise RuntimeError(f"多语言 AST parser 失败：{detail}")
@@ -365,9 +368,7 @@ def _script_architecture_findings(
             bag_module[bag["name"]] = script["path"]
             bag_methods[bag["name"]] = bag["methods"]
         classes.extend((script["path"], item) for item in script["classes"])
-        compositions.extend(
-            (script["path"], item) for item in script["compositions"]
-        )
+        compositions.extend((script["path"], item) for item in script["compositions"])
 
     for module, composition in compositions:
         bags = [name for name in composition["bags"] if name in bag_module]
@@ -398,9 +399,7 @@ def _script_architecture_findings(
             (item for _, item in classes if item["name"] == composition["class_name"]),
             None,
         )
-        constructor_fields = (
-            len(class_fact["constructor_fields"]) if class_fact else 0
-        )
+        constructor_fields = len(class_fact["constructor_fields"]) if class_fact else 0
         composed_methods = sum(len(bag_methods[name]) for name in bags)
         dependency_graph = {name: set() for name in modules}
         for source, target in edges:
@@ -484,17 +483,6 @@ def _script_architecture_findings(
                 source=_SOURCE,
             )
         )
-    return findings
-
-
-def _script_findings(
-    facts: list[dict[str, Any]],
-    config: GuardConfig,
-) -> list[Finding]:
-    """汇总 JS/TS 函数级与架构级发现。"""
-    scripts = [item for item in facts if item["language"] in _SCRIPT_LANGUAGES]
-    findings = _definition_findings(scripts, config)
-    findings.extend(_script_architecture_findings(scripts))
     return findings
 
 
@@ -645,8 +633,7 @@ def _script_diff_findings(
         line_delta = target_definition["lines"] - base_definition["lines"]
         nested_delta = target_definition["nested_defs"] - base_definition["nested_defs"]
         giant = (
-            target_definition["lines"] > 500
-            or target_definition["nested_defs"] >= 50
+            target_definition["lines"] > 500 or target_definition["nested_defs"] >= 50
         )
         significant_growth = line_delta >= 20 or nested_delta >= 5
         if giant and significant_growth:
@@ -678,10 +665,7 @@ def _script_diff_findings(
             )
 
     for key, base_definition in base.items():
-        if (
-            base_definition["lines"] <= 500
-            and base_definition["nested_defs"] < 50
-        ):
+        if base_definition["lines"] <= 500 and base_definition["nested_defs"] < 50:
             continue
         prefix = f"{key[1]}."
         direct_depth = prefix.count(".")
@@ -802,22 +786,6 @@ def _cpp_changed_findings(
     return findings
 
 
-def _copy_cpp_snapshot(snapshot: RepositoryAnalysisSnapshot, root: Path) -> None:
-    """把统一快照中的 C/C++ 单元写入隔离临时目录供 Clang 解析。"""
-    for path, unit in snapshot.language_units.items():
-        if unit.language != "cpp":
-            continue
-        destination = root / path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(unit.source, encoding="utf-8")
-
-
-def _include_directories(root: Path) -> list[str]:
-    """从临时源码树发现常见 include 目录。"""
-    directories = {path for path in root.rglob("include") if path.is_dir()}
-    return sorted(str(path) for path in directories)
-
-
 def _clang_location(
     token: str,
     current_file: Path | None,
@@ -869,10 +837,18 @@ def _cpp_metrics(
     metrics: dict[tuple[str, str], dict[str, Any]] = {}
     with tempfile.TemporaryDirectory(prefix="rqg-cpp-") as directory:
         root = Path(directory)
-        _copy_cpp_snapshot(snapshot, root)
+        for path, unit in snapshot.language_units.items():
+            if unit.language != "cpp":
+                continue
+            destination = root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(unit.source, encoding="utf-8")
+        include_directories = sorted(
+            str(path) for path in root.rglob("include") if path.is_dir()
+        )
         include_args = [
             argument
-            for include_dir in _include_directories(root)
+            for include_dir in include_directories
             for argument in ("-I", include_dir)
         ]
 
@@ -1001,7 +977,9 @@ def multilang_findings(
         多语言发现列表，以及稳定的文件计数与 parser 摘要。
     """
     target_facts = _node_facts(target)
-    findings = _script_findings(target_facts, config)
+    scripts = [item for item in target_facts if item["language"] in _SCRIPT_LANGUAGES]
+    findings = _definition_findings(scripts, config)
+    findings.extend(_script_architecture_findings(scripts))
     findings.extend(_css_findings(target_facts))
     findings.extend(_html_findings(target))
 

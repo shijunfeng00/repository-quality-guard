@@ -114,14 +114,17 @@ class RepositoryScanner:
             if not (
                 self.config.skip_private_docstrings
                 and definition.name.startswith("_")
-                and not (definition.name.startswith("__") and definition.name.endswith("__"))
+                and not (
+                    definition.name.startswith("__") and definition.name.endswith("__")
+                )
             )
         ]
         documented_definitions = sum(
             definition.has_docstring for definition in docstring_definitions
         )
         complete_docstrings = sum(
-            self._has_complete_docstring(definition) for definition in docstring_definitions
+            self._has_complete_docstring(definition)
+            for definition in docstring_definitions
         )
         findings.sort(key=lambda item: (item.path, item.line, item.column, item.code))
         return ScanReport(
@@ -149,10 +152,13 @@ class RepositoryScanner:
         """
         private_name = str(definition.path).startswith("tests/") or (
             definition.name.startswith("_")
-            and not (definition.name.startswith("__") and definition.name.endswith("__"))
+            and not (
+                definition.name.startswith("__") and definition.name.endswith("__")
+            )
         )
         property_interface = any(
-            decorator.rsplit(".", 1)[-1] in {"property", "cached_property", "setter", "deleter"}
+            decorator.rsplit(".", 1)[-1]
+            in {"property", "cached_property", "setter", "deleter"}
             for decorator in definition.decorators
         )
         if private_name or property_interface:
@@ -246,7 +252,9 @@ class RepositoryScanner:
         )
         if git_result.returncode == 0:
             candidates = [
-                self.root / line for line in git_result.stdout.splitlines() if line.strip()
+                self.root / line
+                for line in git_result.stdout.splitlines()
+                if line.strip()
             ]
         else:
             candidates = list(self.root.rglob("*.py"))
@@ -255,7 +263,9 @@ class RepositoryScanner:
             if not path.is_file():
                 continue
             relative = path.relative_to(self.root).as_posix()
-            if not self.config.include_tests and is_test_path(relative, self.config.project_name):
+            if not self.config.include_tests and is_test_path(
+                relative, self.config.project_name
+            ):
                 continue
             if any(fnmatch(relative, pattern) for pattern in self.config.exclude):
                 continue
@@ -353,7 +363,12 @@ class RepositoryScanner:
             by_simple_name[definition.name].append(definition)
         for usage in usages:
             candidates = self._usage_candidates(
-                usage, definitions, by_id, by_module_name, by_simple_name, imports_by_module
+                usage,
+                definitions,
+                by_id,
+                by_module_name,
+                by_simple_name,
+                imports_by_module,
             )
             for definition in candidates:
                 if usage.is_call:
@@ -387,7 +402,9 @@ class RepositoryScanner:
         if usage.base in {"self", "cls"}:
             return self._self_usage_candidates(usage, definitions, by_id)
         if usage.base:
-            return self._attribute_usage_candidates(usage, by_id, by_simple_name, imports_by_module)
+            return self._attribute_usage_candidates(
+                usage, by_id, by_simple_name, imports_by_module
+            )
         return self._name_usage_candidates(
             usage, by_id, by_module_name, by_simple_name, imports_by_module
         )
@@ -409,7 +426,11 @@ class RepositoryScanner:
         Returns:
             匹配到的方法定义列表。
         """
-        exact_id = f"{usage.module}.{usage.owner_class}.{usage.target}" if usage.owner_class else ""
+        exact_id = (
+            f"{usage.module}.{usage.owner_class}.{usage.target}"
+            if usage.owner_class
+            else ""
+        )
         if exact_id and exact_id in by_id:
             return [by_id[exact_id]]
         return [
@@ -451,7 +472,11 @@ class RepositoryScanner:
         class_candidate = f"{usage.module}.{usage.base}.{usage.target}"
         if class_candidate in by_id:
             return [by_id[class_candidate]]
-        return by_simple_name[usage.target] if len(by_simple_name[usage.target]) == 1 else []
+        return (
+            by_simple_name[usage.target]
+            if len(by_simple_name[usage.target]) == 1
+            else []
+        )
 
     def _name_usage_candidates(
         self,
@@ -480,4 +505,8 @@ class RepositoryScanner:
         local = by_module_name[(usage.module, usage.target)]
         if local:
             return local
-        return by_simple_name[usage.target] if len(by_simple_name[usage.target]) == 1 else []
+        return (
+            by_simple_name[usage.target]
+            if len(by_simple_name[usage.target]) == 1
+            else []
+        )

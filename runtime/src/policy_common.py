@@ -72,10 +72,35 @@ WRITE_CALL_MARKERS = {
     "write_bytes",
     "write_text",
 }
-READ_ONLY_NAME_PREFIXES = ("find", "fetch", "get", "list", "load", "query", "read", "search")
+READ_ONLY_NAME_PREFIXES = (
+    "find",
+    "fetch",
+    "get",
+    "list",
+    "load",
+    "query",
+    "read",
+    "search",
+)
 PROMPT_NAME_MARKERS = ("prompt", "instruction", "system_message", "system_prompt")
-PROMPT_NEGATIVE_MARKERS = ("禁止", "不得", "不要", "严禁", "必须", "只能", "不可", "务必")
-GENERIC_FUNCTION_NAMES = {"do", "handle", "manage", "process", "run_task", "execute_task"}
+PROMPT_NEGATIVE_MARKERS = (
+    "禁止",
+    "不得",
+    "不要",
+    "严禁",
+    "必须",
+    "只能",
+    "不可",
+    "务必",
+)
+GENERIC_FUNCTION_NAMES = {
+    "do",
+    "handle",
+    "manage",
+    "process",
+    "run_task",
+    "execute_task",
+}
 CONFIG_CALLS = {"os.getenv", "os.environ.get", "dotenv.get_key", "decouple.config"}
 CONFIG_FILE_CALLS = {"json.load", "tomllib.load", "yaml.load", "yaml.safe_load"}
 NETWORK_CALL_PREFIXES = ("requests.", "httpx.", "aiohttp.")
@@ -254,7 +279,9 @@ def iter_scoped_definitions(
     Returns:
         节点、限定名称和所属类名称组成的列表。
     """
-    result: list[tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, str, str]] = []
+    result: list[
+        tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, str, str]
+    ] = []
 
     def walk(body: list[ast.stmt], prefix: list[str], class_name: str) -> None:
         """
@@ -446,7 +473,9 @@ def literal_value(node: ast.expr | None) -> object:
 
 
 @cache
-def _cached_direct_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[ast.AST, ...]:
+def _cached_direct_body_nodes(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.AST, ...]:
     """
     缓存函数直接控制的 AST 节点遍历结果。
 
@@ -461,7 +490,9 @@ def _cached_direct_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> t
     while pending:
         child = pending.pop()
         result.append(child)
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        if isinstance(
+            child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+        ):
             continue
         pending.extend(reversed(list(ast.iter_child_nodes(child))))
     return tuple(result)
@@ -571,13 +602,17 @@ def collect_function_signatures(parsed: list[ParsedModule]) -> list[FunctionSign
             boolean_positions = {
                 index
                 for index, argument in enumerate(positional)
-                if "bool" in annotation_names(argument.annotation) or is_bool_name(argument.arg)
+                if "bool" in annotation_names(argument.annotation)
+                or is_bool_name(argument.arg)
             }
             boolean_keywords = {
                 argument.arg
                 for argument in all_parameters(node)
                 if argument.arg not in {"self", "cls"}
-                and ("bool" in annotation_names(argument.annotation) or is_bool_name(argument.arg))
+                and (
+                    "bool" in annotation_names(argument.annotation)
+                    or is_bool_name(argument.arg)
+                )
             }
             signatures.append(
                 FunctionSignature(

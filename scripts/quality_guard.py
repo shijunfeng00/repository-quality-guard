@@ -6,19 +6,14 @@ import faulthandler
 import importlib.util
 import os
 import sys
+import signal
 from pathlib import Path
-
-if __name__ == "__main__" and not sys.flags.dont_write_bytecode:
-    os.execv(
-        sys.executable,
-        [sys.executable, "-B", str(Path(__file__).resolve()), *sys.argv[1:]],
-    )
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-RELEASE_SEAL = "60a0cfe492441798449325a1fd0a80d315205a90d244a28e1b6893f662ceb4f0"
+RELEASE_SEAL = "e6a6e8b5579af26c098264fcd021d3c425df561c4ec09a2f54c0353ca29d45b3"
 
 
 def _prepare_dependencies() -> None:
@@ -46,7 +41,11 @@ def main() -> int:
     Returns:
         QG workflow 的进程退出码。
     """
-    _prepare_dependencies()
+    try:
+        _prepare_dependencies()
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"[QG] 环境准备失败：{error}", file=sys.stderr, flush=True)
+        return 2
     os.environ["REPO_QUALITY_GUARD_HOME"] = str(ROOT)
     os.environ["REPO_QUALITY_GUARD_RELEASE_SEAL"] = RELEASE_SEAL
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -56,5 +55,25 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    from runtime.src.process_lifecycle import install_parent_death_guard
+
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+    install_parent_death_guard()
     faulthandler.dump_traceback_later(60, repeat=True, file=sys.stderr)
-    raise SystemExit(main())
+    try:
+        exit_code = main()
+    except KeyboardInterrupt:
+        print(
+            "[QG] 审计被终止；已请求清理本次运行拥有的子进程。",
+            file=sys.stderr,
+            flush=True,
+        )
+        exit_code = 143
+    print(
+        f"[QG] command finished rc={exit_code}; runtime cleanup complete.",
+        file=sys.stderr,
+        flush=True,
+    )
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(int(exit_code))

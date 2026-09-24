@@ -60,7 +60,9 @@ PATCH_CALLS = frozenset(
         "unittest.mock.patch.object",
     }
 )
-REFLECTION_SUBSCRIPT_NAMES = frozenset({"delattr", "getattr", "hasattr", "setattr", "vars"})
+REFLECTION_SUBSCRIPT_NAMES = frozenset(
+    {"delattr", "getattr", "hasattr", "setattr", "vars"}
+)
 REFLECTION_CALLABLE_KEYWORDS = frozenset(
     {"callback", "factory", "func", "function", "handler", "key", "target"}
 )
@@ -84,7 +86,9 @@ def _reflection_aliases(
         (target.id, assignment.value)
         for assignment in assignments
         for target in (
-            assignment.targets if isinstance(assignment, ast.Assign) else [assignment.target]
+            assignment.targets
+            if isinstance(assignment, ast.Assign)
+            else [assignment.target]
         )
         if isinstance(target, ast.Name)
     ]
@@ -115,7 +119,9 @@ def _reflection_aliases(
             source = dotted_name(assignment.value)
             root, separator, suffix = source.partition(".")
             imported_root = parsed.facts.imports.get(root, root)
-            imported_source = f"{imported_root}.{suffix}" if separator else imported_root
+            imported_source = (
+                f"{imported_root}.{suffix}" if separator else imported_root
+            )
             resolved = alias_lookup.get(source, imported_source)
             if (
                 resolved not in REFLECTION_CALLS
@@ -123,10 +129,15 @@ def _reflection_aliases(
             ):
                 continue
             targets = (
-                assignment.targets if isinstance(assignment, ast.Assign) else [assignment.target]
+                assignment.targets
+                if isinstance(assignment, ast.Assign)
+                else [assignment.target]
             )
             for target in targets:
-                if isinstance(target, ast.Name) and alias_lookup.get(target.id) != resolved:
+                if (
+                    isinstance(target, ast.Name)
+                    and alias_lookup.get(target.id) != resolved
+                ):
                     alias_lookup[target.id] = resolved
                     changed = True
     return alias_lookup, constant_lookup
@@ -149,7 +160,9 @@ def _reflection_bindings(
         imported_root = parsed.facts.imports.get(root, root)
         imported_target = f"{imported_root}.{suffix}" if separator else imported_root
         resolved = alias_lookup.get(raw, imported_target)
-        call_attribute = value.func.attr if isinstance(value.func, ast.Attribute) else ""
+        call_attribute = (
+            value.func.attr if isinstance(value.func, ast.Attribute) else ""
+        )
         if (
             resolved not in REFLECTION_CALLS
             and resolved.rsplit(".", 1)[-1] not in REFLECTION_DUNDER_CALLS
@@ -157,11 +170,17 @@ def _reflection_bindings(
         ):
             continue
         scope: ast.AST | None = assignment
-        while scope in parents and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        while scope in parents and not isinstance(
+            scope, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
             scope = parents[scope]
         if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
             scope = None
-        targets = assignment.targets if isinstance(assignment, ast.Assign) else [assignment.target]
+        targets = (
+            assignment.targets
+            if isinstance(assignment, ast.Assign)
+            else [assignment.target]
+        )
         for target in targets:
             binding = dotted_name(target)
             if binding:
@@ -169,7 +188,9 @@ def _reflection_bindings(
     return bindings
 
 
-def _reflection_member_name(node: ast.AST | None, constant_lookup: dict[str, str]) -> str:
+def _reflection_member_name(
+    node: ast.AST | None, constant_lookup: dict[str, str]
+) -> str:
     """静态还原反射成员名，覆盖常量、拼接、f-string、format 与 join。"""
     result = ""
     match node:
@@ -191,7 +212,9 @@ def _reflection_member_name(node: ast.AST | None, constant_lookup: dict[str, str
                 for item in parts
             ]
             result = (
-                "".join(values) if all(isinstance(item, str) and item for item in values) else ""
+                "".join(values)
+                if all(isinstance(item, str) and item for item in values)
+                else ""
             )
         case ast.Call(
             func=ast.Attribute(value=base_node, attr="join"),
@@ -211,7 +234,9 @@ def _reflection_member_name(node: ast.AST | None, constant_lookup: dict[str, str
             fields = list(re.finditer(r"\{(\d*)\}", base))
             raw_indexes = [match.group(1) for match in fields]
             indexes = [
-                int(raw) if raw else sum(not previous for previous in raw_indexes[:position])
+                int(raw)
+                if raw
+                else sum(not previous for previous in raw_indexes[:position])
                 for position, raw in enumerate(raw_indexes)
             ]
             valid_template = bool(fields) and "{" not in re.sub(r"\{\d*\}", "", base)
@@ -237,7 +262,9 @@ def _fixed_contract_names(
     """收集显式类型、固定构造实例、导入对象和本模块类名称。"""
     module_fixed_names = set(parsed.facts.imports)
     module_fixed_names.update(
-        statement.name for statement in parsed.tree.body if isinstance(statement, ast.ClassDef)
+        statement.name
+        for statement in parsed.tree.body
+        if isinstance(statement, ast.ClassDef)
     )
     fixed_names_by_scope: dict[int, frozenset[str]] = {
         id(parsed.tree): frozenset(module_fixed_names)
@@ -256,9 +283,15 @@ def _fixed_contract_names(
             )
             if argument.annotation is not None
         }
-        if function.args.vararg is not None and function.args.vararg.annotation is not None:
+        if (
+            function.args.vararg is not None
+            and function.args.vararg.annotation is not None
+        ):
             fixed_names.add(function.args.vararg.arg)
-        if function.args.kwarg is not None and function.args.kwarg.annotation is not None:
+        if (
+            function.args.kwarg is not None
+            and function.args.kwarg.annotation is not None
+        ):
             fixed_names.add(function.args.kwarg.arg)
         ancestor: ast.AST | None = function
         while ancestor in parents:
@@ -267,16 +300,26 @@ def _fixed_contract_names(
                 fixed_names.update({"self", "cls"})
                 break
         for candidate in direct_body_nodes(function):
-            if isinstance(candidate, ast.AnnAssign) and isinstance(candidate.target, ast.Name):
+            if isinstance(candidate, ast.AnnAssign) and isinstance(
+                candidate.target, ast.Name
+            ):
                 fixed_names.add(candidate.target.id)
-            elif isinstance(candidate, ast.Assign) and isinstance(candidate.value, ast.Call):
+            elif isinstance(candidate, ast.Assign) and isinstance(
+                candidate.value, ast.Call
+            ):
                 constructor = dotted_name(candidate.value.func)
                 constructor_leaf = constructor.rsplit(".", 1)[-1]
-                is_cast = constructor in {"cast", "typing.cast"} and bool(candidate.value.args)
-                if not constructor_leaf or not (constructor_leaf[:1].isupper() or is_cast):
+                is_cast = constructor in {"cast", "typing.cast"} and bool(
+                    candidate.value.args
+                )
+                if not constructor_leaf or not (
+                    constructor_leaf[:1].isupper() or is_cast
+                ):
                     continue
                 fixed_names.update(
-                    target.id for target in candidate.targets if isinstance(target, ast.Name)
+                    target.id
+                    for target in candidate.targets
+                    if isinstance(target, ast.Name)
                 )
         fixed_names_by_scope[id(function)] = frozenset(fixed_names)
     return fixed_names_by_scope, frozenset(module_fixed_names)
@@ -285,7 +328,9 @@ def _fixed_contract_names(
 def _reflection_context(
     parsed: ParsedModule,
     parents: dict[ast.AST, ast.AST],
-) -> tuple[dict[str, str], set[int], dict[str, str], dict[int, frozenset[str]], frozenset[str]]:
+) -> tuple[
+    dict[str, str], set[int], dict[str, str], dict[int, frozenset[str]], frozenset[str]
+]:
     """收集反射别名、调用传播、静态字符串和可确认契约名称。"""
     assignments = [
         node
@@ -302,7 +347,9 @@ def _reflection_context(
             if source not in bindings:
                 continue
             targets = (
-                assignment.targets if isinstance(assignment, ast.Assign) else [assignment.target]
+                assignment.targets
+                if isinstance(assignment, ast.Assign)
+                else [assignment.target]
             )
             for target in targets:
                 binding = dotted_name(target)
@@ -349,7 +396,11 @@ def _reflection_context(
         ):
             origins = bindings[binding]
             owner_origins = {
-                owner: [origin for candidate_owner, origin in origins if candidate_owner is owner]
+                owner: [
+                    origin
+                    for candidate_owner, origin in origins
+                    if candidate_owner is owner
+                ]
                 for owner in (*scope_chain, None)
             }
             visible_owner = next(
@@ -403,7 +454,9 @@ def _reflection_call_facts(
     if call_attribute in REFLECTION_DUNDER_CALLS and not canonical_target:
         canonical_target = call_attribute
     if call_attribute in REFLECTION_DUNDER_CALLS:
-        bound_receiver = node.func.value if isinstance(node.func, ast.Attribute) else None
+        bound_receiver = (
+            node.func.value if isinstance(node.func, ast.Attribute) else None
+        )
         if (
             dotted_name(bound_receiver) in {"object", "type"}
             and len(node.args) >= MIN_UNBOUND_DUNDER_ATTRIBUTE_ARGS
@@ -426,7 +479,9 @@ def _reflection_call_facts(
         or canonical_target.rsplit(".", 1)[-1] in REFLECTION_DUNDER_CALLS
         or call_attribute in REFLECTION_DUNDER_CALLS
     )
-    invoked = id(node) in invoked_reflections or canonical_target == "operator.methodcaller"
+    invoked = (
+        id(node) in invoked_reflections or canonical_target == "operator.methodcaller"
+    )
     receiver = dotted_name(receiver_node) if receiver_node is not None else ""
     return (
         canonical_target,
@@ -450,7 +505,9 @@ def _module_constant_findings(parsed: ParsedModule) -> list[Finding]:
         else:
             assignments = []
         for target, value in assignments:
-            if not isinstance(target, ast.Name) or UPPERCASE_CONSTANT_PATTERN.match(target.id):
+            if not isinstance(target, ast.Name) or UPPERCASE_CONSTANT_PATTERN.match(
+                target.id
+            ):
                 continue
             if target.id.startswith("__") and target.id.endswith("__"):
                 continue
@@ -475,7 +532,9 @@ def _module_constant_findings(parsed: ParsedModule) -> list[Finding]:
                     "QG150",
                     f"模块级常量 `{target.id}` 应使用全大写命名。",
                     symbol=(
-                        f"{parsed.facts.module}.{target.id}" if parsed.facts.module else target.id
+                        f"{parsed.facts.module}.{target.id}"
+                        if parsed.facts.module
+                        else target.id
                     ),
                     severity="warning",
                     confidence="high",
@@ -589,7 +648,9 @@ def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
     production_module = not is_test_path(parsed.facts.path)
     for node in parsed.nodes:
         if production_module:
-            findings.extend(_runtime_contract_patch_findings(parsed, node, patch_owners))
+            findings.extend(
+                _runtime_contract_patch_findings(parsed, node, patch_owners)
+            )
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             findings.extend(check_private_import(parsed, node))
         elif isinstance(node, ast.Attribute):
@@ -614,7 +675,9 @@ def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
     return findings
 
 
-def check_private_import(parsed: ParsedModule, node: ast.Import | ast.ImportFrom) -> list[Finding]:
+def check_private_import(
+    parsed: ParsedModule, node: ast.Import | ast.ImportFrom
+) -> list[Finding]:
     """检查导入语句是否跨模块依赖单下划线 private 符号。
 
     Args:
@@ -627,17 +690,22 @@ def check_private_import(parsed: ParsedModule, node: ast.Import | ast.ImportFrom
     findings: list[Finding] = []
     for alias in node.names:
         local_name = alias.asname or alias.name.split(".", 1)[0]
-        public_reexport = parsed.facts.path.name == "__init__.py" and not single_private_name(
-            local_name
+        public_reexport = (
+            parsed.facts.path.name == "__init__.py"
+            and not single_private_name(local_name)
         )
         if public_reexport:
             continue
         private_parts = []
         if isinstance(node, ast.ImportFrom):
             private_parts.extend(
-                part for part in (node.module or "").split(".") if single_private_name(part)
+                part
+                for part in (node.module or "").split(".")
+                if single_private_name(part)
             )
-        private_parts.extend(part for part in alias.name.split(".") if single_private_name(part))
+        private_parts.extend(
+            part for part in alias.name.split(".") if single_private_name(part)
+        )
         if not private_parts:
             continue
         test_context = is_test_path(parsed.facts.path)
@@ -714,7 +782,9 @@ def check_private_attribute_access(
         )
     if not single_private_name(node.attr):
         return None
-    allowed = receiver in {"self", "cls"} or bool(current_class and receiver == current_class)
+    allowed = receiver in {"self", "cls"} or bool(
+        current_class and receiver == current_class
+    )
     if allowed:
         return None
     return make_finding(
@@ -767,7 +837,9 @@ def _is_frozen_dataclass_init_assignment(
     owner: ast.ClassDef | None = None
     while current in parents:
         current = parents[current]
-        if function is None and isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if function is None and isinstance(
+            current, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
             function = current
             continue
         if function is not None and isinstance(current, ast.ClassDef):
@@ -814,7 +886,9 @@ def check_dynamic_private_access(
     Returns:
         命中生产反射或 tests 动态 private 访问时返回 Finding，否则返回 None。
     """
-    facts = _reflection_call_facts(parsed, node, alias_lookup, invoked_reflections, constant_lookup)
+    facts = _reflection_call_facts(
+        parsed, node, alias_lookup, invoked_reflections, constant_lookup
+    )
     if facts is None:
         return None
     (
@@ -878,7 +952,10 @@ def check_dynamic_private_access(
         and (
             receiver_root in patch_owners
             or receiver.endswith(".__class__")
-            or (isinstance(receiver_node, ast.Call) and dotted_name(receiver_node.func) == "type")
+            or (
+                isinstance(receiver_node, ast.Call)
+                and dotted_name(receiver_node.func) == "type"
+            )
         )
     )
     critical = private_member or broad_reflection or invoked
@@ -890,14 +967,20 @@ def check_dynamic_private_access(
             f"生产代码通过反射访问 private 成员 `{receiver}.{member_name}`。",
         ),
         (invoked, "QG183", f"生产代码通过 `{target}` 动态取得并调用成员。"),
-        (broad_reflection, "QG183", f"生产代码使用 `{target}` 枚举或绕过静态成员契约。"),
+        (
+            broad_reflection,
+            "QG183",
+            f"生产代码使用 `{target}` 枚举或绕过静态成员契约。",
+        ),
         (
             statically_typed,
             "QG184",
             f"生产代码对静态契约对象使用 `{target}` 动态探测或修改成员。",
         ),
     )
-    selected = next(((code, message) for enabled, code, message in variants if enabled), None)
+    selected = next(
+        ((code, message) for enabled, code, message in variants if enabled), None
+    )
     if selected is None:
         return None
     code, message = selected
@@ -941,5 +1024,9 @@ def single_private_name(name: str) -> bool:
     Returns:
         名称以单下划线开头且不是 dunder 协议名时返回 True。
     """
-    dunder = len(name) >= MIN_DUNDER_NAME_LENGTH and name.startswith("__") and name.endswith("__")
+    dunder = (
+        len(name) >= MIN_DUNDER_NAME_LENGTH
+        and name.startswith("__")
+        and name.endswith("__")
+    )
     return name.startswith("_") and not dunder

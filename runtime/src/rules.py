@@ -34,7 +34,9 @@ class RuleEvaluator:
         """
         self.config = config
 
-    def evaluate(self, definitions: list[Definition], facts: list[ModuleFacts]) -> list[Finding]:
+    def evaluate(
+        self, definitions: list[Definition], facts: list[ModuleFacts]
+    ) -> list[Finding]:
         """
         执行全部定义级、模块级与仓库级规则。
 
@@ -73,7 +75,8 @@ class RuleEvaluator:
         if not self.config.require_docstrings:
             return []
         if any(
-            decorator.rsplit(".", 1)[-1] in {"property", "cached_property", "setter", "deleter"}
+            decorator.rsplit(".", 1)[-1]
+            in {"property", "cached_property", "setter", "deleter"}
             for decorator in definition.decorators
         ):
             return []
@@ -178,7 +181,9 @@ class RuleEvaluator:
         }
         findings: list[Finding] = []
         documented = set(definition.documented_parameters)
-        missing_parameters = [name for name in definition.parameter_names if name not in documented]
+        missing_parameters = [
+            name for name in definition.parameter_names if name not in documented
+        ]
         if missing_parameters:
             findings.append(
                 Finding(
@@ -225,7 +230,9 @@ class RuleEvaluator:
         """
         eligible = (
             definition.name not in self.config.ignored_names
-            and not (definition.name.startswith("__") and definition.name.endswith("__"))
+            and not (
+                definition.name.startswith("__") and definition.name.endswith("__")
+            )
             and definition.lines < self.config.short_max_lines
             and definition.calls <= self.config.low_use_max_calls
         )
@@ -363,7 +370,8 @@ class RuleEvaluator:
             and not target_leaf.startswith("__")
         )
         property_facade = any(
-            decorator.rsplit(".", 1)[-1] in {"property", "cached_property", "setter", "deleter"}
+            decorator.rsplit(".", 1)[-1]
+            in {"property", "cached_property", "setter", "deleter"}
             for decorator in definition.decorators
         )
         node_visitor_hook = (
@@ -372,7 +380,9 @@ class RuleEvaluator:
             and definition.externally_invoked
             and any(base.endswith("NodeVisitor") for base in definition.bases)
         )
-        critical_facade = private_facade and not property_facade and not node_visitor_hook
+        critical_facade = (
+            private_facade and not property_facade and not node_visitor_hook
+        )
         report_wrapper = (
             definition.wrapper_target
             and not property_facade
@@ -548,7 +558,10 @@ class RuleEvaluator:
             for token in tokenize.generate_tokens(StringIO(item.source).readline):
                 if token.type != tokenize.COMMENT:
                     continue
-                if "# noqa" not in token.string and "# type: ignore" not in token.string:
+                if (
+                    "# noqa" not in token.string
+                    and "# type: ignore" not in token.string
+                ):
                     continue
                 findings.append(
                     Finding(
@@ -624,7 +637,9 @@ class RuleEvaluator:
             private_callable = (
                 definition.kind in {"function", "method"}
                 and definition.name.startswith("_")
-                and not (definition.name.startswith("__") and definition.name.endswith("__"))
+                and not (
+                    definition.name.startswith("__") and definition.name.endswith("__")
+                )
             )
             if not private_callable or definition.externally_invoked:
                 continue

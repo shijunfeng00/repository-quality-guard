@@ -147,7 +147,16 @@ _PROFILE_MANIFEST_DEFAULTS: Mapping[str, Any] = MappingProxyType(
 )
 
 
-def _validate_rule_code(code: str, *, custom: bool = False) -> str:
+def validate_rule_code(code: str, custom: bool = False) -> str:
+    """Validate and normalize one Repository Quality Guard rule code.
+
+    Args:
+        code: Candidate rule code such as ``QG149``.
+        custom: Require the dedicated custom-Profile numeric range.
+
+    Returns:
+        Uppercase validated rule code.
+    """
     normalized = str(code).strip().upper()
     match = _RULE_CODE_RE.fullmatch(normalized)
     if match is None:
@@ -171,11 +180,17 @@ def _string_sequence(value: Any) -> tuple[str, ...]:
 
 def _prepare_profile_manifest(
     manifest: Mapping[str, Any] | None,
+    default_name: str = "",
+    default_version: str = "1",
+    default_agents_file: str = "",
 ) -> Mapping[str, Any]:
     """Complete optional JSON Profile fields once at the input boundary.
 
     Args:
         manifest: Parsed ``profile.json`` mapping, or None for a generic Profile.
+        default_name: Class-level name used only by direct authoring construction.
+        default_version: Class-level version used only by direct authoring construction.
+        default_agents_file: Class-level AGENTS path used only by direct authoring construction.
 
     Returns:
         Read-only manifest whose optional policy fields are always present.
@@ -184,7 +199,13 @@ def _prepare_profile_manifest(
         ValueError: A structured field has an incompatible JSON type.
     """
     raw = dict(manifest or {})
-    normalized: dict[str, Any] = dict(_PROFILE_MANIFEST_DEFAULTS)
+    normalized: dict[str, Any] = {
+        **_PROFILE_MANIFEST_DEFAULTS,
+        "name": default_name,
+        "version": default_version,
+        "agents_file": default_agents_file,
+        "entrypoint": None,
+    }
     normalized.update(raw)
 
     rules = normalized["rules"]
@@ -203,8 +224,15 @@ def _prepare_profile_manifest(
     return MappingProxyType(normalized)
 
 
-def _profile_lock_codes(source: str) -> Mapping[str, str]:
-    """Read immutable rule-key -> code assignments without mutating the Profile."""
+def profile_lock_codes(source: str) -> Mapping[str, str]:
+    """Read immutable custom-rule assignments from one Profile lock.
+
+    Args:
+        source: Profile directory containing ``PROFILE.lock``.
+
+    Returns:
+        Read-only rule-key to stable QG-code mapping; empty when no lock exists.
+    """
     from pathlib import Path
 
     if not source:
@@ -213,20 +241,25 @@ def _profile_lock_codes(source: str) -> Mapping[str, str]:
     if not path.is_file():
         return MappingProxyType({})
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema") != PROFILE_LOCK_SCHEMA:
-        raise ValueError(f"unsupported PROFILE.lock schema: {payload.get('schema')!r}")
-    raw = payload.get("rule_codes") or {}
+    schema = payload["schema"]
+    if schema != PROFILE_LOCK_SCHEMA:
+        raise ValueError(f"unsupported PROFILE.lock schema: {schema!r}")
+    raw = payload["rule_codes"]
     if not isinstance(raw, dict):
         raise ValueError("PROFILE.lock rule_codes must be an object")
     result: dict[str, str] = {}
     for key, code in raw.items():
-        result[str(key)] = _validate_rule_code(str(code), custom=True)
+        result[str(key)] = validate_rule_code(str(code), custom=True)
     return MappingProxyType(result)
 
 
 @dataclass(slots=True, frozen=True)
 class RuleContext:
-    """只读暴露给 Profile 自定义规则的仓库事实视图。"""
+    """Read-only repository context exposed to custom Profile rules.
+
+    The context owns no mutation path and exposes only the normalized Guard
+    configuration plus immutable analysis snapshots needed by rule evaluation.
+    """
 
     root: Any
     config: GuardConfig
@@ -237,26 +270,46 @@ class RuleContext:
     staged: bool = False
 
     def source(self, path: str) -> str:
-        """返回统一分析快照中的源码；不存在时抛出 KeyError。"""
+        """Return source text from the unified analysis snapshot.
+
+        Args:
+            path: Repository-relative source path.
+
+        Returns:
+            Source text for the requested analysis unit.
+
+        Raises:
+            KeyError: The path is not present in the current analysis snapshot.
+        """
         unit = self.analysis.unit(path) if self.analysis is not None else None
         if unit is None:
             raise KeyError(path)
         return unit.source
 
     def python_ast(self, path: str) -> Any:
-        """返回统一分析快照中的 Python AST；不存在时返回 None。"""
+        """Return the parsed Python AST for one analysis unit.
+
+        Args:
+            path: Repository-relative Python source path.
+
+        Returns:
+            Parsed AST when available, otherwise None for absent or non-Python units.
+        """
         unit = self.analysis.unit(path) if self.analysis is not None else None
         return unit.tree if unit is not None else None
 
     @property
     def settings(self) -> Mapping[str, Any]:
         """返回 Profile settings 的只读映射。"""
-        raw = getattr(self.config, "profile_settings", {}) or {}
-        return MappingProxyType(dict(raw))
+        return MappingProxyType(dict(self.config.profile_settings))
 
 
 class QualityRule(ABC):
-    """Profile 可追加的标准质量规则接口。"""
+    """Base contract for custom quality rules supplied by a Profile.
+
+    Subclasses declare stable metadata and implement ``evaluate`` against the
+    read-only ``RuleContext`` without mutating repository or Guard state.
+    """
 
     key: str = ""
     code: str | None = None
@@ -268,29 +321,61 @@ class QualityRule(ABC):
 
     @abstractmethod
     def evaluate(self, ctx: RuleContext) -> Iterable[Finding]:
-        """基于只读 RuleContext 产出标准 Finding。"""
+        """Evaluate one custom rule against repository facts.
+
+        Args:
+            ctx: Read-only repository and configuration context.
+
+        Returns:
+            Iterable of normalized ``Finding`` objects.
+        """
         raise NotImplementedError
 
 
 class SearchStrategy(ABC):
-    """Profile 对默认接口检索结果进行可选重排的扩展点。"""
+    """Optional Profile extension for deterministic API-search reranking.
 
-    def rerank(self, query: str, rows: Sequence[Any], *, root: Any) -> Sequence[Any]:
-        """默认保持 BM25 结果顺序。"""
+    Strategies receive the Core BM25 result set and may reorder it without
+    owning catalog construction, persistence, or command exit semantics.
+    """
+
+    def rerank(self, query: str, rows: Sequence[Any], root: Any) -> Sequence[Any]:
+        """Return the search rows in the desired deterministic order.
+
+        Args:
+            query: User search query.
+            rows: Core BM25 result rows.
+            root: Repository root used by project-specific ranking evidence.
+
+        Returns:
+            Reordered result sequence; the default implementation preserves order.
+        """
         return rows
 
 
 class ReportExtension(ABC):
-    """Profile 可选报告扩展接口；不得控制进程退出码或 release seal。"""
+    """Optional Profile-owned report metadata extension.
+
+    Extensions may add stable metadata only; they never control process exit
+    status, release integrity, report schema, or verification authority.
+    """
 
     def metadata(self) -> Mapping[str, str]:
-        """返回可附加到报告元数据的稳定键值。"""
+        """Return stable metadata to append to an audit report.
+
+        Returns:
+            Read-only-compatible string mapping; empty by default.
+        """
         return {}
 
 
 @dataclass(slots=True, frozen=True)
 class ProjectProfile:
-    """QualityGuardProfile configure 后冻结的运行策略快照。"""
+    """Frozen runtime policy produced from one configured authoring Profile.
+
+    The dataclass contains normalized immutable tuples/mappings consumed by the
+    scanning Core, separating authoring mutation from runtime policy reads.
+    """
 
     name: str
     version: str = ""
@@ -327,25 +412,51 @@ class ProjectProfile:
 
 
 class RulePack(ABC):
-    """Composable OOP rule pack; avoids Profile multiple inheritance and reflection."""
+    """Composable rule bundle for explicit Profile registration.
+
+    Rule packs centralize related policy registration without Profile multiple
+    inheritance, runtime reflection, or hidden global side effects.
+    """
 
     @abstractmethod
     def register(self, profile: "QualityGuardProfile") -> None:
-        """Register rules/capabilities against one explicit Profile instance."""
+        """Register this bundle against one explicit Profile instance.
+
+        Args:
+            profile: Mutable authoring Profile receiving the bundle declarations.
+
+        Returns:
+            None after registration completes.
+        """
         raise NotImplementedError
 
 
 class QualityGuardProfile:
-    """公开的 OOP Profile 基类；子类只在 configure() 中注册策略。"""
+    """Authoring base class for explicit repository quality policy.
+
+    Subclasses extend ``configure`` to register rules and capabilities; ``build``
+    freezes that mutable authoring state into one immutable ``ProjectProfile``.
+    """
 
     name = ""
     version = "1"
     agents_file = ""
 
     def __init__(
-        self, *, manifest: Mapping[str, Any] | None = None, source: str = ""
+        self, manifest: Mapping[str, Any] | None = None, source: str = ""
     ) -> None:
-        self.manifest = _prepare_profile_manifest(manifest)
+        """Initialize one mutable Profile authoring instance.
+
+        Args:
+            manifest: Parsed declarative Profile manifest, or None for generic policy.
+            source: Filesystem directory used for Profile lock and authoring assets.
+
+        Returns:
+            None after initializing empty registration state.
+        """
+        self.manifest = _prepare_profile_manifest(
+            manifest, self.name, self.version, self.agents_file
+        )
         self.source = source
         self.settings: dict[str, Any] = dict(self.manifest["settings"])
         self._configured = False
@@ -378,36 +489,71 @@ class QualityGuardProfile:
         self.semantic_authorization_path = ""
 
     def configure(self) -> None:
-        """Apply normalized declarative policy; subclasses extend via ``super()``."""
+        """Apply normalized declarative policy to this authoring instance.
+
+        Returns:
+            None after rules, capabilities, and nonblocking paths are registered.
+        """
         rules = self.manifest["rules"]
         for code in _string_sequence(rules["disable"]):
             self.disable_rule(code)
         for code, level in rules["levels"].items():
             self.set_rule_level(str(code), str(level))
 
-        self.add_capability(*_string_sequence(self.manifest["capabilities"]))
-        self.add_nonblocking_path(*_string_sequence(self.manifest["nonblocking_paths"]))
+        self.add_capability(_string_sequence(self.manifest["capabilities"]))
+        self.add_nonblocking_path(_string_sequence(self.manifest["nonblocking_paths"]))
         self._test_baseline_passthrough_paths.extend(
             _string_sequence(self.manifest["test_baseline_passthrough_paths"])
         )
 
-    def add_values(self, field: str, *values: Any) -> None:
-        """向兼容 contract/config 字段追加值。"""
+    def add_values(self, field: str, values: Iterable[Any]) -> None:
+        """Append values to one explicit legacy-compatible contract field.
+
+        Args:
+            field: Supported normalized policy field name.
+            values: Values to append in registration order.
+
+        Returns:
+            None after extending the selected field.
+        """
         if field not in self._legacy:
             raise ValueError(f"unknown profile field: {field}")
         self._legacy[field].extend(values)
 
     def add_rule(self, rule: type[QualityRule]) -> None:
-        """注册自定义规则类。"""
+        """Register one custom quality rule class.
+
+        Args:
+            rule: ``QualityRule`` subclass to append to this Profile.
+
+        Returns:
+            None after the rule is registered.
+        """
         if not isinstance(rule, type) or not issubclass(rule, QualityRule):
             raise TypeError("profile rule must subclass QualityRule")
         if not rule.key:
             raise ValueError("profile rule key must be non-empty")
         self._custom_rules.append(rule)
 
+    @property
+    def custom_rules(self) -> tuple[type[QualityRule], ...]:
+        """Return the configured custom rule classes as an immutable tuple.
+
+        Returns:
+            Custom rule classes in registration order.
+        """
+        return tuple(self._custom_rules)
+
     def disable_rule(self, code: str) -> None:
-        """声明该 Profile 不适用的可抑制规则；信任边界规则不可关闭。"""
-        normalized = _validate_rule_code(code)
+        """Disable one suppressible rule for this Profile.
+
+        Args:
+            code: QG rule code to disable.
+
+        Returns:
+            None after recording the normalized rule code.
+        """
+        normalized = validate_rule_code(code)
         if normalized.startswith(UNSUPPRESSIBLE_RULE_PREFIXES):
             raise ValueError(
                 f"rule {normalized} is part of the guard trust boundary and cannot be disabled"
@@ -428,7 +574,7 @@ class QualityGuardProfile:
         Returns:
             None。
         """
-        normalized = _validate_rule_code(code)
+        normalized = validate_rule_code(code)
         normalized_level = str(level).strip().lower()
         if normalized_level not in RULE_LEVELS:
             allowed = ", ".join(sorted(item.upper() for item in RULE_LEVELS))
@@ -441,22 +587,50 @@ class QualityGuardProfile:
             )
         self._rule_levels[normalized] = normalized_level
 
-    def add_capability(self, *names: str) -> None:
-        """启用由通用 Core 实现、Profile 选择的能力。"""
+    def add_capability(self, names: Iterable[str]) -> None:
+        """Enable Core capabilities selected by this Profile.
+
+        Args:
+            names: Capability identifiers to append.
+
+        Returns:
+            None after registration.
+        """
         self._capabilities.extend(str(name) for name in names if str(name))
 
-    def add_nonblocking_path(self, *patterns: str) -> None:
-        """声明完整扫描但不进入生产硬门槛的路径 glob。"""
+    def add_nonblocking_path(self, patterns: Iterable[str]) -> None:
+        """Register fully scanned paths excluded from the production hard gate.
+
+        Args:
+            patterns: Repository-relative glob patterns.
+
+        Returns:
+            None after registration.
+        """
         self._nonblocking_paths.extend(str(item) for item in patterns if str(item))
 
     def set_search_strategy(self, strategy: type[SearchStrategy]) -> None:
-        """设置可选检索重排策略。"""
+        """Set the optional API-search reranking strategy.
+
+        Args:
+            strategy: ``SearchStrategy`` subclass owned by the Profile.
+
+        Returns:
+            None after replacing the optional strategy.
+        """
         if not isinstance(strategy, type) or not issubclass(strategy, SearchStrategy):
             raise TypeError("search strategy must subclass SearchStrategy")
         self._search_strategy = strategy
 
     def add_report_extension(self, extension: type[ReportExtension]) -> None:
-        """注册报告扩展。"""
+        """Register one report metadata extension.
+
+        Args:
+            extension: ``ReportExtension`` subclass to instantiate at report time.
+
+        Returns:
+            None after registration.
+        """
         if not isinstance(extension, type) or not issubclass(
             extension, ReportExtension
         ):
@@ -464,38 +638,53 @@ class QualityGuardProfile:
         self._report_extensions.append(extension)
 
     def include(self, rule_pack: RulePack) -> None:
-        """组合一个显式 RulePack，而不是依赖 Profile 多重继承或动态反射。"""
+        """Register one explicit composable rule pack.
+
+        Args:
+            rule_pack: Rule pack that will register against this Profile instance.
+
+        Returns:
+            None after the pack has registered its policy.
+        """
         if not isinstance(rule_pack, RulePack):
             raise TypeError("rule pack must subclass RulePack")
         rule_pack.register(self)
 
-    def _configure_once(self) -> None:
+    def configure_once(self) -> None:
+        """Run Profile configuration at most once for this instance.
+
+        Returns:
+            None after the first configuration, or immediately when already configured.
+        """
         if self._configured:
             return
         self.configure()
         self._configured = True
 
     def build(self) -> ProjectProfile:
-        """执行 configure 并冻结为供 Core 使用的策略快照。"""
-        self._configure_once()
-        configured_name = str(self.manifest.get("name") or self.name).strip()
+        """Freeze configured authoring state into a runtime policy snapshot.
+
+        Returns:
+            Immutable ``ProjectProfile`` consumed by the scanning Core.
+        """
+        self.configure_once()
+        configured_name = str(self.manifest["name"]).strip()
         if not configured_name:
             raise ValueError("profile name must be non-empty")
-        version = str(self.manifest.get("version") or self.version or "")
-        agents_file = str(self.manifest.get("agents_file") or self.agents_file or "")
-        locked_codes = dict(_profile_lock_codes(self.source))
+        version = str(self.manifest["version"])
+        agents_file = str(self.manifest["agents_file"])
+        locked_codes = dict(profile_lock_codes(self.source))
         resolved_codes: dict[str, str] = {}
         seen_codes: set[str] = set()
         for rule_cls in self._custom_rules:
-            code = (
-                _validate_rule_code(rule_cls.code, custom=True)
-                if rule_cls.code
-                else locked_codes.get(rule_cls.key)
-            )
-            if not code:
-                raise ValueError(
-                    f"custom rule {rule_cls.key!r} has no code; run the Profile authoring lock builder first"
-                )
+            if rule_cls.code:
+                code = validate_rule_code(rule_cls.code, custom=True)
+            else:
+                if rule_cls.key not in locked_codes:
+                    raise ValueError(
+                        f"custom rule {rule_cls.key!r} has no code; run the Profile authoring lock builder first"
+                    )
+                code = locked_codes[rule_cls.key]
             if code in seen_codes:
                 raise ValueError(f"duplicate custom rule code in Profile: {code}")
             seen_codes.add(code)
@@ -550,23 +739,21 @@ class QualityGuardProfile:
 
 
 def _release_root() -> Any:
+    """Return the repository root containing this runtime package."""
     from pathlib import Path
 
     return Path(__file__).resolve().parents[2]
 
 
-def _profile_dir(reference: str, *, release_root: Any | None = None) -> Any:
-    from pathlib import Path
+def available_profile_names(release_root: Any | None = None) -> tuple[str, ...]:
+    """List Profiles physically available in the portable release.
 
-    root = Path(release_root or _release_root())
-    candidate = Path(reference).expanduser()
-    if candidate.is_dir():
-        return candidate.resolve()
-    return (root / "profiles" / reference).resolve()
+    Args:
+        release_root: Optional release root override.
 
-
-def available_profile_names(*, release_root: Any | None = None) -> tuple[str, ...]:
-    """列出当前 Portable release 内实际存在的 Profile 名称。"""
+    Returns:
+        Sorted tuple of available Profile directory names.
+    """
     from pathlib import Path
 
     root = Path(release_root or _release_root()) / "profiles"
@@ -597,36 +784,19 @@ def _clear_profile_bytecode_cache(module_path: Any) -> None:
         pass
 
 
-def load_quality_profile(
-    reference: str | None, *, release_root: Any | None = None
-) -> QualityGuardProfile | None:
-    """从名字或显式目录加载 Profile。
+def _load_profile_extension(
+    directory: Any, entrypoint: str, manifest: Mapping[str, Any]
+) -> QualityGuardProfile:
+    """Load and validate one executable Profile extension module.
 
-    ``profile.json`` 是声明式策略的唯一真相源；只有需要自定义 AST 规则、
-    contract 或搜索扩展时才提供 ``entrypoint``。纯规则等级/开关 Profile
-    不需要 Python extension。
+    Args:
+        directory: Profile directory containing the entrypoint module.
+        entrypoint: Validated relative Python module filename.
+        manifest: Normalized declarative Profile manifest.
+
+    Returns:
+        Configured authoring Profile exported by the extension module.
     """
-    if not reference:
-        return None
-    directory = _profile_dir(reference, release_root=release_root)
-    manifest_path = directory / "profile.json"
-    if not manifest_path.is_file():
-        raise ValueError(f"profile not found: {reference}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema") not in {None, "repository-quality-guard/profile-v1"}:
-        raise ValueError(f"unsupported profile schema: {manifest.get('schema')!r}")
-
-    raw_entrypoint = manifest.get("entrypoint")
-    if raw_entrypoint is None:
-        profile = QualityGuardProfile(manifest=manifest, source=str(directory))
-        profile._configure_once()
-        return profile
-
-    entrypoint = str(raw_entrypoint).strip()
-    if not entrypoint or ":" in entrypoint:
-        raise ValueError(
-            "profile entrypoint must name one module only; the exported class is fixed as Profile"
-        )
     module_path = directory / entrypoint
     if not module_path.is_file():
         raise ValueError(f"profile entrypoint module missing: {module_path}")
@@ -648,11 +818,61 @@ def load_quality_profile(
             f"profile module must export Profile(QualityGuardProfile): {entrypoint}"
         )
     profile = profile_cls(manifest=manifest, source=str(directory))
-    profile._configure_once()
+    profile.configure_once()
     return profile
 
 
-def _release_distribution(*, release_root: Any | None = None) -> str:
+def load_quality_profile(
+    reference: str | None, release_root: Any | None = None
+) -> QualityGuardProfile | None:
+    """Load one authoring Profile from a name or explicit directory.
+
+    ``profile.json`` remains the declarative source of truth; Python entrypoints
+    are optional and only extend custom rules, contracts, or search behavior.
+
+    Args:
+        reference: Profile name/path, or None for no project Profile.
+        release_root: Optional release root override.
+
+    Returns:
+        Configured authoring Profile, or None when no reference was supplied.
+    """
+    if not reference:
+        return None
+    from pathlib import Path
+
+    root = Path(release_root or _release_root())
+    candidate = Path(reference).expanduser()
+    directory = (
+        candidate.resolve()
+        if candidate.is_dir()
+        else (root / "profiles" / reference).resolve()
+    )
+    manifest_path = directory / "profile.json"
+    if not manifest_path.is_file():
+        raise ValueError(f"profile not found: {reference}")
+    manifest = _prepare_profile_manifest(
+        json.loads(manifest_path.read_text(encoding="utf-8"))
+    )
+    schema = manifest["schema"]
+    if schema != "repository-quality-guard/profile-v1":
+        raise ValueError(f"unsupported profile schema: {schema!r}")
+
+    raw_entrypoint = manifest["entrypoint"]
+    if raw_entrypoint is None:
+        profile = QualityGuardProfile(manifest=manifest, source=str(directory))
+        profile.configure_once()
+        return profile
+
+    entrypoint = str(raw_entrypoint).strip()
+    if not entrypoint or ":" in entrypoint:
+        raise ValueError(
+            "profile entrypoint must name one module only; the exported class is fixed as Profile"
+        )
+    return _load_profile_extension(directory, entrypoint, manifest)
+
+
+def _release_distribution(release_root: Any | None = None) -> str:
     """读取当前 release 的 distribution；未知时按 Portable skill 处理。"""
     from pathlib import Path
 
@@ -665,10 +885,12 @@ def _release_distribution(*, release_root: Any | None = None) -> str:
         if "=" in line:
             key, value = line.split("=", 1)
             values[key.strip()] = value.strip()
-    return values.get("distribution", "skill")
+    if "distribution" not in values:
+        raise ValueError("runtime/RELEASE.lock is missing distribution")
+    return values["distribution"]
 
 
-def _installed_policy(*, release_root: Any | None = None) -> Mapping[str, Any]:
+def _installed_policy(release_root: Any | None = None) -> Mapping[str, Any]:
     """读取 sealed Installed Policy；安装态缺失时拒绝静默降级。"""
     from pathlib import Path
 
@@ -677,12 +899,13 @@ def _installed_policy(*, release_root: Any | None = None) -> Mapping[str, Any]:
     if not path.is_file():
         raise ValueError("sealed installation is missing installed/POLICY.json")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema") != "repository-quality-guard/installed-policy-v1":
+    if payload["schema"] != "repository-quality-guard/installed-policy-v1":
         raise ValueError("unsupported installed policy schema")
     return MappingProxyType(dict(payload))
 
 
-def _installed_profile_dir(*, release_root: Any | None = None) -> Any:
+def _installed_profile_dir(release_root: Any | None = None) -> Any:
+    """Return the sealed installed-Profile payload directory."""
     from pathlib import Path
 
     return Path(release_root or _release_root()) / "installed" / "profile"
@@ -690,7 +913,11 @@ def _installed_profile_dir(*, release_root: Any | None = None) -> Any:
 
 @dataclass(slots=True, frozen=True)
 class ProfileSelection:
-    """一次 Portable/Installed Profile 解析结果。"""
+    """Resolved Profile identity and provenance for one command invocation.
+
+    The immutable result distinguishes portable, explicit, automatic, and sealed
+    installed policy sources so callers never infer authorization from a name.
+    """
 
     reference: str | None
     name: str
@@ -701,17 +928,25 @@ class ProfileSelection:
 def resolve_profile_reference(
     root: Any,
     explicit: str | None = None,
-    *,
     release_root: Any | None = None,
 ) -> ProfileSelection:
-    """解析 Profile：Installed 仅允许选择已安装策略；Portable 支持显式/自动选择。"""
+    """Resolve the authorized Profile for one target repository.
+
+    Args:
+        root: Target repository root.
+        explicit: Optional Profile name/path explicitly selected by the caller.
+        release_root: Optional release root for installed-policy resolution.
+
+    Returns:
+        Immutable Profile selection with identity, source, and reason.
+    """
     from pathlib import Path
 
     repo_root = Path(root).resolve()
     distribution = _release_distribution(release_root=release_root)
     if distribution == "agents":
         policy = _installed_policy(release_root=release_root)
-        name = str(policy.get("profile_name") or "")
+        name = str(policy["profile_name"])
         if not name:
             if explicit:
                 raise ValueError(
@@ -819,10 +1054,18 @@ def get_project_profile(
 def apply_project_profile(
     config: GuardConfig,
     name: str | None,
-    *,
     selection_source: str = "",
 ) -> GuardConfig:
-    """把动态 Profile 策略合并到仓库 GuardConfig。"""
+    """Merge one resolved Profile into the repository Guard configuration.
+
+    Args:
+        config: Base repository configuration.
+        name: Profile reference, or None for generic policy.
+        selection_source: Provenance label produced by Profile resolution.
+
+    Returns:
+        Guard configuration with frozen project policy applied.
+    """
     profile = get_project_profile(name)
     if profile is None:
         from dataclasses import replace
@@ -834,7 +1077,3 @@ def apply_project_profile(
 
         merged = replace(merged, profile_source=selection_source)
     return merged
-
-
-# 仅为旧内部 import 提供动态快照；CLI 不再把它作为 choices 暴露给模型。
-PROJECT_PROFILE_NAMES = available_profile_names()

@@ -76,7 +76,9 @@ def _production_added_kind_counts(
         if change.change == "added" and not is_test_path(change.path, project_name)
     ]
     functions = sum(change.kind in {"function", "method"} for change in added)
-    variables = sum(change.kind in {"global_variable", "member_variable"} for change in added)
+    variables = sum(
+        change.kind in {"global_variable", "member_variable"} for change in added
+    )
     classes = sum(change.kind == "class" for change in added)
     return functions, variables, classes
 
@@ -96,7 +98,9 @@ def _test_interface_change_count(
     """
     if interface_diff is None:
         return 0
-    return sum(is_test_path(change.path, project_name) for change in interface_diff.changes)
+    return sum(
+        is_test_path(change.path, project_name) for change in interface_diff.changes
+    )
 
 
 def _append_test_audit_summary(lines: list[str], report: ScanReport) -> None:
@@ -111,8 +115,14 @@ def _append_test_audit_summary(lines: list[str], report: ScanReport) -> None:
     Returns:
         None。
     """
-    interface_changes = _test_interface_change_count(report.interface_diff, report.project_name)
-    if not report.test_files_scanned and not report.test_findings and not interface_changes:
+    interface_changes = _test_interface_change_count(
+        report.interface_diff, report.project_name
+    )
+    if (
+        not report.test_files_scanned
+        and not report.test_findings
+        and not interface_changes
+    ):
         return
     counts = _finding_counts(report.test_findings)
     lines.extend(
@@ -204,8 +214,12 @@ def _quality_dimensions(
     Returns:
         规则计数和文件计数两个映射。
     """
-    by_rule: defaultdict[str, dict[str, int]] = defaultdict(lambda: dict(_EMPTY_QUALITY_COUNTS))
-    by_file: defaultdict[str, dict[str, int]] = defaultdict(lambda: dict(_EMPTY_QUALITY_COUNTS))
+    by_rule: defaultdict[str, dict[str, int]] = defaultdict(
+        lambda: dict(_EMPTY_QUALITY_COUNTS)
+    )
+    by_file: defaultdict[str, dict[str, int]] = defaultdict(
+        lambda: dict(_EMPTY_QUALITY_COUNTS)
+    )
     for finding in findings:
         if finding.severity == "info":
             continue
@@ -280,7 +294,9 @@ def _positive_quality_deltas(report: ScanReport, limit: int = 40) -> list[str]:
         "|---|---|---:|---:|---:|",
     ]
     for _, code, severity, before, after in rule_rows[:limit]:
-        lines.append(f"| {code} | {severity.upper()} | {before} | {after} | +{after - before} |")
+        lines.append(
+            f"| {code} | {severity.upper()} | {before} | {after} | +{after - before} |"
+        )
     if len(rule_rows) > limit:
         lines.append(f"| … | … | … | … | 其余 {len(rule_rows) - limit} 项 |")
     lines.extend(
@@ -293,7 +309,9 @@ def _positive_quality_deltas(report: ScanReport, limit: int = 40) -> list[str]:
         ]
     )
     for _, path, severity, before, after in file_rows[:limit]:
-        lines.append(f"| `{path}` | {severity.upper()} | {before} | {after} | +{after - before} |")
+        lines.append(
+            f"| `{path}` | {severity.upper()} | {before} | {after} | +{after - before} |"
+        )
     if len(file_rows) > limit:
         lines.append(f"| … | … | … | … | 其余 {len(file_rows) - limit} 项 |")
     lines.append("")
@@ -313,7 +331,12 @@ def merge_findings(report: ScanReport, extra: Iterable[Finding]) -> ScanReport:
     """
     report.findings.extend(extra)
     report.findings.sort(
-        key=lambda item: (-SEVERITY_RANK[item.severity], item.path, item.line, item.code)
+        key=lambda item: (
+            -SEVERITY_RANK[item.severity],
+            item.path,
+            item.line,
+            item.code,
+        )
     )
     return report
 
@@ -377,7 +400,11 @@ def _format_parameters(parameters: tuple[InterfaceParameter, ...]) -> str:
     keyword_marker_added = False
     positional_only_count = sum(item.kind == "positional_only" for item in parameters)
     for index, parameter in enumerate(parameters):
-        if parameter.kind == "keyword_only" and not has_var_positional and not keyword_marker_added:
+        if (
+            parameter.kind == "keyword_only"
+            and not has_var_positional
+            and not keyword_marker_added
+        ):
             parts.append("*")
             keyword_marker_added = True
         parts.append(_format_parameter(parameter))
@@ -555,7 +582,12 @@ def _append_interface_review_markdown(
                     [
                         "",
                         "```json",
-                        json.dumps(finding.evidence, ensure_ascii=False, indent=2, sort_keys=True),
+                        json.dumps(
+                            finding.evidence,
+                            ensure_ascii=False,
+                            indent=2,
+                            sort_keys=True,
+                        ),
                         "```",
                         "",
                     ]
@@ -653,7 +685,9 @@ def render_summary(report: ScanReport) -> str:
             f"(error={row['error']} warning={row['warning']} info={row['info']})"
         )
     if report.interface_diff is not None:
-        production_diff = _production_interface_diff(report.interface_diff, report.project_name)
+        production_diff = _production_interface_diff(
+            report.interface_diff, report.project_name
+        )
         if production_diff is not None:
             lines.extend(["", _interface_summary_line(production_diff)])
         functions, variables, classes = _production_added_kind_counts(
@@ -666,7 +700,9 @@ def render_summary(report: ScanReport) -> str:
                 f"生产新增类：{classes}",
             ]
         )
-        test_changes = _test_interface_change_count(report.interface_diff, report.project_name)
+        test_changes = _test_interface_change_count(
+            report.interface_diff, report.project_name
+        )
         if test_changes:
             lines.append(f"测试接口变化：{test_changes}（独立审计，不计入生产接口）")
     return "\n".join(lines) + "\n"
@@ -777,7 +813,9 @@ def render_markdown(report: ScanReport) -> str:
             lines.extend(
                 [
                     "```json",
-                    json.dumps(finding.evidence, ensure_ascii=False, indent=2, sort_keys=True),
+                    json.dumps(
+                        finding.evidence, ensure_ascii=False, indent=2, sort_keys=True
+                    ),
                     "```",
                     "",
                 ]
@@ -799,11 +837,16 @@ def render_audit_markdown(report: ScanReport) -> str:
     Returns:
         分层汇总、热点、关键错误和接口变化组成的 Markdown 文档。
     """
-    if report.files_scanned == 0 and not report.findings and report.interface_diff is not None:
+    if (
+        report.files_scanned == 0
+        and not report.findings
+        and report.interface_diff is not None
+    ):
         lines = ["# Repository Quality Guard 接口审查"]
         _append_test_audit_summary(lines, report)
         _append_interface_review_markdown(
-            lines, _production_interface_diff(report.interface_diff, report.project_name)
+            lines,
+            _production_interface_diff(report.interface_diff, report.project_name),
         )
         return "\n".join(lines) + "\n"
     counts = {"info": 0, "warning": 0, "error": 0, "critical": 0}
@@ -908,10 +951,14 @@ def _append_key_findings(lines: list[str], findings: list[Finding]) -> None:
     """
     key_items = [item for item in findings if item.severity in {"critical", "error"}]
     key_items.extend(
-        item for item in findings if item.severity == "warning" and item.confidence == "high"
+        item
+        for item in findings
+        if item.severity == "warning" and item.confidence == "high"
     )
     if not key_items:
-        lines.extend(["", "## 关键发现", "", "未发现 critical、error 或高置信 warning。", ""])
+        lines.extend(
+            ["", "## 关键发现", "", "未发现 critical、error 或高置信 warning。", ""]
+        )
         return
     lines.extend(["", "## 关键发现", ""])
     for finding in key_items[:80]:
@@ -931,7 +978,9 @@ def _append_key_findings(lines: list[str], findings: list[Finding]) -> None:
             lines.extend(
                 [
                     "```json",
-                    json.dumps(finding.evidence, ensure_ascii=False, indent=2, sort_keys=True),
+                    json.dumps(
+                        finding.evidence, ensure_ascii=False, indent=2, sort_keys=True
+                    ),
                     "```",
                     "",
                 ]

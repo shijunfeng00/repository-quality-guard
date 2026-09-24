@@ -37,13 +37,20 @@ class TestSubprocessEncoding(unittest.TestCase):
             for path in directory.rglob("*.py"):
                 tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
                 for node in ast.walk(tree):
-                    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    if not isinstance(node, ast.Call) or not isinstance(
+                        node.func, ast.Attribute
+                    ):
                         continue
                     if node.func.attr not in {"run", "Popen"}:
                         continue
-                    if not isinstance(node.func.value, ast.Name) or node.func.value.id != "subprocess":
+                    if (
+                        not isinstance(node.func.value, ast.Name)
+                        or node.func.value.id != "subprocess"
+                    ):
                         continue
-                    keywords = {item.arg: item.value for item in node.keywords if item.arg}
+                    keywords = {
+                        item.arg: item.value for item in node.keywords if item.arg
+                    }
                     text = keywords.get("text")
                     if not isinstance(text, ast.Constant) or text.value is not True:
                         continue

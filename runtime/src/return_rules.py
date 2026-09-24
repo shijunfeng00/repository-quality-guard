@@ -35,10 +35,18 @@ def check_return_rules(
     annotation_names_set = annotation_names(node.returns)
     findings = [
         incompatible_return_finding(
-            facts, node, qualname, returns, shapes, concrete_shapes, annotation_names_set
+            facts,
+            node,
+            qualname,
+            returns,
+            shapes,
+            concrete_shapes,
+            annotation_names_set,
         ),
         dictionary_shape_finding(facts, node, qualname, returns, concrete_shapes),
-        implicit_none_finding(facts, node, qualname, shapes, concrete_shapes, annotation_names_set),
+        implicit_none_finding(
+            facts, node, qualname, shapes, concrete_shapes, annotation_names_set
+        ),
     ]
     return [item for item in findings if item is not None] + protocol_text_findings(
         facts, node, qualname, returns, annotation_names_set
@@ -70,7 +78,9 @@ def incompatible_return_finding(
         顶层返回类型不兼容时返回发现，否则返回 None。
     """
     top_level_shapes = {top_level_return_shape(shape) for shape in concrete_shapes}
-    flexible_annotation = bool(annotation_names_set & {"Any", "Json", "JSON", "object", "Union"})
+    flexible_annotation = bool(
+        annotation_names_set & {"Any", "Json", "JSON", "object", "Union"}
+    )
     if len(top_level_shapes) <= 1 or flexible_annotation:
         return None
     return make_finding(
@@ -105,7 +115,9 @@ def dictionary_shape_finding(
     Returns:
         字典字段集合存在多种形态时返回候选发现，否则返回 None。
     """
-    dictionary_shapes = {shape for shape in concrete_shapes if shape.startswith("dict:")}
+    dictionary_shapes = {
+        shape for shape in concrete_shapes if shape.startswith("dict:")
+    }
     if len(dictionary_shapes) <= 1:
         return None
     return make_finding(
@@ -148,7 +160,9 @@ def implicit_none_finding(
     """
     returns_value = bool(concrete_shapes or "dynamic" in shapes)
     nullable_annotation = bool(annotation_names_set & {"None", "NoneType", "Optional"})
-    valid_contract = node.returns is not None and returns_value and not nullable_annotation
+    valid_contract = (
+        node.returns is not None and returns_value and not nullable_annotation
+    )
     if not valid_contract or is_generator_function(node) or block_terminates(node.body):
         return None
     return make_finding(
@@ -185,7 +199,10 @@ def protocol_text_findings(
     """
     protocol_name = node.name.lower()
     markers = ("serializ", "history", "openai", "payload", "response", "record")
-    if not any(marker in protocol_name for marker in markers) or "str" in annotation_names_set:
+    if (
+        not any(marker in protocol_name for marker in markers)
+        or "str" in annotation_names_set
+    ):
         return []
     return [
         make_finding(
@@ -226,7 +243,9 @@ def is_generator_function(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     Returns:
         当前函数是生成器时返回 True。
     """
-    return any(isinstance(item, (ast.Yield, ast.YieldFrom)) for item in direct_body_nodes(node))
+    return any(
+        isinstance(item, (ast.Yield, ast.YieldFrom)) for item in direct_body_nodes(node)
+    )
 
 
 def return_shape(node: ast.expr | None) -> str:

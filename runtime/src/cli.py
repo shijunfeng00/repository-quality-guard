@@ -22,7 +22,7 @@ from .analysis_snapshot import (
     revision_analysis_snapshot,
     worktree_analysis_snapshot,
 )
-from .api_catalog import build_api_catalog, search_api_catalog
+from .api_catalog import apply_search_strategy, build_api_catalog, search_api_catalog
 from .architecture_diff import compare_git_architecture
 from .call_chain_rules import single_use_chain_findings
 from .config import GuardConfig, is_test_path, is_tool_generated_path
@@ -75,7 +75,12 @@ INTEGRITY_GATE_EXIT_CODE = 4
 REVIEW_REQUIRED_EXIT_CODE = 5
 _AUDIT_ONLY_SUFFIXES = (".patch", ".diff", ".log", ".zip", ".tar", ".tgz", ".tar.gz")
 _PORCELAIN_STATUS_PREFIX_LENGTH = 3
-_AUDIT_ONLY_PREFIXES = (".agents/", ".pytest_cache/", ".ruff_cache/", "docs/api-reference/")
+_AUDIT_ONLY_PREFIXES = (
+    ".agents/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    "docs/api-reference/",
+)
 _INTERFACE_DEFINITION_KINDS = frozenset({"class", "function", "method"})
 _INTERFACE_POLICY_CODES = frozenset({"QG161", "QG180", "QG181", "QG182"})
 
@@ -403,9 +408,13 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
             )
         except (OSError, subprocess.TimeoutExpired):
             continue
-        commit = result.stdout.partition("\t")[0].strip() if result.returncode == 0 else ""
+        commit = (
+            result.stdout.partition("\t")[0].strip() if result.returncode == 0 else ""
+        )
         verified = (
-            _git_stdout(root, ("rev-parse", "--verify", f"{commit}^{{commit}}")) if commit else ""
+            _git_stdout(root, ("rev-parse", "--verify", f"{commit}^{{commit}}"))
+            if commit
+            else ""
         )
         if (
             verified
@@ -420,7 +429,9 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
         ):
             return verified, f"remote {remote}/{branch}"
     upstream_commit = (
-        _git_stdout(root, ("rev-parse", "--verify", f"{upstream}^{{commit}}")) if upstream else ""
+        _git_stdout(root, ("rev-parse", "--verify", f"{upstream}^{{commit}}"))
+        if upstream
+        else ""
     )
     if not upstream_commit:
         return None
@@ -436,19 +447,31 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
     ):
         return upstream_commit, f"upstream {upstream}"
     common = _git_stdout(root, ("merge-base", "HEAD", upstream_commit))
-    return (common, f"diverged upstream common ancestor with {upstream}") if common else None
+    return (
+        (common, f"diverged upstream common ancestor with {upstream}")
+        if common
+        else None
+    )
 
 
-def _comparison_plan(target: AuditTarget, args: argparse.Namespace) -> _GitComparisonPlan:
+def _comparison_plan(
+    target: AuditTarget, args: argparse.Namespace
+) -> _GitComparisonPlan:
     """优先按最后一次 push 形成累计批次；无法证明时才使用单次提交回退。"""
     requested_target = "STAGED" if args.staged else "WORKTREE"
     if args.diff_base:
         return _GitComparisonPlan(
-            args.diff_base, requested_target, f"显式基线：{args.diff_base}→{requested_target}"
+            args.diff_base,
+            requested_target,
+            f"显式基线：{args.diff_base}→{requested_target}",
         )
     if not target.git_enabled:
-        return _GitComparisonPlan("HEAD", requested_target, "非 Git 输入：自动基线不可用")
-    status = run_readonly_git(target.root, "status", "--porcelain=v1", "--untracked-files=all")
+        return _GitComparisonPlan(
+            "HEAD", requested_target, "非 Git 输入：自动基线不可用"
+        )
+    status = run_readonly_git(
+        target.root, "status", "--porcelain=v1", "--untracked-files=all"
+    )
     if status.returncode != 0:
         detail = status.stderr.strip() or f"exit={status.returncode}"
         raise RuntimeError(f"无法判断 Git dirty/clean 状态：{detail}")
@@ -496,7 +519,9 @@ def _comparison_plan(target: AuditTarget, args: argparse.Namespace) -> _GitCompa
         raise RuntimeError(
             "无法定位最后一次 push/upstream，且 clean 工作树没有可用父提交；请显式传入 --diff-base。"
         )
-    return _GitComparisonPlan(parent, "HEAD", f"自动 clean 回退基线：HEAD~1 `{parent[:12]}`→HEAD")
+    return _GitComparisonPlan(
+        parent, "HEAD", f"自动 clean 回退基线：HEAD~1 `{parent[:12]}`→HEAD"
+    )
 
 
 def resolve_target(args: argparse.Namespace) -> AuditTarget:
@@ -533,11 +558,15 @@ def resolve_target(args: argparse.Namespace) -> AuditTarget:
                 root=root,
                 focus_files=frozenset(files),
                 focus_roots=(),
-                notes=("按 Git 根目录全仓库解析调用关系；报告输出聚焦 --files 指定文件。",),
+                notes=(
+                    "按 Git 根目录全仓库解析调用关系；报告输出聚焦 --files 指定文件。",
+                ),
                 git_enabled=True,
             )
         root = Path(os.path.commonpath(str(path.parent) for path in files)).resolve()
-        issue_messages = tuple(lookup.issue_message for lookup in lookups if lookup.issue_message)
+        issue_messages = tuple(
+            lookup.issue_message for lookup in lookups if lookup.issue_message
+        )
         issue_suggestions = tuple(
             lookup.issue_suggestion for lookup in lookups if lookup.issue_suggestion
         )
@@ -569,7 +598,9 @@ def resolve_target(args: argparse.Namespace) -> AuditTarget:
                 root=git_lookup.root,
                 focus_files=frozenset({target}),
                 focus_roots=(),
-                notes=(f"按 Git 根目录 `{git_lookup.root}` 解析仓库事实；报告输出聚焦文件 `{target}`。",),
+                notes=(
+                    f"按 Git 根目录 `{git_lookup.root}` 解析仓库事实；报告输出聚焦文件 `{target}`。",
+                ),
                 git_enabled=True,
             )
         return AuditTarget(
@@ -601,7 +632,9 @@ def resolve_target(args: argparse.Namespace) -> AuditTarget:
         root=git_root,
         focus_files=frozenset(),
         focus_roots=(target,),
-        notes=(f"按 Git 根目录 `{git_root}` 全仓库解析调用关系；报告输出聚焦子目录 `{target}`。",),
+        notes=(
+            f"按 Git 根目录 `{git_root}` 全仓库解析调用关系；报告输出聚焦子目录 `{target}`。",
+        ),
         git_enabled=True,
     )
 
@@ -708,7 +741,12 @@ def _apply_focus(report: ScanReport, target: AuditTarget) -> ScanReport:
             )
         )
     report.findings.sort(
-        key=lambda item: (-SEVERITY_RANK[item.severity], item.path, item.line, item.code)
+        key=lambda item: (
+            -SEVERITY_RANK[item.severity],
+            item.path,
+            item.line,
+            item.code,
+        )
     )
     return report
 
@@ -760,11 +798,18 @@ def _apply_profile_rule_policy(report: ScanReport, config: GuardConfig) -> None:
             contract_findings=contract_findings,
         )
     report.findings.sort(
-        key=lambda item: (-SEVERITY_RANK[item.severity], item.path, item.line, item.code)
+        key=lambda item: (
+            -SEVERITY_RANK[item.severity],
+            item.path,
+            item.line,
+            item.code,
+        )
     )
 
 
-def _apply_report_extensions(report: ScanReport, profile: ProjectProfile | None) -> None:
+def _apply_report_extensions(
+    report: ScanReport, profile: ProjectProfile | None
+) -> None:
     """Collect stable Profile metadata without allowing extensions to control gate status."""
     if profile is None or not profile.report_extensions:
         return
@@ -776,12 +821,16 @@ def _apply_report_extensions(report: ScanReport, profile: ProjectProfile | None)
             if not normalized:
                 raise ValueError("ReportExtension metadata keys must be non-empty")
             if normalized in merged:
-                raise ValueError(f"duplicate ReportExtension metadata key: {normalized}")
+                raise ValueError(
+                    f"duplicate ReportExtension metadata key: {normalized}"
+                )
             merged[normalized] = str(value)
     report.profile_metadata.update(merged)
 
 
-def _profile_custom_findings(profile: ProjectProfile | None, ctx: RuleContext) -> list[Finding]:
+def _profile_custom_findings(
+    profile: ProjectProfile | None, ctx: RuleContext
+) -> list[Finding]:
     """Execute Profile custom rules against the Core-owned read-only analysis context."""
     if profile is None or not profile.custom_rules:
         return []
@@ -794,7 +843,9 @@ def _profile_custom_findings(profile: ProjectProfile | None, ctx: RuleContext) -
             raise ValueError(f"custom rule {rule.key!r} has no frozen QG code")
         if code in disabled:
             if not rule.suppressible:
-                raise ValueError(f"custom rule {rule.key!r} ({code}) is not suppressible")
+                raise ValueError(
+                    f"custom rule {rule.key!r} ({code}) is not suppressible"
+                )
             continue
         for item in rule.evaluate(ctx):
             if not isinstance(item, Finding):
@@ -895,15 +946,21 @@ def _baseline_target(target: AuditTarget, baseline_root: Path) -> AuditTarget:
 _BASELINE_CACHE_SCHEMA = "repository-quality-guard/baseline-cache-v3"
 
 
-def _baseline_cache_path(target: AuditTarget, config: GuardConfig, revision: str) -> Path | None:
+def _baseline_cache_path(
+    target: AuditTarget, config: GuardConfig, revision: str
+) -> Path | None:
     """返回不可变 Git revision 质量基线的安全缓存路径。"""
     resolved_revision = _git_stdout(
         target.root, ("rev-parse", "--verify", f"{revision}^{{commit}}")
     )
     if not resolved_revision:
         return None
-    focus_files = sorted(path.relative_to(target.root).as_posix() for path in target.focus_files)
-    focus_roots = sorted(path.relative_to(target.root).as_posix() for path in target.focus_roots)
+    focus_files = sorted(
+        path.relative_to(target.root).as_posix() for path in target.focus_files
+    )
+    focus_roots = sorted(
+        path.relative_to(target.root).as_posix() for path in target.focus_roots
+    )
     payload = json.dumps(
         {
             "schema": _BASELINE_CACHE_SCHEMA,
@@ -959,7 +1016,9 @@ def _baseline_from_payload(payload: dict[str, object]) -> QualityBaseline:
     )
 
 
-def _load_baseline_cache(path: Path | None) -> tuple[QualityBaseline, QualityBaseline] | None:
+def _load_baseline_cache(
+    path: Path | None,
+) -> tuple[QualityBaseline, QualityBaseline] | None:
     """读取不可变 Git 基线缓存；缺失或版本过期时重新计算。"""
     if path is None or not path.is_file():
         return None
@@ -1120,11 +1179,19 @@ def _compute_git_baseline(
         ).run(check_format=True)
         merge_findings(
             production_report,
-            (item for item in ruff_findings if not is_test_path(item.path, config.project_name)),
+            (
+                item
+                for item in ruff_findings
+                if not is_test_path(item.path, config.project_name)
+            ),
         )
         merge_findings(
             test_report,
-            (item for item in ruff_findings if is_test_path(item.path, config.project_name)),
+            (
+                item
+                for item in ruff_findings
+                if is_test_path(item.path, config.project_name)
+            ),
         )
         language_findings, language_summary = multilang_findings(
             baseline_analysis, production_config
@@ -1146,11 +1213,19 @@ def _compute_git_baseline(
         )
         merge_findings(
             production_report,
-            (item for item in custom_findings if not is_test_path(item.path, config.project_name)),
+            (
+                item
+                for item in custom_findings
+                if not is_test_path(item.path, config.project_name)
+            ),
         )
         merge_findings(
             test_report,
-            (item for item in custom_findings if is_test_path(item.path, config.project_name)),
+            (
+                item
+                for item in custom_findings
+                if is_test_path(item.path, config.project_name)
+            ),
         )
         _apply_profile_rule_policy(production_report, production_config)
         _apply_profile_rule_policy(test_report, test_config)
@@ -1202,7 +1277,9 @@ def _annotate_interface_changes(
                 policy["property_added"] = True
             owner, separator, leaf = original.symbol.rpartition(".")
             private_symbol = f"{owner}._{leaf}" if separator else f"_{leaf}"
-            promoted = removed_lookup.get((original.path, original.kind, private_symbol))
+            promoted = removed_lookup.get(
+                (original.path, original.kind, private_symbol)
+            )
             if promoted is not None and not leaf.startswith("_"):
                 policy["visibility_promotion_from"] = promoted.symbol
         decorator_change = details.get("decorators")
@@ -1211,8 +1288,12 @@ def _annotate_interface_changes(
             and original.kind in {"function", "method"}
             and isinstance(decorator_change, dict)
         ):
-            before = {item.rsplit(".", 1)[-1] for item in decorator_change.get("before", [])}
-            after = {item.rsplit(".", 1)[-1] for item in decorator_change.get("after", [])}
+            before = {
+                item.rsplit(".", 1)[-1] for item in decorator_change.get("before", [])
+            }
+            after = {
+                item.rsplit(".", 1)[-1] for item in decorator_change.get("after", [])
+            }
             if (before | after) & property_decorators:
                 policy["property_decorator_changed"] = True
         if policy:
@@ -1340,7 +1421,8 @@ def _run_interface_diff(
         if change.change == "modified" and change.kind in _INTERFACE_DEFINITION_KINDS
     ]
     policy_findings = [
-        _interface_policy_finding(change) for change in (*added, *interface_review_changes)
+        _interface_policy_finding(change)
+        for change in (*added, *interface_review_changes)
     ]
     interface_net = len(added) - len(removed)
     if interface_net > 0:
@@ -1364,8 +1446,12 @@ def _run_interface_diff(
                     "并由用户人工确认后再决定是否提交。删除项无需解释删除理由。"
                 ),
                 evidence={
-                    "added": [f"{item.kind}:{item.path}:{item.symbol}" for item in added],
-                    "removed": [f"{item.kind}:{item.path}:{item.symbol}" for item in removed],
+                    "added": [
+                        f"{item.kind}:{item.path}:{item.symbol}" for item in added
+                    ],
+                    "removed": [
+                        f"{item.kind}:{item.path}:{item.symbol}" for item in removed
+                    ],
                     "added_count": len(added),
                     "removed_count": len(removed),
                     "net": interface_net,
@@ -1427,12 +1513,18 @@ def _readme_sync_finding(
                 line.strip() for line in changed.stdout.splitlines() if line.strip()
             )
         if not args.staged:
-            untracked = run_readonly_git(target.root, "ls-files", "--others", "--exclude-standard")
+            untracked = run_readonly_git(
+                target.root, "ls-files", "--others", "--exclude-standard"
+            )
             if untracked.returncode == 0:
                 changed_paths.update(
-                    line.strip() for line in untracked.stdout.splitlines() if line.strip()
+                    line.strip()
+                    for line in untracked.stdout.splitlines()
+                    if line.strip()
                 )
-    readme_changed = any(Path(item).name.lower().startswith("readme") for item in changed_paths)
+    readme_changed = any(
+        Path(item).name.lower().startswith("readme") for item in changed_paths
+    )
     if readme_changed:
         return None
     first = public_changes[0]
@@ -1444,7 +1536,9 @@ def _readme_sync_finding(
         path=first.path,
         line=symbol.line if symbol is not None else 1,
         column=1,
-        message=(f"检测到 {len(public_changes)} 项公开接口变化，但当前变更未同步任何 README。"),
+        message=(
+            f"检测到 {len(public_changes)} 项公开接口变化，但当前变更未同步任何 README。"
+        ),
         suggestion=(
             "更新仓库 README 中的公开能力、参数、返回结构、配置或使用示例，并同步测试与调用方；"
             "如果接口不应公开，先修正接口边界而不是仅补文档。"
@@ -1477,32 +1571,12 @@ def _profile_selection(root: Path, explicit: str | None):
             "(source=sealed-installed)"
         )
     elif selection.source == "sealed-installed-generic":
-        print("[QG] Using sealed installed generic policy. (source=sealed-installed-generic)")
+        print(
+            "[QG] Using sealed installed generic policy. (source=sealed-installed-generic)"
+        )
     else:
         print("[QG] No profile selected; using generic policy. (source=generic)")
     return selection
-
-
-def _scan_profile_selection(
-    root: Path, args: argparse.Namespace
-) -> ProfileSelection:
-    """Use an inherited worker selection or resolve the normal user-facing Profile.
-
-    Args:
-        root: Resolved audit repository root.
-        args: Parsed scan arguments with internal resolved-Profile defaults.
-
-    Returns:
-        The exact Profile selection to apply to this scan.
-    """
-    if args.resolved_profile_source:
-        return ProfileSelection(
-            reference=args.resolved_profile_reference or None,
-            name=args.resolved_profile_name,
-            source=args.resolved_profile_source,
-            reason="profile selection inherited from the isolated scan parent",
-        )
-    return _profile_selection(root, args.profile)
 
 
 def api_catalog_context(
@@ -1523,20 +1597,6 @@ def api_catalog_config(target: AuditTarget, profile_name: str | None) -> GuardCo
     """兼容入口：只返回接口目录使用的生产代码配置。"""
     config, _profile = api_catalog_context(target, profile_name)
     return config
-
-
-def _apply_search_strategy(
-    profile: ProjectProfile | None, query: str, hits: list, *, root: Path, limit: int
-) -> list:
-    """Run an optional Profile reranker after the Core-owned default BM25 search."""
-    if profile is None or profile.search_strategy is None:
-        return hits
-    strategy = profile.search_strategy()
-    reranked = list(strategy.rerank(query, tuple(hits), root=root))
-    # Profiles may reorder/drop default candidates but may not synthesize unrelated object types.
-    if any(item not in hits for item in reranked):
-        raise ValueError("Profile SearchStrategy may only rerank/filter Core search hits")
-    return reranked[:limit]
 
 
 def _run_api_catalog_mode(args: argparse.Namespace) -> int | None:
@@ -1567,8 +1627,8 @@ def _run_api_catalog_mode(args: argparse.Namespace) -> int | None:
         args.search_api,
         limit=args.api_limit,
     )
-    hits = _apply_search_strategy(
-        profile, args.search_api, hits, root=target.root, limit=args.api_limit
+    hits = apply_search_strategy(
+        profile, args.search_api, hits, target.root, args.api_limit
     )
     print(f"API BM25 查询：{args.search_api}")
     print(
@@ -1627,17 +1687,22 @@ def _append_docstring_regression_finding(report: ScanReport) -> None:
     if baseline is None:
         return
     baseline_missing = {
-        fingerprint for fingerprint in baseline.finding_severities if ":QG027:" in fingerprint
+        fingerprint
+        for fingerprint in baseline.finding_severities
+        if ":QG027:" in fingerprint
     }
     current_missing = {
-        finding.fingerprint: finding for finding in report.findings if finding.code == "QG027"
+        finding.fingerprint: finding
+        for finding in report.findings
+        if finding.code == "QG027"
     }
     introduced = sorted(set(current_missing) - baseline_missing)
     if not introduced:
         return
     introduced_findings = [current_missing[fingerprint] for fingerprint in introduced]
     symbols = [
-        finding.symbol or f"{finding.path}:{finding.line}" for finding in introduced_findings
+        finding.symbol or f"{finding.path}:{finding.line}"
+        for finding in introduced_findings
     ]
     report.findings.append(
         Finding(
@@ -1668,7 +1733,12 @@ def _append_docstring_regression_finding(report: ScanReport) -> None:
         )
     )
     report.findings.sort(
-        key=lambda item: (-SEVERITY_RANK[item.severity], item.path, item.line, item.code)
+        key=lambda item: (
+            -SEVERITY_RANK[item.severity],
+            item.path,
+            item.line,
+            item.code,
+        )
     )
 
 
@@ -1697,7 +1767,8 @@ def _append_quality_count_regression_finding(report: ScanReport) -> None:
         current_counts[finding.severity] += 1
         current_findings[finding.fingerprint] = finding
     report.quality_count_deltas = {
-        severity: current_counts[severity] - baseline.summary[severity] for severity in severities
+        severity: current_counts[severity] - baseline.summary[severity]
+        for severity in severities
     }
 
     introduced: list[Finding] = []
@@ -1723,7 +1794,9 @@ def _append_quality_count_regression_finding(report: ScanReport) -> None:
         count = introduced_counts[severity]
         upgraded = worsened_counts[severity]
         if count or upgraded:
-            detail_parts.append(f"{severity.upper()} 新增 {count}、升级至该档 {upgraded}")
+            detail_parts.append(
+                f"{severity.upper()} 新增 {count}、升级至该档 {upgraded}"
+            )
     report.findings.append(
         Finding(
             code="QG179",
@@ -1777,7 +1850,12 @@ def _append_quality_count_regression_finding(report: ScanReport) -> None:
         )
     )
     report.findings.sort(
-        key=lambda item: (-SEVERITY_RANK[item.severity], item.path, item.line, item.code)
+        key=lambda item: (
+            -SEVERITY_RANK[item.severity],
+            item.path,
+            item.line,
+            item.code,
+        )
     )
 
 
@@ -1790,7 +1868,9 @@ def _apply_git_quality_baseline(
 ) -> None:
     """扫描并应用生产/测试 Git 质量基线及不可豁免退化门禁。"""
     try:
-        production_baseline, test_baseline = _scan_git_baseline(target, config, revision, profile)
+        production_baseline, test_baseline = _scan_git_baseline(
+            target, config, revision, profile
+        )
     except RuntimeError as error:
         report.baseline_error = str(error)
         return
@@ -1800,7 +1880,9 @@ def _apply_git_quality_baseline(
     _append_quality_count_regression_finding(report)
 
 
-def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, InterfaceDiffReport]:
+def scan_target(
+    args: argparse.Namespace,
+) -> tuple[AuditTarget, ScanReport, InterfaceDiffReport]:
     """
     执行目标解析、生产/测试分账扫描、Git 差分、Ruff 与基线计算。
 
@@ -1814,7 +1896,15 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     comparison = _comparison_plan(target, args)
     scan_args = copy.copy(args)
     scan_args.diff_base = comparison.base_revision
-    selection = _scan_profile_selection(target.root, scan_args)
+    if scan_args.resolved_profile_source:
+        selection = ProfileSelection(
+            reference=scan_args.resolved_profile_reference or None,
+            name=scan_args.resolved_profile_name,
+            source=scan_args.resolved_profile_source,
+            reason="profile selection inherited from the isolated scan parent",
+        )
+    else:
+        selection = _profile_selection(target.root, scan_args.profile)
     scan_args.profile = selection.reference
     profile = get_project_profile(scan_args.profile)
     base_config = apply_project_profile(
@@ -1856,17 +1946,21 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
         current_analysis,
     )
     selected_files = (
-        set(target.focus_files) if target.focus_files and not target.git_enabled else None
+        set(target.focus_files)
+        if target.focus_files and not target.git_enabled
+        else None
     )
     report = production_scanner.scan(selected_files=selected_files)
     report.interface_diff = interface_diff
     report.comparison_mode = comparison.mode
     report.comparison_target = comparison.target_label
 
-    base_relation_graph, relation_graph, relation_summary = build_relation_graph_summary(
-        base_analysis if target.git_enabled else None,
-        comparison_analysis,
-        interface_diff,
+    base_relation_graph, relation_graph, relation_summary = (
+        build_relation_graph_summary(
+            base_analysis if target.git_enabled else None,
+            comparison_analysis,
+            interface_diff,
+        )
     )
     report.relation_graph = relation_summary
 
@@ -1940,10 +2034,14 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
                     scan_args.diff_base,
                     staged=scan_args.staged,
                     static_exemptions=(
-                        profile.semantic_heuristic_exemptions if profile is not None else ()
+                        profile.semantic_heuristic_exemptions
+                        if profile is not None
+                        else ()
                     ),
                     authorization_path=(
-                        profile.semantic_authorization_path if profile is not None else ""
+                        profile.semantic_authorization_path
+                        if profile is not None
+                        else ""
                     ),
                     target_analysis=comparison_analysis,
                 )
@@ -1986,11 +2084,19 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     ).run(check_format=True)
     merge_findings(
         report,
-        (item for item in ruff_findings if not is_test_path(item.path, base_config.project_name)),
+        (
+            item
+            for item in ruff_findings
+            if not is_test_path(item.path, base_config.project_name)
+        ),
     )
     merge_findings(
         test_report,
-        (item for item in ruff_findings if is_test_path(item.path, base_config.project_name)),
+        (
+            item
+            for item in ruff_findings
+            if is_test_path(item.path, base_config.project_name)
+        ),
     )
     language_findings, language_summary = multilang_findings(
         comparison_analysis,
@@ -2017,11 +2123,19 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     )
     merge_findings(
         report,
-        (item for item in custom_findings if not is_test_path(item.path, base_config.project_name)),
+        (
+            item
+            for item in custom_findings
+            if not is_test_path(item.path, base_config.project_name)
+        ),
     )
     merge_findings(
         test_report,
-        (item for item in custom_findings if is_test_path(item.path, base_config.project_name)),
+        (
+            item
+            for item in custom_findings
+            if is_test_path(item.path, base_config.project_name)
+        ),
     )
     _apply_profile_rule_policy(report, production_config)
     _apply_profile_rule_policy(test_report, test_config)
@@ -2038,7 +2152,9 @@ def scan_target(args: argparse.Namespace) -> tuple[AuditTarget, ScanReport, Inte
     )
 
     if target.git_enabled:
-        _apply_git_quality_baseline(target, base_config, scan_args.diff_base, report, profile)
+        _apply_git_quality_baseline(
+            target, base_config, scan_args.diff_base, report, profile
+        )
     return target, report, interface_diff
 
 
@@ -2134,7 +2250,9 @@ def main(argv: list[str] | None = None) -> int:
 
         target, report, interface_diff = scan_target(args)
         revision = (
-            report.baseline.revision if report.baseline is not None else (args.diff_base or "HEAD")
+            report.baseline.revision
+            if report.baseline is not None
+            else (args.diff_base or "HEAD")
         )
         effective_interface_diff = report.interface_diff or interface_diff
         tool_status = code_status(report)
@@ -2151,7 +2269,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.final_check:
             if not modification_report.is_file():
-                print(f"修改说明门禁：REJECT（缺少 {modification_report}）", file=sys.stderr)
+                print(
+                    f"修改说明门禁：REJECT（缺少 {modification_report}）",
+                    file=sys.stderr,
+                )
                 print(f"静态事实门禁：{tool_status}")
                 return REPORT_GATE_EXIT_CODE
             strict_report = modification_report.read_text(encoding="utf-8")
@@ -2180,7 +2301,9 @@ def main(argv: list[str] | None = None) -> int:
                 sys.stdout.write(f"- [{finding.code}] {finding.message}\n")
         report_status = "PASS" if not report_contract_findings else "REJECT"
         semantic_status = (
-            report_final_status(strict_report) if not report_contract_findings else "INVALID"
+            report_final_status(strict_report)
+            if not report_contract_findings
+            else "INVALID"
         )
         mode = "最终检查" if args.final_check else "生成后检查"
         sys.stdout.write(

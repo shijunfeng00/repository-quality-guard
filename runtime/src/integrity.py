@@ -150,8 +150,8 @@ def _lock_values(path: Path) -> dict[str, str]:
     return values
 
 
-def _lock_schema_issues(lock: dict[str, str]) -> list[str]:
-    """返回发布锁缺失或非法字段问题。"""
+def _lock_schema_issues(lock: dict[str, str], expected_seal: str) -> list[str]:
+    """返回发布锁缺失、非法字段或 seal 不一致问题。"""
     required = {
         "schema",
         "version",
@@ -165,12 +165,16 @@ def _lock_schema_issues(lock: dict[str, str]) -> list[str]:
         return issues
     if lock["distribution"] not in {"skill", "agents"}:
         issues.append("RELEASE.lock 的 distribution 只能是 skill 或 agents。")
+    if lock["manifest_sha256"] != expected_seal:
+        issues.append("RELEASE.lock 与启动器内置 release seal 不一致。")
     return issues
 
 
 def _legacy_payload_issues(root: Path) -> list[str]:
     """拒绝废弃布局；仅 `skill` 允许受保护离线依赖介质，`agents` 必须最小化。"""
     issues: list[str] = []
+    if not (root / "SKILL.md").is_file():
+        issues.append("Skill 发布缺少 SKILL.md。")
     forbidden = (
         "tests",
         "node_modules",
@@ -211,15 +215,6 @@ def _legacy_payload_issues(root: Path) -> list[str]:
     return issues
 
 
-def _instruction_issues(root: Path, lock: dict[str, str]) -> list[str]:
-    """验证核心 Skill 指令存在。"""
-    issues: list[str] = []
-    skill_path = root / "SKILL.md"
-    if not skill_path.is_file():
-        issues.append("Skill 发布缺少 SKILL.md。")
-    return issues
-
-
 def seal_release_tree(root: Path, distribution: str) -> str:
     """
     重新封存完整 release tree，并返回新的 manifest seal。
@@ -249,7 +244,7 @@ def seal_release_tree(root: Path, distribution: str) -> str:
     launcher = root / "scripts" / "quality_guard.py"
 
     candidates = sorted(_protected_candidates(root))
-    lock_path.write_text(
+    lock_path.write_bytes(
         "\n".join(
             [
                 "schema=repository-quality-guard/release-v1",
@@ -259,34 +254,31 @@ def seal_release_tree(root: Path, distribution: str) -> str:
                 f"protected_file_count={len(candidates)}",
                 "",
             ]
-        ),
-        encoding="utf-8",
+        ).encode("utf-8"),
     )
     manifest = root / MANIFEST_NAME
     entries = [
         f"{_protected_sha256(root / relative, relative)}  {relative}"
         for relative in candidates
     ]
-    manifest.write_text("\n".join(entries) + "\n", encoding="utf-8")
+    manifest.write_bytes(("\n".join(entries) + "\n").encode("utf-8"))
     seal = _sha256(manifest)
 
-    launcher_text = launcher.read_text(encoding="utf-8")
-    marker = 'RELEASE_SEAL = "'
+    launcher_text = launcher.read_bytes()
+    marker = b'RELEASE_SEAL = "'
     start = launcher_text.index(marker) + len(marker)
     end = start + _SHA256_HEX_LENGTH
-    if launcher_text[end : end + 1] != '"':
+    if launcher_text[end : end + 1] != b'"':
         raise RuntimeError("scripts/quality_guard.py 的 RELEASE_SEAL 结构非法。")
-    launcher.write_text(
-        launcher_text[:start] + seal + launcher_text[end:],
-        encoding="utf-8",
+    launcher.write_bytes(
+        launcher_text[:start] + seal.encode("ascii") + launcher_text[end:]
     )
-    lock_path.write_text(
-        lock_path.read_text(encoding="utf-8").replace(
-            f"manifest_sha256={'0' * _SHA256_HEX_LENGTH}",
-            f"manifest_sha256={seal}",
+    lock_path.write_bytes(
+        lock_path.read_bytes().replace(
+            f"manifest_sha256={'0' * _SHA256_HEX_LENGTH}".encode("ascii"),
+            f"manifest_sha256={seal}".encode("ascii"),
             1,
         ),
-        encoding="utf-8",
     )
     return seal
 
@@ -304,15 +296,12 @@ def verify_release_integrity(
         包含发布根目录、受保护文件数量和全部完整性问题的校验结果。
     """
     source = os.environ if environment is None else environment
-    home = source.get(RELEASE_HOME_ENV, "").strip()
-    expected_seal = source.get(RELEASE_SEAL_ENV, "").strip()
+    home = source[RELEASE_HOME_ENV].strip()
+    expected_seal = source[RELEASE_SEAL_ENV].strip()
     if not home or not expected_seal:
         return IntegrityResult(
             None,
-            (
-                "必须通过 scripts/quality_guard.py 启动，"
-                "当前进程缺少不可降级的发布根与 release seal。",
-            ),
+            ("发布根与 release seal 不得为空。",),
         )
     root = Path(home).resolve()
     manifest = root / MANIFEST_NAME
@@ -338,13 +327,10 @@ def verify_release_integrity(
             "发布清单摘要与启动器内置 release seal 不一致，Skill 可能被改写。"
         )
     lock = _lock_values(release_lock)
-    lock_issues = _lock_schema_issues(lock)
+    lock_issues = _lock_schema_issues(lock, expected_seal)
     issues.extend(lock_issues)
     if lock_issues:
         return IntegrityResult(root, tuple(issues))
-    if lock["manifest_sha256"] != expected_seal:
-        issues.append("RELEASE.lock 与启动器内置 release seal 不一致。")
-    issues.extend(_instruction_issues(root, lock))
     issues.extend(_legacy_payload_issues(root))
 
     entries, manifest_issues = _parse_manifest(manifest)

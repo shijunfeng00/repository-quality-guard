@@ -203,6 +203,8 @@ python .agents/skills/repository-quality-guard/runtime/install_dependencies.py
 python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
 ```
 
+For source/checkpoint delivery, RQG uses one canonical full-repository ZIP containing the Git metadata, local Profile catalog, complete source, and offline dependency media. Installation into `.agents` remains intentionally slim: deployment seals only the runtime and authorized policy required at execution time, and does not copy the repository's offline wheel/Node payload or source Profile catalog.
+
 RQG exposes these stable workflow operations to the Agent:
 
 ```text

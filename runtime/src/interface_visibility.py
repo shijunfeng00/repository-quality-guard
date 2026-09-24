@@ -134,7 +134,9 @@ def _symbol_exposure(
     leaf = parts[-1]
     top = parts[0]
     forced = f"{symbol.path}:{symbol.qualname}" in forced_symbols
-    path_exports = exports_by_path[symbol.path] if symbol.path in exports_by_path else set()
+    path_exports = (
+        exports_by_path[symbol.path] if symbol.path in exports_by_path else set()
+    )
     explicit_export = top in path_exports
     external_private = (symbol.path, top) in external_private_symbols
     if (

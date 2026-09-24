@@ -270,7 +270,10 @@ def check_named_wrapper_classes(
                 message=f"包装类 `{definition.qualname}` 在仓库内仅有 {definition.calls + definition.references} 个静态使用点。",
                 symbol=definition.symbol_id,
                 suggestion="确认是否存在真实构建、适配或生命周期职责；否则删除命名式抽象。",
-                evidence={"calls": definition.calls, "references": definition.references},
+                evidence={
+                    "calls": definition.calls,
+                    "references": definition.references,
+                },
             )
         )
     return findings
@@ -288,7 +291,9 @@ def check_deprecated_unused(definitions: list[Definition]) -> list[Finding]:
     """
     findings: list[Finding] = []
     for definition in definitions:
-        if not any("deprecated" in decorator.lower() for decorator in definition.decorators):
+        if not any(
+            "deprecated" in decorator.lower() for decorator in definition.decorators
+        ):
             continue
         if definition.calls + definition.references != 0:
             continue

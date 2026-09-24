@@ -80,7 +80,8 @@ def _string_collection_size(node: ast.AST) -> int:
     if not isinstance(node, (ast.List, ast.Set, ast.Tuple)):
         return 0
     if not node.elts or not all(
-        isinstance(item, ast.Constant) and isinstance(item.value, str) for item in node.elts
+        isinstance(item, ast.Constant) and isinstance(item.value, str)
+        for item in node.elts
     ):
         return 0
     return len(node.elts)
@@ -142,7 +143,9 @@ def _generator_literal_keyword_membership(node: ast.Call) -> tuple[int, str] | N
     if not valid_shape:
         return None
     size = _string_collection_size(comprehension.iter)
-    if size < _MIN_LITERAL_RULE_SIZE or not _is_semantic_text_expression(element.comparators[0]):
+    if size < _MIN_LITERAL_RULE_SIZE or not _is_semantic_text_expression(
+        element.comparators[0]
+    ):
         return None
     return size, name
 
@@ -221,7 +224,9 @@ class _CandidateVisitor(ast.NodeVisitor):
         """
         previous = self.assignment_target
         self.assignment_target = (
-            _assignment_name(node.targets[0]) if len(node.targets) == 1 else "<expression>"
+            _assignment_name(node.targets[0])
+            if len(node.targets) == 1
+            else "<expression>"
         )
         self.visit(node.value)
         self.assignment_target = previous
@@ -401,7 +406,9 @@ def _changed_line_map(root: Path, revision: str, staged: bool) -> dict[str, set[
     return dict(changed)
 
 
-def _baseline_authorizations(root: Path, revision: str, relative_path: str) -> frozenset[str]:
+def _baseline_authorizations(
+    root: Path, revision: str, relative_path: str
+) -> frozenset[str]:
     """读取 Git 基线中预先存在的精确授权指纹。"""
     if not relative_path:
         return frozenset()
@@ -415,7 +422,9 @@ def _baseline_authorizations(root: Path, revision: str, relative_path: str) -> f
     if payload.get("version") != 1:
         return frozenset()
     authorized = payload.get("authorized", [])
-    if not isinstance(authorized, list) or not all(isinstance(item, str) for item in authorized):
+    if not isinstance(authorized, list) or not all(
+        isinstance(item, str) for item in authorized
+    ):
         return frozenset()
     return frozenset(authorized)
 
@@ -452,7 +461,9 @@ def semantic_heuristic_candidate_findings(
     findings: list[Finding] = []
     exemptions = frozenset(static_exemptions)
     authorizations = _baseline_authorizations(root, revision, authorization_path)
-    for relative, changed_lines in sorted(_changed_line_map(root, revision, staged).items()):
+    for relative, changed_lines in sorted(
+        _changed_line_map(root, revision, staged).items()
+    ):
         if any(fnmatch(relative, pattern) for pattern in config.exclude):
             continue
         path = root / relative

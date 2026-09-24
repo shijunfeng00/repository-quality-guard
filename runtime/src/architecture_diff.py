@@ -14,7 +14,9 @@ from .config import GuardConfig
 from .git_utils import run_readonly_git
 from .model import Finding
 
-_IDENTIFIER_PART = re.compile(r"[A-Za-z][a-z0-9]*|[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+")
+_IDENTIFIER_PART = re.compile(
+    r"[A-Za-z][a-z0-9]*|[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+"
+)
 _IGNORED_NAME_PARTS = {"get", "new", "make", "build", "create", "helper", "private"}
 _MIN_SHARED_FEATURES = 2
 _CAPABILITY_SIMILARITY_THRESHOLD = 0.30
@@ -178,7 +180,9 @@ class _MethodCollector(ast.NodeVisitor):
                 )
             if isinstance(receiver, ast.Name) and receiver.id in self.receiver_names:
                 self.receiver_call_names.add(method_name)
-            elif (isinstance(receiver, ast.Name) and receiver.id in self.super_names) or (
+            elif (
+                isinstance(receiver, ast.Name) and receiver.id in self.super_names
+            ) or (
                 isinstance(receiver, ast.Call)
                 and isinstance(receiver.func, ast.Name)
                 and receiver.func.id == "super"
@@ -192,7 +196,10 @@ class _MethodCollector(ast.NodeVisitor):
                     else set()
                 )
                 receiver_root = receiver_text.split(".", 1)[0]
-                if receiver_root not in self.local_names and receiver_text in self.base_receivers:
+                if (
+                    receiver_root not in self.local_names
+                    and receiver_text in self.base_receivers
+                ):
                     parent_names.add(self.base_receivers[receiver_text])
                 self.explicit_parent_calls.update(
                     (parent_name, method_name) for parent_name in parent_names
@@ -237,9 +244,9 @@ def _receiver_annotation_names(annotation: ast.AST | None) -> frozenset[str]:
     elif isinstance(annotation, ast.Attribute):
         result = frozenset({annotation.attr})
     elif isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
-        result = _receiver_annotation_names(annotation.left) | _receiver_annotation_names(
-            annotation.right
-        )
+        result = _receiver_annotation_names(
+            annotation.left
+        ) | _receiver_annotation_names(annotation.right)
     elif isinstance(annotation, ast.Subscript):
         wrapper = _render(annotation.value).split(".")[-1]
         result = (
@@ -248,7 +255,9 @@ def _receiver_annotation_names(annotation: ast.AST | None) -> frozenset[str]:
             else frozenset({wrapper})
         )
     elif isinstance(annotation, (ast.Tuple, ast.List)):
-        result = frozenset().union(*(_receiver_annotation_names(item) for item in annotation.elts))
+        result = frozenset().union(
+            *(_receiver_annotation_names(item) for item in annotation.elts)
+        )
     return result
 
 
@@ -307,7 +316,9 @@ def _is_shared_state_source(source: str) -> bool:
     return isinstance(expression, (ast.Name, ast.Attribute, ast.Subscript))
 
 
-def _collect_assignments(node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, str]:
+def _collect_assignments(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, str]:
     """收集构造函数中直接写入 self 属性的值来源。"""
     result: dict[str, str] = {}
     for statement in ast.walk(node):
@@ -334,7 +345,9 @@ def _collect_assignments(node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[s
     return result
 
 
-def _collect_class(path: str, node: ast.ClassDef, prefix: str = "") -> Iterable[ClassSnapshot]:
+def _collect_class(
+    path: str, node: ast.ClassDef, prefix: str = ""
+) -> Iterable[ClassSnapshot]:
     """递归收集类及嵌套类。"""
     qualname = f"{prefix}.{node.name}" if prefix else node.name
     bases = tuple(_render(base).split(".")[-1] for base in node.bases)
@@ -353,7 +366,8 @@ def _collect_class(path: str, node: ast.ClassDef, prefix: str = "") -> Iterable[
     for child in node.body:
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
             decorator_names = {
-                _render(item).split("(", 1)[0].split(".")[-1] for item in child.decorator_list
+                _render(item).split("(", 1)[0].split(".")[-1]
+                for item in child.decorator_list
             }
             positional = [*child.args.posonlyargs, *child.args.args]
             receiver_names = (
@@ -413,13 +427,18 @@ def _collect_class(path: str, node: ast.ClassDef, prefix: str = "") -> Iterable[
                     value_root = value_text.split(".", 1)[0]
                     parent_names = (
                         {base_receivers[value_text]}
-                        if value_root not in local_names and value_text in base_receivers
+                        if value_root not in local_names
+                        and value_text in base_receivers
                         else set(parent_aliases[value.id])
                         if isinstance(value, ast.Name) and value.id in parent_aliases
                         else set()
                     )
                     if parent_names:
-                        existing = parent_aliases[target] if target in parent_aliases else set()
+                        existing = (
+                            parent_aliases[target]
+                            if target in parent_aliases
+                            else set()
+                        )
                         existing.update(parent_names)
                         parent_aliases[target] = existing
                 after = (
@@ -448,7 +467,11 @@ def _collect_class(path: str, node: ast.ClassDef, prefix: str = "") -> Iterable[
                     for statement in child.body
                     if isinstance(statement, ast.AnnAssign)
                     and isinstance(statement.target, ast.Name)
-                    and (annotation_names := _receiver_annotation_names(statement.annotation))
+                    and (
+                        annotation_names := _receiver_annotation_names(
+                            statement.annotation
+                        )
+                    )
                 }
             )
             for statement in child.body:
@@ -519,11 +542,14 @@ def _parent_call_edges(
                     if owner_name == base_name
                 }
                 candidate_names = (
-                    caller.receiver_call_names | caller.super_call_names | explicit_names
+                    caller.receiver_call_names
+                    | caller.super_call_names
+                    | explicit_names
                 )
                 for method_name in candidate_names:
                     is_direct_parent_call = (
-                        method_name in caller.super_call_names or method_name in explicit_names
+                        method_name in caller.super_call_names
+                        or method_name in explicit_names
                     )
                     if (
                         not is_direct_parent_call and method_name in item.methods
@@ -659,10 +685,14 @@ def _replacement_finding(
     if child_after is None:
         return None
     parent_method = parent_before.methods.get(edge.method)
-    if parent_method is None or (parent_after is not None and edge.method in parent_after.methods):
+    if parent_method is None or (
+        parent_after is not None and edge.method in parent_after.methods
+    ):
         return None
     new_methods = [
-        method for name, method in child_after.methods.items() if name not in child_before.methods
+        method
+        for name, method in child_after.methods.items()
+        if name not in child_before.methods
     ]
     for candidate in new_methods:
         name_overlap = _name_parts(edge.method) & _name_parts(candidate.name)
@@ -699,7 +729,8 @@ def _lost_parent_call_findings(
     """报告基线继承能力调用链真正消失及其子类替代实现。"""
     findings: list[Finding] = []
     target_edges = {
-        (edge.child, edge.caller, edge.parent, edge.method) for edge in target.parent_calls
+        (edge.child, edge.caller, edge.parent, edge.method)
+        for edge in target.parent_calls
     }
     capability_callers: defaultdict[tuple[str, str, str], set[str]] = defaultdict(set)
     base_typed_calls = {
@@ -709,12 +740,15 @@ def _lost_parent_call_findings(
     new_typed_calls = {
         (item.owner, item.caller, item.receiver_type, item.method)
         for item in target.typed_receiver_calls
-        if (item.owner, item.caller, item.receiver_type, item.method) not in base_typed_calls
+        if (item.owner, item.caller, item.receiver_type, item.method)
+        not in base_typed_calls
     }
     for target_edge in target.parent_calls:
         capability = (target_edge.child, target_edge.parent, target_edge.method)
         capability_callers[capability].add(target_edge.caller)
-    for edge in sorted(base.parent_calls, key=lambda item: (item.path, item.line, item.method)):
+    for edge in sorted(
+        base.parent_calls, key=lambda item: (item.path, item.line, item.method)
+    ):
         edge_key = (edge.child, edge.caller, edge.parent, edge.method)
         if edge_key in target_edges:
             continue
@@ -851,7 +885,10 @@ def _shadow_state_findings(
                 continue
             parent = target.classes[parent_keys[0]]
             for attr, source in child.assignments.items():
-                if attr in before_child.assignments and before_child.assignments[attr] == source:
+                if (
+                    attr in before_child.assignments
+                    and before_child.assignments[attr] == source
+                ):
                     continue
                 for parent_attr, parent_source in parent.assignments.items():
                     if (
@@ -867,7 +904,9 @@ def _shadow_state_findings(
                             severity="critical",
                             confidence="high",
                             path=child.path,
-                            line=init_method.line if init_method is not None else child.line,
+                            line=init_method.line
+                            if init_method is not None
+                            else child.line,
                             column=1,
                             symbol=f"{child.qualname}.{attr}",
                             message=(

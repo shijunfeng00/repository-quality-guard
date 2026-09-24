@@ -135,9 +135,9 @@ class TestReleaseBuild(unittest.TestCase):
                             sys.modules.pop(name, None)
                 self.assertTrue(result.passed, result.issues)
 
-    def test_release_still_contains_local_offline_payloads(self) -> None:
+    def test_canonical_zip_contains_local_offline_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            out = Path(temp) / "public.zip"
+            out = Path(temp) / "canonical.zip"
             self._build(out)
             with zipfile.ZipFile(out) as archive:
                 names = set(archive.namelist())
@@ -157,7 +157,7 @@ class TestReleaseBuild(unittest.TestCase):
                 ROOT,
                 source,
                 ignore=shutil.ignore_patterns(
-                    ".git", "offline", "__pycache__", ".pytest_cache", ".ruff_cache"
+                    "offline", "__pycache__", ".pytest_cache", ".ruff_cache"
                 ),
             )
             output = Path(temp) / "missing-offline.zip"
@@ -204,7 +204,7 @@ class TestReleaseBuild(unittest.TestCase):
                     build_source,
                     staged,
                     ignore=shutil.ignore_patterns(
-                        ".git", "__pycache__", ".pytest_cache", ".ruff_cache"
+                        "__pycache__", ".pytest_cache", ".ruff_cache"
                     ),
                 )
                 self._seed_release_media(staged)
@@ -235,7 +235,7 @@ class TestReleaseBuild(unittest.TestCase):
             self._build(out)
             self.assertTrue(out.is_file())
 
-    def test_public_release_is_byte_reproducible(self) -> None:
+    def test_canonical_full_repo_zip_is_byte_reproducible(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             a, b = Path(temp) / "a.zip", Path(temp) / "b.zip"
             self._build(a)
@@ -243,83 +243,36 @@ class TestReleaseBuild(unittest.TestCase):
             self.assertEqual(_sha(a), _sha(b))
             self.assertEqual(a.read_bytes(), b.read_bytes())
 
-    def test_public_release_excludes_private_profiles_and_keeps_authoring_assets(
-        self,
-    ) -> None:
+    def test_canonical_zip_keeps_git_profiles_and_authoring_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            out = Path(temp) / "public.zip"
+            out = Path(temp) / "canonical.zip"
             self._build(out)
             with zipfile.ZipFile(out) as archive:
                 names = set(archive.namelist())
-                self.assertTrue(any("dev-tests/" in name for name in names))
-                self.assertTrue(any("tools/" in name for name in names))
-                self.assertIn("repository-quality-guard/README.md", names)
-                self.assertIn("repository-quality-guard/README_zh.md", names)
-                public_prefix = "repository-quality-guard/profiles/qg-example-profile/"
-                self.assertIn(public_prefix + "profile.json", names)
-                self.assertIn(public_prefix + "extension.py", names)
-                self.assertIn(public_prefix + "README.md", names)
-                profile_entries = {name for name in names if "/profiles/" in name}
-                self.assertTrue(profile_entries)
-                self.assertTrue(
-                    all(name.startswith(public_prefix) for name in profile_entries)
-                )
-                self.assertFalse(
-                    any(
-                        any(
-                            part in name.split("/")
-                            for part in (
-                                "__pycache__",
-                                ".pytest_cache",
-                                ".ruff_cache",
-                                ".mypy_cache",
-                            )
-                        )
-                        or name.endswith((".pyc", ".pyo"))
-                        for name in names
-                    )
-                )
-
-    def test_internal_release_includes_private_profiles_without_caches(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            source = Path(temp) / "source"
-            shutil.copytree(
-                ROOT,
-                source,
-                ignore=shutil.ignore_patterns(
-                    ".git", "__pycache__", ".pytest_cache", ".ruff_cache"
-                ),
-            )
-            private = source / "profiles" / "private-test-profile"
-            private.mkdir(parents=True)
-            (private / "profile.json").write_text(
-                json.dumps(
-                    {
-                        "schema": "repository-quality-guard/profile-v1",
-                        "name": "private-test-profile",
-                        "version": "1",
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (private / "README.md").write_text(
-                "# Private test profile\n", encoding="utf-8"
-            )
-            (private / "AGENTS.md").write_text("fixture\n", encoding="utf-8")
-            self._seed_release_media(source)
-
-            out = Path(temp) / "internal.zip"
-            self._build(out, "--internal", source=source)
-            with zipfile.ZipFile(out) as archive:
-                names = set(archive.namelist())
-                self.assertIn("repository-quality-guard/README.md", names)
-                self.assertIn("repository-quality-guard/README_zh.md", names)
-                self.assertTrue(any("dev-tests/" in name for name in names))
-                self.assertTrue(any("tools/" in name for name in names))
-                prefix = "repository-quality-guard/profiles/private-test-profile/"
-                self.assertIn(prefix + "profile.json", names)
+                prefix = "repository-quality-guard/"
+                self.assertIn(prefix + ".git/HEAD", names)
                 self.assertIn(prefix + "README.md", names)
-                self.assertIn(prefix + "AGENTS.md", names)
+                self.assertIn(prefix + "README_zh.md", names)
+                self.assertTrue(
+                    any(name.startswith(prefix + "dev-tests/") for name in names)
+                )
+                self.assertTrue(
+                    any(name.startswith(prefix + "tools/") for name in names)
+                )
+                self.assertIn(
+                    prefix + "profiles/qg-example-profile/profile.json", names
+                )
+                source_profiles = [
+                    item.name for item in (ROOT / "profiles").iterdir() if item.is_dir()
+                ]
+                for profile_name in source_profiles:
+                    self.assertTrue(
+                        any(
+                            name.startswith(prefix + f"profiles/{profile_name}/")
+                            for name in names
+                        ),
+                        profile_name,
+                    )
                 self.assertFalse(
                     any(
                         any(
@@ -335,10 +288,27 @@ class TestReleaseBuild(unittest.TestCase):
                         for name in names
                     )
                 )
+
+    def test_canonical_zip_extracts_to_a_real_git_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "canonical.zip"
+            self._build(out)
+            extracted = Path(temp) / "extracted"
+            with zipfile.ZipFile(out) as archive:
+                archive.extractall(extracted)
+            root = extracted / "repository-quality-guard"
+            result = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual("true", result.stdout.strip())
 
     def test_runtime_integrity_ignores_regenerable_python_and_tool_caches(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            out = Path(temp) / "public.zip"
+            out = Path(temp) / "canonical.zip"
             self._build(out)
             extracted = Path(temp) / "extracted"
             with zipfile.ZipFile(out) as archive:
@@ -378,22 +348,6 @@ class TestReleaseBuild(unittest.TestCase):
                         sys.modules.pop(name, None)
 
             self.assertTrue(result.passed, result.issues)
-
-    def test_public_release_manifest_does_not_leak_private_profile_names(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            out = Path(temp) / "public.zip"
-            self._build(out)
-            with zipfile.ZipFile(out) as archive:
-                manifest = archive.read(
-                    "repository-quality-guard/runtime/MANIFEST.sha256"
-                ).decode("utf-8")
-                private_names = [
-                    item.name
-                    for item in (ROOT / "profiles").iterdir()
-                    if item.is_dir() and item.name != "qg-example-profile"
-                ]
-                for private_name in private_names:
-                    self.assertNotIn(private_name, manifest)
 
 
 if __name__ == "__main__":

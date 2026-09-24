@@ -8,7 +8,7 @@ from typing import Any
 
 
 _PROFILE_NONBLOCKING_PATHS: dict[str, tuple[str, ...]] = {}
-_GENERATED_TOOL_PATTERNS = ("docs/api-reference/**",)
+_GENERATED_TOOL_PATTERNS = ("docs/api-reference/**", "修改说明.md")
 
 
 def is_tool_generated_path(path: str | Path) -> bool:
@@ -147,7 +147,7 @@ class GuardConfig:
         "node_modules/**",
         "migrations/**",
         "generated/**",
-        "docs/api-reference/**",
+        *_GENERATED_TOOL_PATTERNS,
     )
     ignored_names: tuple[str, ...] = ("main",)
 
@@ -216,7 +216,11 @@ class GuardConfig:
                     isinstance(item, str) for item in value
                 ):
                     raise ValueError(f"{key} 必须是字符串数组")
-                normalized[key] = tuple(value)
+                normalized[key] = (
+                    tuple(dict.fromkeys((*value, *_GENERATED_TOOL_PATTERNS)))
+                    if key == "exclude"
+                    else tuple(value)
+                )
             else:
                 normalized[key] = value
         return cls(**normalized)
@@ -245,7 +249,9 @@ class GuardConfig:
             """
             return tuple(dict.fromkeys((*current, *extra)))
 
-        settings = tuple(sorted(dict(profile.settings).items(), key=lambda item: item[0]))
+        settings = tuple(
+            sorted(dict(profile.settings).items(), key=lambda item: item[0])
+        )
         _register_profile_nonblocking_paths(profile.name, profile.nonblocking_paths)
         return replace(
             self,
@@ -253,7 +259,9 @@ class GuardConfig:
             profile_source=profile.source,
             profile_capabilities=tuple(profile.capabilities),
             profile_nonblocking_paths=tuple(profile.nonblocking_paths),
-            profile_test_baseline_passthrough_paths=tuple(profile.test_baseline_passthrough_paths),
+            profile_test_baseline_passthrough_paths=tuple(
+                profile.test_baseline_passthrough_paths
+            ),
             disabled_rules=tuple(profile.disabled_rules),
             profile_rule_levels=tuple(sorted(dict(profile.rule_levels).items())),
             profile_settings=settings,

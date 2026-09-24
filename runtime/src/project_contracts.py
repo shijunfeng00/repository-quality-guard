@@ -77,7 +77,8 @@ class _ReturnMappingAnalyzer:
             )
             keys = self._static_string_keys(expressions, defaults)
             state_defined = any(
-                isinstance(node, ast.ClassDef) and node.name == state_contract.state_type
+                isinstance(node, ast.ClassDef)
+                and node.name == state_contract.state_type
                 for node in self.tree.body
             )
             self.state_shape = _MappingShape(frozenset(keys), state_defined)
@@ -102,7 +103,9 @@ class _ReturnMappingAnalyzer:
         for node in nodes:
             if isinstance(node, (ast.Assign, ast.AnnAssign)):
                 value = node.value
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
                 if isinstance(value, ast.Call):
                     leaf = (
                         value.func.id
@@ -113,7 +116,9 @@ class _ReturnMappingAnalyzer:
                     )
                     if leaf == state_type:
                         names.update(
-                            target.id for target in targets if isinstance(target, ast.Name)
+                            target.id
+                            for target in targets
+                            if isinstance(target, ast.Name)
                         )
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -145,12 +150,17 @@ class _ReturnMappingAnalyzer:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             positional = [*node.args.posonlyargs, *node.args.args]
-            arguments = positional[-len(node.args.defaults) :] if node.args.defaults else ()
+            arguments = (
+                positional[-len(node.args.defaults) :] if node.args.defaults else ()
+            )
             defaults.update(
                 {
                     argument.arg: default.value
-                    for argument, default in zip(arguments, node.args.defaults, strict=True)
-                    if isinstance(default, ast.Constant) and isinstance(default.value, str)
+                    for argument, default in zip(
+                        arguments, node.args.defaults, strict=True
+                    )
+                    if isinstance(default, ast.Constant)
+                    and isinstance(default.value, str)
                 }
             )
             defaults.update(
@@ -161,7 +171,8 @@ class _ReturnMappingAnalyzer:
                         node.args.kw_defaults,
                         strict=True,
                     )
-                    if isinstance(default, ast.Constant) and isinstance(default.value, str)
+                    if isinstance(default, ast.Constant)
+                    and isinstance(default.value, str)
                 }
             )
         return defaults
@@ -207,21 +218,31 @@ class _ReturnMappingAnalyzer:
                         if keyword.arg in constructor_fields
                         else ast.Constant(keyword.arg)
                         for keyword in node.keywords
-                        if keyword.arg is not None and keyword.arg not in excluded_keywords
+                        if keyword.arg is not None
+                        and keyword.arg not in excluded_keywords
                     )
                 if isinstance(node.func, ast.Attribute) and leaf in writer_methods:
                     receiver = node.func.value
                     named_state = isinstance(receiver, ast.Name) and (
                         receiver.id in state_names
-                        or (receiver.id == "self" and source_suffix and path.endswith(source_suffix))
+                        or (
+                            receiver.id == "self"
+                            and source_suffix
+                            and path.endswith(source_suffix)
+                        )
                     )
                     attributed_state = (
-                        isinstance(receiver, ast.Attribute) and receiver.attr in state_names
+                        isinstance(receiver, ast.Attribute)
+                        and receiver.attr in state_names
                     )
                     if named_state or attributed_state:
                         key = (
                             next(
-                                (item.value for item in node.keywords if item.arg == "key"),
+                                (
+                                    item.value
+                                    for item in node.keywords
+                                    if item.arg == "key"
+                                ),
                                 node.args[0] if node.args else None,
                             )
                             if leaf in key_writer_methods
@@ -232,7 +253,8 @@ class _ReturnMappingAnalyzer:
                         if key is not None:
                             expressions.append(key)
                 if (
-                    source_suffix and path.endswith(source_suffix)
+                    source_suffix
+                    and path.endswith(source_suffix)
                     and leaf == "__init__"
                     and isinstance(node.func, ast.Attribute)
                     and isinstance(node.func.value, ast.Call)
@@ -242,11 +264,17 @@ class _ReturnMappingAnalyzer:
                         for keyword in node.keywords
                         if keyword.arg is not None
                     )
-            if source_suffix and path.endswith(source_suffix) and isinstance(
-                node,
-                (ast.Assign, ast.AnnAssign, ast.AugAssign),
+            if (
+                source_suffix
+                and path.endswith(source_suffix)
+                and isinstance(
+                    node,
+                    (ast.Assign, ast.AnnAssign, ast.AugAssign),
+                )
             ):
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
                 expressions.extend(
                     target.slice
                     for target in targets
@@ -355,7 +383,9 @@ class _ReturnMappingAnalyzer:
         stack = {*stack, identity}
         environments: dict[str, _MappingShape] = {}
         outputs: list[_MappingShape] = []
-        self._walk_statements(node.body, qualname, channel, stack, environments, outputs)
+        self._walk_statements(
+            node.body, qualname, channel, stack, environments, outputs
+        )
         if not outputs:
             return _MappingShape()
         shape = outputs[0]
@@ -374,7 +404,9 @@ class _ReturnMappingAnalyzer:
     ) -> None:
         """按源码顺序近似传播局部变量映射形态。"""
         for statement in statements:
-            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if isinstance(
+                statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
                 continue
             if self._record_assignment(
                 statement,
@@ -414,14 +446,18 @@ class _ReturnMappingAnalyzer:
     ) -> bool:
         """处理赋值和循环目标的映射形态传播。"""
         if isinstance(statement, ast.Assign):
-            shape = self._expression_shape(statement.value, qualname, channel, stack, environment)
+            shape = self._expression_shape(
+                statement.value, qualname, channel, stack, environment
+            )
             for target in statement.targets:
                 self._update_environment(target, shape, environment)
             return True
         if isinstance(statement, ast.AnnAssign) and statement.value is not None:
             self._update_environment(
                 statement.target,
-                self._expression_shape(statement.value, qualname, channel, stack, environment),
+                self._expression_shape(
+                    statement.value, qualname, channel, stack, environment
+                ),
                 environment,
             )
             return True
@@ -437,7 +473,9 @@ class _ReturnMappingAnalyzer:
         nested = dict(environment)
         self._update_environment(statement.target, iterator_shape, nested)
         self._walk_statements(statement.body, qualname, channel, stack, nested, outputs)
-        self._walk_statements(statement.orelse, qualname, channel, stack, nested, outputs)
+        self._walk_statements(
+            statement.orelse, qualname, channel, stack, nested, outputs
+        )
         return True
 
     def _record_output(
@@ -461,7 +499,9 @@ class _ReturnMappingAnalyzer:
             expression = statement.value.value
         else:
             return False
-        outputs.append(self._expression_shape(expression, qualname, channel, stack, environment))
+        outputs.append(
+            self._expression_shape(expression, qualname, channel, stack, environment)
+        )
         return True
 
     def _walk_control_flow(
@@ -505,11 +545,15 @@ class _ReturnMappingAnalyzer:
         """解析一个表达式可能形成的映射键。"""
         match expression:
             case ast.Dict():
-                return self._dict_shape(expression, qualname, channel, stack, environment)
+                return self._dict_shape(
+                    expression, qualname, channel, stack, environment
+                )
             case ast.Name(id=name) if name in environment:
                 return environment[name]
             case ast.IfExp(body=body, orelse=orelse):
-                return self._expression_shape(body, qualname, channel, stack, environment).merge(
+                return self._expression_shape(
+                    body, qualname, channel, stack, environment
+                ).merge(
                     self._expression_shape(
                         orelse,
                         qualname,
@@ -521,7 +565,9 @@ class _ReturnMappingAnalyzer:
             case ast.Call():
                 return self._call_expression_shape(expression, qualname, channel, stack)
             case ast.BinOp(left=left, op=ast.BitOr(), right=right):
-                return self._expression_shape(left, qualname, channel, stack, environment).merge(
+                return self._expression_shape(
+                    left, qualname, channel, stack, environment
+                ).merge(
                     self._expression_shape(
                         right,
                         qualname,
@@ -547,7 +593,9 @@ class _ReturnMappingAnalyzer:
         if not isinstance(receiver, ast.Name) or receiver.id not in {"self", "cls"}:
             return _MappingShape()
         owner, separator, _ = qualname.rpartition(".")
-        target = f"{owner}.{expression.func.attr}" if separator else expression.func.attr
+        target = (
+            f"{owner}.{expression.func.attr}" if separator else expression.func.attr
+        )
         if target not in self.callables:
             return _MappingShape()
         return self._analyze_callable(
@@ -570,7 +618,9 @@ class _ReturnMappingAnalyzer:
         complete = True
         for key, value in zip(expression.keys, expression.values, strict=True):
             if key is None:
-                nested = self._expression_shape(value, qualname, channel, stack, environment)
+                nested = self._expression_shape(
+                    value, qualname, channel, stack, environment
+                )
                 keys.update(nested.keys)
                 complete = complete and nested.complete
             elif isinstance(key, ast.Constant) and isinstance(key.value, str):
@@ -590,7 +640,9 @@ class _ReturnMappingAnalyzer:
             environment[target.id] = shape
         elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
-                _ReturnMappingAnalyzer._update_environment(element, _MappingShape(), environment)
+                _ReturnMappingAnalyzer._update_environment(
+                    element, _MappingShape(), environment
+                )
 
 
 def validate_project_contracts(
@@ -711,7 +763,9 @@ def _mapping_contract_findings(
                 *(["新增键: " + ", ".join(added)] if added else []),
                 *(["缺失键: " + ", ".join(removed)] if removed else []),
             ]
-            message = f"`{contract.qualname}` 改变了冻结返回映射协议；" + "；".join(details)
+            message = f"`{contract.qualname}` 改变了冻结返回映射协议；" + "；".join(
+                details
+            )
             severity = "error"
             confidence = "high"
         else:
@@ -851,7 +905,9 @@ def _analyze_fixed_mapping_contract(
         target = _ReturnMappingAnalyzer(
             contract.path,
             source,
-            target_trees[contract.path] if target_trees is not None and contract.path in target_trees else None,
+            target_trees[contract.path]
+            if target_trees is not None and contract.path in target_trees
+            else None,
         ).analyze(
             contract.qualname,
             contract.channel,
@@ -860,7 +916,9 @@ def _analyze_fixed_mapping_contract(
             base = _ReturnMappingAnalyzer(
                 contract.path,
                 base_sources[contract.path],
-                base_trees[contract.path] if base_trees is not None and contract.path in base_trees else None,
+                base_trees[contract.path]
+                if base_trees is not None and contract.path in base_trees
+                else None,
             ).analyze(contract.qualname, contract.channel)
         else:
             base = _MappingShape()
@@ -930,18 +988,27 @@ class _FrozenSSEAnalyzer:
         for name, node in self.methods.items():
             values: set[str] = set()
             for child in ast.walk(node):
-                if not isinstance(child, ast.Call) or not isinstance(child.func, ast.Attribute):
+                if not isinstance(child, ast.Call) or not isinstance(
+                    child.func, ast.Attribute
+                ):
                     continue
                 if child.func.attr != self.contract.envelope_method or not child.args:
                     continue
                 receiver = child.func.value
-                if not isinstance(receiver, ast.Name) or receiver.id not in {"self", "cls"}:
+                if not isinstance(receiver, ast.Name) or receiver.id not in {
+                    "self",
+                    "cls",
+                }:
                     continue
                 event = child.args[0]
-                if not isinstance(event, ast.Constant) or not isinstance(event.value, str):
+                if not isinstance(event, ast.Constant) or not isinstance(
+                    event.value, str
+                ):
                     continue
                 values.add(event.value)
-                if len(child.args) >= _SSE_EMIT_MIN_ARGS and isinstance(child.args[1], ast.Dict):
+                if len(child.args) >= _SSE_EMIT_MIN_ARGS and isinstance(
+                    child.args[1], ast.Dict
+                ):
                     keys = {
                         key.value
                         for key in child.args[1].keys
@@ -983,7 +1050,11 @@ class _FrozenSSEAnalyzer:
             }
             if keys:
                 candidates.append(keys)
-        return max(candidates, key=lambda item: (len(item & expected), len(item)), default=set())
+        return max(
+            candidates,
+            key=lambda item: (len(item & expected), len(item)),
+            default=set(),
+        )
 
     def close_keys(self) -> set[str]:
         """
@@ -1008,7 +1079,9 @@ class _FrozenSSEAnalyzer:
             if not isinstance(target, ast.Subscript):
                 continue
             slice_node = target.slice
-            if isinstance(slice_node, ast.Constant) and isinstance(slice_node.value, str):
+            if isinstance(slice_node, ast.Constant) and isinstance(
+                slice_node.value, str
+            ):
                 keys.add(slice_node.value)
         return keys
 
@@ -1066,7 +1139,9 @@ def _frozen_sse_contract_findings(
             contract.path,
             source,
             contract,
-            target_trees[contract.path] if target_trees is not None and contract.path in target_trees else None,
+            target_trees[contract.path]
+            if target_trees is not None and contract.path in target_trees
+            else None,
         )
     except SyntaxError as error:
         return [
@@ -1107,14 +1182,19 @@ def _sse_protocol_finding(
     expected_methods = dict(contract.event_methods)
     expected_event_types = set(expected_methods.values())
     method_mismatches = {
-        method: {"expected": expected_type, "actual": sorted(by_method.get(method, set()))}
+        method: {
+            "expected": expected_type,
+            "actual": sorted(by_method.get(method, set())),
+        }
         for method, expected_type in expected_methods.items()
         if by_method.get(method, set()) != {expected_type}
     }
     unexpected_event_types = sorted(
         event_type
         for event_type in actual_event_types - expected_event_types
-        if not any(event_type.startswith(prefix) for prefix in contract.allowed_event_prefixes)
+        if not any(
+            event_type.startswith(prefix) for prefix in contract.allowed_event_prefixes
+        )
     )
     missing_event_types = sorted(expected_event_types - actual_event_types)
     actual_envelope_keys = analyzer.envelope_keys()
@@ -1129,9 +1209,21 @@ def _sse_protocol_finding(
             if unexpected_event_types
             else []
         ),
-        *(["缺失事件类型: " + ", ".join(missing_event_types)] if missing_event_types else []),
-        *(["事件外壳字段发生变化"] if actual_envelope_keys != expected_envelope_keys else []),
-        *(["end.content 字段发生变化"] if actual_close_keys != expected_close_keys else []),
+        *(
+            ["缺失事件类型: " + ", ".join(missing_event_types)]
+            if missing_event_types
+            else []
+        ),
+        *(
+            ["事件外壳字段发生变化"]
+            if actual_envelope_keys != expected_envelope_keys
+            else []
+        ),
+        *(
+            ["end.content 字段发生变化"]
+            if actual_close_keys != expected_close_keys
+            else []
+        ),
     ]
     if not problems:
         return None
@@ -1178,16 +1270,22 @@ def _relative_sse_contract_findings(
 ) -> list[Finding]:
     """Document _relative_sse_contract_findings for quality guard coverage."""
     base_source = base_sources[contract.path] if contract.path in base_sources else ""
-    target_source = target_sources[contract.path] if contract.path in target_sources else ""
+    target_source = (
+        target_sources[contract.path] if contract.path in target_sources else ""
+    )
     base = _sse_shape(
         contract,
         base_source,
-        base_trees[contract.path] if base_trees is not None and contract.path in base_trees else None,
+        base_trees[contract.path]
+        if base_trees is not None and contract.path in base_trees
+        else None,
     )
     target = _sse_shape(
         contract,
         target_source,
-        target_trees[contract.path] if target_trees is not None and contract.path in target_trees else None,
+        target_trees[contract.path]
+        if target_trees is not None and contract.path in target_trees
+        else None,
     )
     if not base and not target:
         return []
@@ -1241,7 +1339,9 @@ def _sse_shape(
     by_method, event_types, content_keys = analyzer.event_types()
     return {
         "event_types": sorted(event_types),
-        "events_by_method": {key: sorted(value) for key, value in sorted(by_method.items())},
+        "events_by_method": {
+            key: sorted(value) for key, value in sorted(by_method.items())
+        },
         "envelope_keys": sorted(analyzer.envelope_keys()),
         "close_keys": sorted(analyzer.close_keys()),
         "content_keys_by_event": content_keys,
@@ -1263,14 +1363,18 @@ def _route_contract_findings(
             _extract_routes(
                 path,
                 base_sources[path] if path in base_sources else "",
-                base_trees[path] if base_trees is not None and path in base_trees else None,
+                base_trees[path]
+                if base_trees is not None and path in base_trees
+                else None,
             )
         )
         target.update(
             _extract_routes(
                 path,
                 target_sources[path] if path in target_sources else "",
-                target_trees[path] if target_trees is not None and path in target_trees else None,
+                target_trees[path]
+                if target_trees is not None and path in target_trees
+                else None,
             )
         )
     if base == target:
@@ -1309,7 +1413,9 @@ def _header_contract_findings(
             base_sets[key].update(values)
         for key, values in _extract_headers(
             target_sources[path] if path in target_sources else "",
-            target_trees[path] if target_trees is not None and path in target_trees else None,
+            target_trees[path]
+            if target_trees is not None and path in target_trees
+            else None,
         ).items():
             target_sets[key].update(values)
     base = {key: sorted(values) for key, values in base_sets.items() if values}
@@ -1363,7 +1469,9 @@ def _extract_routes(
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for decorator in node.decorator_list:
-            if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+            if not isinstance(decorator, ast.Call) or not isinstance(
+                decorator.func, ast.Attribute
+            ):
                 continue
             method = decorator.func.attr.lower()
             if method not in _HTTP_METHODS or not decorator.args:
@@ -1377,7 +1485,11 @@ def _extract_routes(
                 "async": str(isinstance(node, ast.AsyncFunctionDef)),
             }
             for keyword in decorator.keywords:
-                if keyword.arg in {"response_class", "include_in_schema", "status_code"}:
+                if keyword.arg in {
+                    "response_class",
+                    "include_in_schema",
+                    "status_code",
+                }:
                     details[keyword.arg] = _render(keyword.value)
             routes[f"{details['method']} {route_path}"] = details
     return routes
@@ -1410,7 +1522,11 @@ class _HeaderCollector(ast.NodeVisitor):
         Returns:
             None。
         """
-        self.values: dict[str, set[str]] = {"read": set(), "write": set(), "filter": set()}
+        self.values: dict[str, set[str]] = {
+            "read": set(),
+            "write": set(),
+            "filter": set(),
+        }
 
     def visit_Call(self, node: ast.Call) -> None:
         """
@@ -1461,7 +1577,10 @@ class _HeaderCollector(ast.NodeVisitor):
             None。
         """
         self._collect_subscript(node.target, "write")
-        if isinstance(node.target, ast.Name) and node.target.id in _HEADER_CONTAINER_NAMES:
+        if (
+            isinstance(node.target, ast.Name)
+            and node.target.id in _HEADER_CONTAINER_NAMES
+        ):
             self._collect_dict_keys(node.value, "write")
         self.generic_visit(node)
 
@@ -1557,7 +1676,9 @@ def _callable_contract_finding(
             alternatives = marker_group.split("|")
             if not any(marker in symbol.return_type for marker in alternatives):
                 problems.append(f"返回类型缺少 {marker_group}")
-        decorator_leaves = {item.split("(", 1)[0].rsplit(".", 1)[-1] for item in symbol.decorators}
+        decorator_leaves = {
+            item.split("(", 1)[0].rsplit(".", 1)[-1] for item in symbol.decorators
+        }
         missing_decorators = sorted(set(contract.decorators) - decorator_leaves)
         if missing_decorators:
             problems.append("缺少装饰器: " + ", ".join(missing_decorators))
@@ -1571,7 +1692,8 @@ def _callable_contract_finding(
         line=1 if symbol is None else symbol.line,
         column=1,
         symbol=contract.qualname,
-        message=f"框架适配接口 `{contract.qualname}` 不再满足固定兼容契约：" + "；".join(problems),
+        message=f"框架适配接口 `{contract.qualname}` 不再满足固定兼容契约："
+        + "；".join(problems),
         suggestion="保持适配层入口与目标框架的参数种类、默认值、异步形态和返回对象约定一致。",
         evidence={
             "expected_parameters": [

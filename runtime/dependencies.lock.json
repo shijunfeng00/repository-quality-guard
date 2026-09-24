@@ -1,5 +1,9 @@
 {
   "schema": "repository-quality-guard/dependencies-v1",
+  "registry": {
+    "python": "https://pypi.org/simple/",
+    "node": "https://registry.npmjs.org/"
+  },
   "python": {
     "apted": "1.0.3",
     "tree-sitter": "0.26.0",

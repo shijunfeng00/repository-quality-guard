@@ -205,6 +205,8 @@ python .agents/skills/repository-quality-guard/runtime/install_dependencies.py
 python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
 ```
 
+源码/检查点交付统一使用一个 canonical full-repository ZIP：包含 Git 元数据、本地 Profile 目录、完整源码与离线依赖介质。安装到 `.agents` 后仍保持精简：部署只封存运行所需 runtime 与已授权策略，不复制仓库中的离线 wheel/Node 介质，也不复制 source Profile 目录。
+
 RQG 为 Agent 提供的稳定流程能力包括：
 
 ```text

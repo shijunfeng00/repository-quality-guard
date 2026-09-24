@@ -16,6 +16,7 @@ def _profile_settings(config: GuardConfig) -> dict[str, object]:
     """把冻结的 Profile settings 转为当前规则只读使用的普通映射。"""
     return dict(config.profile_settings)
 
+
 _REFLECTION_MUTATORS = frozenset(
     {
         "delattr",
@@ -85,17 +86,35 @@ class StateBoundaryEvaluator:
         """
         settings = _profile_settings(config)
         self._state_enabled = "state-write-boundary" in config.profile_capabilities
-        self._dynamic_enabled = "dynamic-execution-blocker" in config.profile_capabilities
+        self._dynamic_enabled = (
+            "dynamic-execution-blocker" in config.profile_capabilities
+        )
         self._enabled = self._state_enabled or self._dynamic_enabled
         self.config_name = config.project_name
         self._state_type = str(settings.get("state_boundary_type") or "")
-        self._boundary_name = str(settings.get("absolute_boundary_name") or self._state_type or "state")
-        self._allowed_transitions = frozenset(settings.get("state_boundary_allowed_transitions") or ())
-        self._state_read_methods = frozenset(settings.get("state_boundary_state_read_methods") or ())
-        self._child_read_methods = frozenset(settings.get("state_boundary_child_read_methods") or ())
-        self._conventional_names = frozenset(settings.get("state_boundary_conventional_names") or ("state",))
-        self._suggestion = str(settings.get("state_boundary_suggestion") or "Use the profile-declared canonical state transition API; do not mutate state directly or through reflection.")
-        self._dynamic_hint = str(settings.get("dynamic_execution_nonblocking_hint") or "test/nonblocking paths remain separately audited")
+        self._boundary_name = str(
+            settings.get("absolute_boundary_name") or self._state_type or "state"
+        )
+        self._allowed_transitions = frozenset(
+            settings.get("state_boundary_allowed_transitions") or ()
+        )
+        self._state_read_methods = frozenset(
+            settings.get("state_boundary_state_read_methods") or ()
+        )
+        self._child_read_methods = frozenset(
+            settings.get("state_boundary_child_read_methods") or ()
+        )
+        self._conventional_names = frozenset(
+            settings.get("state_boundary_conventional_names") or ("state",)
+        )
+        self._suggestion = str(
+            settings.get("state_boundary_suggestion")
+            or "Use the profile-declared canonical state transition API; do not mutate state directly or through reflection."
+        )
+        self._dynamic_hint = str(
+            settings.get("dynamic_execution_nonblocking_hint")
+            or "test/nonblocking paths remain separately audited"
+        )
         self._holders = (
             _collect_state_holder_fields(modules, self._state_type)
             if self._state_enabled and self._state_type
@@ -116,7 +135,11 @@ class StateBoundaryEvaluator:
         facts = module.facts
         findings = (
             _dynamic_execution_findings(
-                facts, module.nodes, module.parents, self._dynamic_hint, self.config_name
+                facts,
+                module.nodes,
+                module.parents,
+                self._dynamic_hint,
+                self.config_name,
             )
             if self._dynamic_enabled
             else []
@@ -195,7 +218,9 @@ class _FunctionMutationAnalyzer:
         }
         for argument in all_parameters(function):
             annotated = self._state_type in annotation_names(argument.annotation)
-            conventional = argument.arg in self._conventional_names and owner != self._state_type
+            conventional = (
+                argument.arg in self._conventional_names and owner != self._state_type
+            )
             if annotated or conventional:
                 self._aliases[argument.arg] = "state"
 
@@ -310,14 +335,17 @@ class _FunctionMutationAnalyzer:
         self._aliases = {
             name: branch_aliases[0][name]
             for name in common
-            if all(aliases[name] == branch_aliases[0][name] for aliases in branch_aliases)
+            if all(
+                aliases[name] == branch_aliases[0][name] for aliases in branch_aliases
+            )
         }
 
     def _visit_expression(self, expression: ast.expr) -> None:
         """检查表达式内部的调用节点。"""
         for node in ast.walk(expression):
             if isinstance(
-                node, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+                node,
+                (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp),
             ):
                 continue
             if isinstance(node, ast.Call):
@@ -352,13 +380,16 @@ class _FunctionMutationAnalyzer:
             for item in target.elts:
                 self._check_target(item, node)
             return
-        receiver = target.value if isinstance(target, (ast.Attribute, ast.Subscript)) else None
+        receiver = (
+            target.value if isinstance(target, (ast.Attribute, ast.Subscript)) else None
+        )
         if receiver is None:
             return
         kind = self._origin(receiver)
         if kind is not None:
             self._report(
-                node, f"通过赋值或删除直接修改 {self._boundary_name} {kind}对象 `{_node_text(target)}`"
+                node,
+                f"通过赋值或删除直接修改 {self._boundary_name} {kind}对象 `{_node_text(target)}`",
             )
 
     def _check_call(self, node: ast.Call) -> None:
@@ -373,12 +404,19 @@ class _FunctionMutationAnalyzer:
             self._check_bound_call(node)
             return
         if self._origin(node.func) is not None:
-            self._report(node, f"动态取得 {self._boundary_name} 成员后直接调用，无法保持唯一写入口")
+            self._report(
+                node,
+                f"动态取得 {self._boundary_name} 成员后直接调用，无法保持唯一写入口",
+            )
 
     def _check_static_mutator_call(self, node: ast.Call) -> bool:
         """检查 setattr/operator 及 dict/list/object 基类写入口。"""
         name = dotted_name(node.func)
-        if name in _REFLECTION_MUTATORS and node.args and self._origin(node.args[0]) is not None:
+        if (
+            name in _REFLECTION_MUTATORS
+            and node.args
+            and self._origin(node.args[0]) is not None
+        ):
             self._report(node, f"通过反射写入口 `{name}` 修改 {self._boundary_name}")
             return True
         suffix = name.rsplit(".", 1)[-1]
@@ -398,7 +436,10 @@ class _FunctionMutationAnalyzer:
             return
         method = node.func.attr
         if receiver_kind == "state":
-            if method in self._allowed_transitions or method in self._state_read_methods:
+            if (
+                method in self._allowed_transitions
+                or method in self._state_read_methods
+            ):
                 return
             receiver = _node_text(node.func.value)
             self._report(node, f"绕过受控状态入口调用 `{receiver}.{method}()`")
@@ -413,7 +454,9 @@ class _FunctionMutationAnalyzer:
     def _origin(self, expression: ast.AST | None) -> str | None:
         """推断表达式来自状态根对象、嵌套对象或普通值。"""
         if isinstance(expression, ast.Name):
-            return self._aliases[expression.id] if expression.id in self._aliases else None
+            return (
+                self._aliases[expression.id] if expression.id in self._aliases else None
+            )
         if isinstance(expression, ast.Attribute):
             if dotted_name(expression) in self._holder_paths:
                 return "state"
@@ -440,7 +483,9 @@ class _FunctionMutationAnalyzer:
         if name in _REFLECTION_READERS and expression.args:
             return "child" if self._origin(expression.args[0]) is not None else None
         if name.startswith("ctypes."):
-            touched = any(self._expression_mentions_state(arg) for arg in expression.args)
+            touched = any(
+                self._expression_mentions_state(arg) for arg in expression.args
+            )
             return "child" if touched else None
         if not isinstance(expression.func, ast.Attribute):
             return None
@@ -504,7 +549,9 @@ def _collect_state_holder_fields(
                     holders.add((facts.module, owner, node.target.id))
                 continue
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                holders.update(_function_holder_fields(facts, node, module.parents, state_type))
+                holders.update(
+                    _function_holder_fields(facts, node, module.parents, state_type)
+                )
     return holders
 
 
@@ -546,7 +593,9 @@ def _function_holder_fields(
     return holders
 
 
-def _is_state_value(value: ast.AST | None, local_states: set[str], state_type: str) -> bool:
+def _is_state_value(
+    value: ast.AST | None, local_states: set[str], state_type: str
+) -> bool:
     """判断表达式是否为已知或新构造的 Profile state。"""
     if isinstance(value, ast.Name):
         return value.id in local_states
@@ -587,7 +636,9 @@ def _dynamic_execution_findings(
                 symbol=_qualname(facts.module, "", owner),
                 severity="critical",
                 suggestion=(
-                    "改用显式解析器、固定分发表或静态 import；" + nonblocking_hint + " 仍单独审计但不进入生产绝对门禁。"
+                    "改用显式解析器、固定分发表或静态 import；"
+                    + nonblocking_hint
+                    + " 仍单独审计但不进入生产绝对门禁。"
                 ),
                 evidence={"absolute_blocker": True, "profile": profile_name},
             )

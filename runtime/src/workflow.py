@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from . import cli as legacy_cli
-from .api_catalog import build_api_catalog, search_api_catalog
+from .api_catalog import apply_search_strategy, build_api_catalog, search_api_catalog
 from .compact_report import (
     REPORT_FILENAME,
     render_compact_report,
@@ -238,8 +238,8 @@ def _run_doc_search(options: argparse.Namespace) -> int:
         limit=options.limit,
         changed_paths=_changed_paths(options.files),
     )
-    hits = legacy_cli._apply_search_strategy(
-        profile, options.query, hits, root=target.root, limit=options.limit
+    hits = apply_search_strategy(
+        profile, options.query, hits, target.root, options.limit
     )
     _append_search_ledger(output, options.query, hits, metrics)
     _write_cli_line(

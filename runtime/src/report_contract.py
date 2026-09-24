@@ -191,7 +191,9 @@ def _changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
 def _is_delivery_artifact(path: str) -> bool:
     """判断文件是否是补丁、日志或归档等交付附件。"""
     lowered = path.lower()
-    return any(lowered.endswith(suffix) for suffix in report_schema.DELIVERY_ARTIFACT_SUFFIXES)
+    return any(
+        lowered.endswith(suffix) for suffix in report_schema.DELIVERY_ARTIFACT_SUFFIXES
+    )
 
 
 def _added_interfaces(report: ScanReport) -> tuple[AddedInterface, ...]:
@@ -201,7 +203,8 @@ def _added_interfaces(report: ScanReport) -> tuple[AddedInterface, ...]:
         (
             item
             for item in changes
-            if item.change == "added" and not is_test_path(item.path, report.project_name)
+            if item.change == "added"
+            and not is_test_path(item.path, report.project_name)
         ),
         key=lambda item: (item.path, item.kind, item.symbol),
     )
@@ -211,7 +214,9 @@ def _added_interfaces(report: ScanReport) -> tuple[AddedInterface, ...]:
     )
 
 
-def _addition_kind_counts(additions: tuple[AddedInterface, ...]) -> tuple[int, int, int]:
+def _addition_kind_counts(
+    additions: tuple[AddedInterface, ...],
+) -> tuple[int, int, int]:
     """统计生产新增函数、变量和类数量。
 
     Args:
@@ -220,7 +225,9 @@ def _addition_kind_counts(additions: tuple[AddedInterface, ...]) -> tuple[int, i
     Returns:
         依次返回函数（含方法）、变量（含成员字段）和类数量。
     """
-    function_count = sum(item.change.kind in {"function", "method"} for item in additions)
+    function_count = sum(
+        item.change.kind in {"function", "method"} for item in additions
+    )
     variable_count = sum(
         item.change.kind in {"global_variable", "member_variable"} for item in additions
     )
@@ -236,7 +243,10 @@ def _current_quality_findings(report: ScanReport) -> dict[str, Finding]:
         if finding.severity in report_schema.SEVERITY_RANK
         and not finding.code.startswith("QG98")
         and finding.code not in report_schema.BASELINE_GATE_EXEMPT_CODES
-        and not ("qg179_exempt" in finding.evidence and finding.evidence["qg179_exempt"] is True)
+        and not (
+            "qg179_exempt" in finding.evidence
+            and finding.evidence["qg179_exempt"] is True
+        )
     }
 
 
@@ -248,23 +258,35 @@ def _current_test_quality_findings(report: ScanReport) -> dict[str, Finding]:
         if finding.severity in report_schema.SEVERITY_RANK
         and not finding.code.startswith("QG98")
         and finding.code not in report_schema.BASELINE_GATE_EXEMPT_CODES
-        and not ("qg179_exempt" in finding.evidence and finding.evidence["qg179_exempt"] is True)
+        and not (
+            "qg179_exempt" in finding.evidence
+            and finding.evidence["qg179_exempt"] is True
+        )
     }
 
 
-def _quality_delta_items(report: ScanReport, *, tests: bool = False) -> tuple[QualityDelta, ...]:
+def _quality_delta_items(
+    report: ScanReport, *, tests: bool = False
+) -> tuple[QualityDelta, ...]:
     """生成生产或测试范围相对 Git 基线新增、升级的问题清单。"""
     baseline_report = report.test_baseline if tests else report.baseline
     if baseline_report is None:
         return ()
     baseline = baseline_report.finding_severities
-    current = _current_test_quality_findings(report) if tests else _current_quality_findings(report)
+    current = (
+        _current_test_quality_findings(report)
+        if tests
+        else _current_quality_findings(report)
+    )
     deltas: list[tuple[Finding, str, str]] = []
     for fingerprint, finding in current.items():
         previous = baseline.get(fingerprint)
         if previous is None:
             deltas.append((finding, "INTRODUCED", "NONE"))
-        elif report_schema.SEVERITY_RANK[finding.severity] > report_schema.SEVERITY_RANK[previous]:
+        elif (
+            report_schema.SEVERITY_RANK[finding.severity]
+            > report_schema.SEVERITY_RANK[previous]
+        ):
             deltas.append((finding, "WORSENED", previous.upper()))
     deltas.sort(
         key=lambda item: (
@@ -297,7 +319,8 @@ def _legacy_debt_reduced_count(report: ScanReport) -> int:
         finding = current.get(fingerprint)
         if (
             finding is None
-            or report_schema.SEVERITY_RANK[finding.severity] < report_schema.SEVERITY_RANK[previous]
+            or report_schema.SEVERITY_RANK[finding.severity]
+            < report_schema.SEVERITY_RANK[previous]
         ):
             reduced += 1
     return reduced
@@ -321,16 +344,20 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
         )
     )
     all_changed_files = _changed_files(report.root, revision)
-    artifact_raw = tuple(item for item in all_changed_files if _is_delivery_artifact(item.path))
+    artifact_raw = tuple(
+        item for item in all_changed_files if _is_delivery_artifact(item.path)
+    )
     production_raw = tuple(
         item
         for item in all_changed_files
-        if not is_test_path(item.path, report.project_name) and not _is_delivery_artifact(item.path)
+        if not is_test_path(item.path, report.project_name)
+        and not _is_delivery_artifact(item.path)
     )
     test_raw = tuple(
         item
         for item in all_changed_files
-        if is_test_path(item.path, report.project_name) and not _is_delivery_artifact(item.path)
+        if is_test_path(item.path, report.project_name)
+        and not _is_delivery_artifact(item.path)
     )
     changed_files = tuple(
         ChangedFile(
@@ -370,7 +397,9 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
         )
     )
     additions = _added_interfaces(report)
-    added_function_count, added_variable_count, added_class_count = _addition_kind_counts(additions)
+    added_function_count, added_variable_count, added_class_count = (
+        _addition_kind_counts(additions)
+    )
     production_interface_changes = tuple(
         item for item in changes if not is_test_path(item.path, report.project_name)
     )
@@ -390,10 +419,13 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
         for item in production_interface_changes
     )
     interface_removed_definitions = sum(
-        item.change == "removed" and item.kind in report_schema.INTERFACE_DEFINITION_KINDS
+        item.change == "removed"
+        and item.kind in report_schema.INTERFACE_DEFINITION_KINDS
         for item in production_interface_changes
     )
-    interface_definition_net = interface_added_definitions - interface_removed_definitions
+    interface_definition_net = (
+        interface_added_definitions - interface_removed_definitions
+    )
     protocol_findings = tuple(
         sorted(
             (item for item in report.findings if item.code == "QG182"),
@@ -409,7 +441,8 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
         if item.added == 0
         and item.path in changes_by_path
         and all(
-            change.change == "removed" and change.kind in report_schema.INTERFACE_DEFINITION_KINDS
+            change.change == "removed"
+            and change.kind in report_schema.INTERFACE_DEFINITION_KINDS
             for change in changes_by_path[item.path]
         )
     )
@@ -436,7 +469,9 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
                 "path": item.change.path,
                 "kind": item.change.kind,
                 "symbol": item.change.symbol,
-                "after": item.change.after.to_dict() if item.change.after is not None else None,
+                "after": item.change.after.to_dict()
+                if item.change.after is not None
+                else None,
             }
             for item in additions
         ],
@@ -446,7 +481,9 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
             "classes": added_class_count,
         },
         "test_interface_changes": [item.to_dict() for item in test_interface_changes],
-        "parameter_interface_changes": [item.to_dict() for item in parameter_interface_changes],
+        "parameter_interface_changes": [
+            item.to_dict() for item in parameter_interface_changes
+        ],
         "interface_definition_balance": {
             "added": interface_added_definitions,
             "removed": interface_removed_definitions,
@@ -563,7 +600,9 @@ def _auto(name: str, lines: Iterable[str]) -> list[str]:
     return [f"<!-- RQG:AUTO:BEGIN {name} -->", *lines, f"<!-- RQG:AUTO:END {name} -->"]
 
 
-def _metadata_lines(report: ScanReport, facts: ReportFacts, counts: dict[str, int]) -> list[str]:
+def _metadata_lines(
+    report: ScanReport, facts: ReportFacts, counts: dict[str, int]
+) -> list[str]:
     """构造工具事实状态、人工语义结论和行为优先范围。"""
     status = code_status(report)
     test_counts = _test_counts(report)
@@ -672,7 +711,9 @@ def _inventory_lines(facts: ReportFacts) -> list[str]:
         )
     if not facts.test_audits:
         test_rows.append("| — | — | 无测试文件变化 | 0 | 0→0 | 0→0 | 0→0 | 0→0 |")
-    lines.extend(["", "### 测试文件独立审计", "", *_auto("test_inventory", test_rows), ""])
+    lines.extend(
+        ["", "### 测试文件独立审计", "", *_auto("test_inventory", test_rows), ""]
+    )
     lines.extend(
         [
             "> 测试仍必须审计，但不进入生产 FILE/ADD/ARCH/DELTA 预算。每个 TEST-FILE 只按文件级解释测试目标、断言强度、隔离方式和风险。",
@@ -807,7 +848,12 @@ def _architecture_lines(facts: ReportFacts) -> list[str]:
         )
     if not facts.architecture:
         automatic.append("| — | — | — | — | 未发现继承与公共所有者差分 |")
-    lines = [report_schema.REQUIRED_SECTIONS[3], "", *_auto("architecture", automatic), ""]
+    lines = [
+        report_schema.REQUIRED_SECTIONS[3],
+        "",
+        *_auto("architecture", automatic),
+        "",
+    ]
     lines.extend(
         [
             "| 架构ID | 修复或保留的事实依据 | 验证证据 | 状态 |",
@@ -842,7 +888,9 @@ def _interface_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
     ]
     changes = () if report.interface_diff is None else report.interface_diff.changes
     production_changes = tuple(
-        change for change in changes if not is_test_path(change.path, report.project_name)
+        change
+        for change in changes
+        if not is_test_path(change.path, report.project_name)
     )
     for change in production_changes:
         rows.append(
@@ -854,7 +902,9 @@ def _interface_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
         rows.append("| — | — | unchanged | — | — |")
 
     balance_decision = (
-        "REVIEW_REQUIRED（QG181，需人工确认）" if facts.interface_definition_net > 0 else "PASS"
+        "REVIEW_REQUIRED（QG181，需人工确认）"
+        if facts.interface_definition_net > 0
+        else "PASS"
     )
     balance_rows = [
         "| 新增函数/方法/类 | 删除函数/方法/类 | 净额 | 结论 |",
@@ -883,10 +933,13 @@ def _interface_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
             for kind in ("added", "removed", "modified")
         }
         representative = ", ".join(
-            f"{item.change}:{item.symbol}" for item in items[: report_schema.TEST_INTERFACE_PREVIEW]
+            f"{item.change}:{item.symbol}"
+            for item in items[: report_schema.TEST_INTERFACE_PREVIEW]
         )
         if len(items) > report_schema.TEST_INTERFACE_PREVIEW:
-            representative += f", 其余 {len(items) - report_schema.TEST_INTERFACE_PREVIEW} 项"
+            representative += (
+                f", 其余 {len(items) - report_schema.TEST_INTERFACE_PREVIEW} 项"
+            )
         test_rows.append(
             f"| `{report_schema.escape(path)}` | {counts['added']} | {counts['removed']} | "
             f"{counts['modified']} | {report_schema.escape(representative)} |"
@@ -895,7 +948,8 @@ def _interface_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
         test_rows.append("| — | 0 | 0 | 0 | 无测试接口变化 |")
 
     deletion_only = bool(production_changes) and all(
-        change.change == "removed" and change.kind in report_schema.INTERFACE_DEFINITION_KINDS
+        change.change == "removed"
+        and change.kind in report_schema.INTERFACE_DEFINITION_KINDS
         for change in production_changes
     )
     sync_line = (
@@ -988,12 +1042,16 @@ def _test_quality_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
         "|---|---:|---:|---:|",
     ]
     for severity in ("critical", "error", "warning"):
-        before = test_baseline_counts[severity] if report.test_baseline is not None else 0
+        before = (
+            test_baseline_counts[severity] if report.test_baseline is not None else 0
+        )
         after = test_counts[severity]
         delta = after - before
         baseline_text = str(before) if report.test_baseline is not None else "N/A"
         delta_text = f"{delta:+d}" if report.test_baseline is not None else "N/A"
-        test_budget.append(f"| {severity.upper()} | {baseline_text} | {after} | {delta_text} |")
+        test_budget.append(
+            f"| {severity.upper()} | {baseline_text} | {after} | {delta_text} |"
+        )
     test_delta_rows = [
         "| 测试增量 | 类型 | 规则 | 位置 | 静态事实 |",
         "|---|---|---|---|---|",
@@ -1005,7 +1063,9 @@ def _test_quality_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
             f"`{report_schema.escape(finding.path)}:{finding.line}` | {report_schema.escape(finding.message)} |"
         )
     if not facts.test_quality_deltas:
-        test_delta_rows.append("| — | — | — | — | 未发现测试/Tracing 非阻断域新增或升级质量问题 |")
+        test_delta_rows.append(
+            "| — | — | — | — | 未发现测试/Tracing 非阻断域新增或升级质量问题 |"
+        )
     test_risks = [
         (f"TEST-RISK-{index:03d}", finding)
         for index, finding in enumerate(
@@ -1023,7 +1083,9 @@ def _test_quality_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
         for item_id, finding in test_risks
     )
     if not test_risks:
-        risk_rows.append("| — | — | — | — | 未发现删除用例、减少断言或增加 skip 等测试弱化风险 |")
+        risk_rows.append(
+            "| — | — | — | — | 未发现删除用例、减少断言或增加 skip 等测试弱化风险 |"
+        )
     lines = [
         "### 测试/Tracing 非阻断域独立质量审计",
         "",
@@ -1039,7 +1101,8 @@ def _test_quality_lines(report: ScanReport, facts: ReportFacts) -> list[str]:
         "|---|---|---|---|",
     ]
     lines.extend(
-        f"| {item_id} | 处置=待填写 | 证据=待填写 | PENDING |" for item_id, _finding in test_risks
+        f"| {item_id} | 处置=待填写 | 证据=待填写 | PENDING |"
+        for item_id, _finding in test_risks
     )
     if not test_risks:
         lines.append("| — | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |")
@@ -1059,7 +1122,8 @@ def _quality_lines(
         else {"critical": 0, "error": 0, "warning": 0}
     )
     raw_current = {
-        severity: baseline_counts[severity] + report.quality_count_deltas.get(severity, 0)
+        severity: baseline_counts[severity]
+        + report.quality_count_deltas.get(severity, 0)
         for severity in ("critical", "error", "warning")
     }
     regression_rows = [
@@ -1103,10 +1167,15 @@ def _quality_lines(
         rows.append(
             f"| {severity.upper()} | {baseline_text} | {after} | {delta_text} | {requirement} |"
         )
-    rows.extend(["", "| 规则 | 级别 | 数量 | 代表位置 | 代表问题 |", "|---|---|---:|---|---|"])
+    rows.extend(
+        ["", "| 规则 | 级别 | 数量 | 代表位置 | 代表问题 |", "|---|---|---:|---|---|"]
+    )
     grouped: dict[tuple[str, str], list[Finding]] = {}
     for finding in report.findings:
-        if finding.severity not in report_schema.SEVERITY_RANK or finding.code.startswith("QG98"):
+        if (
+            finding.severity not in report_schema.SEVERITY_RANK
+            or finding.code.startswith("QG98")
+        ):
             continue
         key = (finding.code, finding.severity)
         findings = grouped.get(key)
@@ -1174,7 +1243,9 @@ def _quality_lines(
         for item in facts.quality_deltas
     )
     if not facts.quality_deltas:
-        lines.append("| — | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |")
+        lines.append(
+            "| — | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |"
+        )
     lines.extend(
         [
             "",
@@ -1270,7 +1341,8 @@ def _status_can_be_downgraded(tool_status: str, final_status: str) -> bool:
     return (
         tool_status in report_schema.STATUS_RANK
         and final_status in report_schema.STATUS_RANK
-        and report_schema.STATUS_RANK[final_status] <= report_schema.STATUS_RANK[tool_status]
+        and report_schema.STATUS_RANK[final_status]
+        <= report_schema.STATUS_RANK[tool_status]
     )
 
 
@@ -1296,7 +1368,8 @@ def _replace_front_matter(text: str, facts: ReportFacts, tool_status: str) -> st
 def _refresh_auto_blocks(existing: str, fresh: str) -> str:
     """只替换自动事实块，避免模型完成的人工说明被下一轮覆盖。"""
     fresh_blocks = {
-        match.group("name"): match.group(0) for match in report_schema.AUTO_BLOCK.finditer(fresh)
+        match.group("name"): match.group(0)
+        for match in report_schema.AUTO_BLOCK.finditer(fresh)
     }
     result = existing
     for name, block in fresh_blocks.items():
@@ -1330,7 +1403,8 @@ def render_strict_modification_report(
     fresh = _fresh_template(report, revision)
     if (
         not existing
-        or report_schema.front_matter(existing).get("report_schema") != report_schema.REPORT_SCHEMA
+        or report_schema.front_matter(existing).get("report_schema")
+        != report_schema.REPORT_SCHEMA
     ):
         return fresh
     facts = build_report_facts(report, revision)
@@ -1398,7 +1472,9 @@ def _artifact_row_findings(
         item_id = match.group("id")
         purpose = match.group("purpose")
         if expected.get(item_id) != match.group("path"):
-            findings.append(_report_finding("QG982", f"{item_id} 的附件路径与自动事实不一致。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 的附件路径与自动事实不一致。")
+            )
         if (
             report_schema.contains_placeholder(purpose)
             or len(purpose.strip()) < report_schema.MIN_MANUAL_TEXT
@@ -1434,7 +1510,9 @@ def _file_row_findings(
         status = match.group("status")
         expected_path = expected.get(item_id)
         if expected_path != match.group("path"):
-            findings.append(_report_finding("QG982", f"{item_id} 的文件路径与自动事实不一致。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 的文件路径与自动事实不一致。")
+            )
         deletion_only = item_id in deletion_only_ids
         if deletion_only:
             if (
@@ -1461,7 +1539,9 @@ def _file_row_findings(
                 )
             )
         if status not in report_schema.VALID_ITEM_STATUSES:
-            findings.append(_report_finding("QG982", f"{item_id} 使用了非法状态 `{status}`。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 使用了非法状态 `{status}`。")
+            )
         explanations.append((item_id, reason))
     findings.extend(_duplicate_text_findings(explanations, "文件编辑事实"))
     return findings
@@ -1481,7 +1561,9 @@ def _test_file_row_findings(
     for match in matches:
         item_id = match.group("id")
         if expected.get(item_id) != match.group("path"):
-            findings.append(_report_finding("QG982", f"{item_id} 的测试文件路径与自动事实不一致。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 的测试文件路径与自动事实不一致。")
+            )
         fields = (
             (
                 match.group("purpose"),
@@ -1498,7 +1580,11 @@ def _test_file_row_findings(
                 report_schema.REQUIRED_TEST_ISOLATION_MARKERS,
                 "Mock/Stub 与生产路径",
             ),
-            (match.group("risk"), report_schema.REQUIRED_TEST_RISK_MARKERS, "风险与结论"),
+            (
+                match.group("risk"),
+                report_schema.REQUIRED_TEST_RISK_MARKERS,
+                "风险与结论",
+            ),
         )
         for value, markers, label in fields:
             if (
@@ -1514,7 +1600,9 @@ def _test_file_row_findings(
                 )
         status = match.group("status")
         if status not in report_schema.VALID_ITEM_STATUSES:
-            findings.append(_report_finding("QG982", f"{item_id} 使用了非法状态 `{status}`。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 使用了非法状态 `{status}`。")
+            )
         explanations.append(
             (
                 item_id,
@@ -1551,16 +1639,22 @@ def _test_risk_row_findings(
             or "处置=" not in reason
             or len(reason) < report_schema.MIN_MANUAL_TEXT
         ):
-            findings.append(_report_finding("QG982", f"{match.group('id')} 必须填写 `处置=`。"))
+            findings.append(
+                _report_finding("QG982", f"{match.group('id')} 必须填写 `处置=`。")
+            )
         if (
             report_schema.contains_placeholder(verification)
             or "证据=" not in verification
             or len(verification) < report_schema.MIN_MANUAL_TEXT
         ):
-            findings.append(_report_finding("QG982", f"{match.group('id')} 必须填写 `证据=`。"))
+            findings.append(
+                _report_finding("QG982", f"{match.group('id')} 必须填写 `证据=`。")
+            )
         if status not in report_schema.VALID_ITEM_STATUSES:
             findings.append(
-                _report_finding("QG982", f"{match.group('id')} 使用了非法状态 `{status}`。")
+                _report_finding(
+                    "QG982", f"{match.group('id')} 使用了非法状态 `{status}`。"
+                )
             )
     return findings
 
@@ -1589,12 +1683,15 @@ def _addition_row_findings(
         evidence = match.group("evidence")
         status = match.group("status")
         if expected.get(item_id) != symbol:
-            findings.append(_report_finding("QG982", f"{item_id} 的符号与自动事实不一致。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 的符号与自动事实不一致。")
+            )
         if (
             report_schema.contains_placeholder(reason)
             or len(reason.strip()) < report_schema.MIN_ADDITION_FACT_TEXT
             or any(
-                marker not in reason for marker in report_schema.REQUIRED_ADDITION_REASON_MARKERS
+                marker not in reason
+                for marker in report_schema.REQUIRED_ADDITION_REASON_MARKERS
             )
         ):
             findings.append(
@@ -1607,7 +1704,8 @@ def _addition_row_findings(
             report_schema.contains_placeholder(existing_check)
             or len(existing_check.strip()) < report_schema.MIN_ADDITION_FACT_TEXT
             or any(
-                marker not in existing_check for marker in report_schema.REQUIRED_EXISTING_MARKERS
+                marker not in existing_check
+                for marker in report_schema.REQUIRED_EXISTING_MARKERS
             )
         ):
             findings.append(
@@ -1620,7 +1718,8 @@ def _addition_row_findings(
             report_schema.contains_placeholder(alternative)
             or len(alternative.strip()) < report_schema.MIN_ADDITION_ALTERNATIVE_TEXT
             or any(
-                marker not in alternative for marker in report_schema.REQUIRED_ALTERNATIVE_MARKERS
+                marker not in alternative
+                for marker in report_schema.REQUIRED_ALTERNATIVE_MARKERS
             )
         ):
             findings.append(
@@ -1636,7 +1735,9 @@ def _addition_row_findings(
             else ""
         )
         semantic_decision = (
-            evidence.split("语义裁决=", 1)[-1].strip() if "语义裁决=" in evidence else ""
+            evidence.split("语义裁决=", 1)[-1].strip()
+            if "语义裁决=" in evidence
+            else ""
         )
         has_chain_shape = (
             "→" in call_chain
@@ -1672,7 +1773,9 @@ def _addition_row_findings(
                     f"{item_id} 对应的新增接口仍存在，只能标记 JUSTIFIED 或 BLOCKING。",
                 )
             )
-        explanations.append((item_id, "|".join((reason, existing_check, alternative, evidence))))
+        explanations.append(
+            (item_id, "|".join((reason, existing_check, alternative, evidence)))
+        )
     findings.extend(_duplicate_text_findings(explanations, "新增对象删除审判"))
     return findings
 
@@ -1763,17 +1866,23 @@ def _architecture_row_findings(
             or len(reason.strip()) < report_schema.MIN_MANUAL_TEXT
             or "处置=" not in reason
         ):
-            findings.append(_report_finding("QG982", f"{item_id} 必须填写 `处置=` 及其架构事实。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 必须填写 `处置=` 及其架构事实。")
+            )
         if (
             report_schema.contains_placeholder(verification)
             or len(verification.strip()) < report_schema.MIN_MANUAL_TEXT
             or "证据=" not in verification
         ):
             findings.append(
-                _report_finding("QG982", f"{item_id} 必须填写 `证据=` 并指向调用链或验证结果。")
+                _report_finding(
+                    "QG982", f"{item_id} 必须填写 `证据=` 并指向调用链或验证结果。"
+                )
             )
         if status not in report_schema.VALID_ITEM_STATUSES:
-            findings.append(_report_finding("QG982", f"{item_id} 使用了非法状态 `{status}`。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 使用了非法状态 `{status}`。")
+            )
         architecture_finding = expected.get(item_id)
         if (
             architecture_finding is not None
@@ -1814,7 +1923,10 @@ def _quality_delta_row_findings(
         if (
             report_schema.contains_placeholder(reason)
             or len(reason.strip()) < minimum
-            or any(marker not in reason for marker in report_schema.REQUIRED_DELTA_REASON_MARKERS)
+            or any(
+                marker not in reason
+                for marker in report_schema.REQUIRED_DELTA_REASON_MARKERS
+            )
         ):
             findings.append(
                 _report_finding(
@@ -1839,7 +1951,10 @@ def _quality_delta_row_findings(
         if (
             report_schema.contains_placeholder(risk)
             or len(risk.strip()) < minimum
-            or any(marker not in risk for marker in report_schema.REQUIRED_DELTA_RISK_MARKERS)
+            or any(
+                marker not in risk
+                for marker in report_schema.REQUIRED_DELTA_RISK_MARKERS
+            )
         ):
             findings.append(
                 _report_finding(
@@ -1881,7 +1996,10 @@ def _debt_summary_findings(text: str, facts: ReportFacts) -> list[Finding]:
         if (
             report_schema.contains_placeholder(reason)
             or len(reason) < report_schema.MIN_DEBT_REASON_TEXT
-            or any(marker not in reason for marker in report_schema.REQUIRED_DEBT_REASON_MARKERS)
+            or any(
+                marker not in reason
+                for marker in report_schema.REQUIRED_DEBT_REASON_MARKERS
+            )
         ):
             findings.append(
                 _report_finding(
@@ -1915,9 +2033,15 @@ def _protocol_row_findings(
         finding = expected.get(item_id)
         symbol = match.group("symbol").strip("`")
         if finding is None or (finding.symbol or finding.path) != symbol:
-            findings.append(_report_finding("QG982", f"{item_id} 的协议符号与自动事实不一致。"))
-        if finding is None or match.group("fact") != report_schema.escape(finding.message):
-            findings.append(_report_finding("QG981", f"{item_id} 的自动协议变化事实被改写。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 的协议符号与自动事实不一致。")
+            )
+        if finding is None or match.group("fact") != report_schema.escape(
+            finding.message
+        ):
+            findings.append(
+                _report_finding("QG981", f"{item_id} 的自动协议变化事实被改写。")
+            )
         fields = (
             (
                 match.group("reason"),
@@ -1950,7 +2074,13 @@ def _protocol_row_findings(
         explanations.append(
             (
                 item_id,
-                "|".join((match.group("reason"), match.group("impact"), match.group("evidence"))),
+                "|".join(
+                    (
+                        match.group("reason"),
+                        match.group("impact"),
+                        match.group("evidence"),
+                    )
+                ),
             )
         )
     findings.extend(_duplicate_text_findings(explanations, "核心协议字段审查"))
@@ -1973,13 +2103,18 @@ def _manual_row_findings(
     test_risk_matches = list(report_schema.TEST_RISK_MANUAL_ROW.finditer(text))
     expected_files = {item.item_id: item.path for item in facts.changed_files}
     deletion_only_ids = frozenset(
-        item.item_id for item in facts.changed_files if item.path in facts.deletion_only_paths
+        item.item_id
+        for item in facts.changed_files
+        if item.path in facts.deletion_only_paths
     )
-    expected_artifacts = {item.item_id: item.path for item in facts.artifact_changed_files}
+    expected_artifacts = {
+        item.item_id: item.path for item in facts.artifact_changed_files
+    }
     expected_test_files = {item.item_id: item.path for item in facts.test_audits}
     expected_additions = {item.item_id: item.change.symbol for item in facts.additions}
     expected_architecture = {
-        f"ARCH-{index:03d}": finding for index, finding in enumerate(facts.architecture, 1)
+        f"ARCH-{index:03d}": finding
+        for index, finding in enumerate(facts.architecture, 1)
     }
     expected_deltas = {item.item_id: item for item in facts.quality_deltas}
     expected_interfaces = {
@@ -1987,10 +2122,13 @@ def _manual_row_findings(
         for index, change in enumerate(facts.parameter_interface_changes, 1)
     }
     expected_protocols = {
-        f"PROTOCOL-{index:03d}": finding for index, finding in enumerate(facts.protocol_findings, 1)
+        f"PROTOCOL-{index:03d}": finding
+        for index, finding in enumerate(facts.protocol_findings, 1)
     }
     test_risk_count = sum(len(item.findings) for item in facts.test_audits)
-    expected_test_risks = {f"TEST-RISK-{index:03d}" for index in range(1, test_risk_count + 1)}
+    expected_test_risks = {
+        f"TEST-RISK-{index:03d}" for index in range(1, test_risk_count + 1)
+    }
     findings = [
         *_file_row_findings(file_matches, expected_files, deletion_only_ids),
         *_artifact_row_findings(artifact_matches, expected_artifacts),
@@ -2015,7 +2153,9 @@ def _manual_row_findings(
         item_id = match.group("id")
         change = expected_interfaces.get(item_id)
         if change is None or change.symbol != match.group("symbol").strip("`"):
-            findings.append(_report_finding("QG982", f"{item_id} 的存量接口符号与自动事实不一致。"))
+            findings.append(
+                _report_finding("QG982", f"{item_id} 的存量接口符号与自动事实不一致。")
+            )
         fields = (
             (
                 match.group("reason"),
@@ -2056,12 +2196,16 @@ def _manual_row_findings(
                 ),
             )
         )
-    findings.extend(_duplicate_text_findings(interface_explanations, "存量接口修改审查"))
+    findings.extend(
+        _duplicate_text_findings(interface_explanations, "存量接口修改审查")
+    )
 
     findings.extend(_protocol_row_findings(protocol_matches, expected_protocols))
 
     if facts.interface_definition_net > 0:
-        addition_statuses = {match.group("id"): match.group("status") for match in addition_matches}
+        addition_statuses = {
+            match.group("id"): match.group("status") for match in addition_matches
+        }
         relevant_ids = [
             item.item_id
             for item in facts.additions
@@ -2100,7 +2244,9 @@ def _semantic_heuristic_question_findings(
 
     candidates = [item for item in report.findings if item.code == "QG178"]
     candidate_locations = [f"{item.path}:{item.line}" for item in candidates]
-    missing_locations = [location for location in candidate_locations if location not in fact]
+    missing_locations = [
+        location for location in candidate_locations if location not in fact
+    ]
     if missing_locations:
         findings.append(
             _report_finding(
@@ -2124,7 +2270,9 @@ def _semantic_heuristic_question_findings(
         )
 
     unauthorized = [
-        item for item in candidates if not bool(item.evidence.get("authorized_by_baseline", False))
+        item
+        for item in candidates
+        if not bool(item.evidence.get("authorized_by_baseline", False))
     ]
     if candidates and status == "NOT_APPLICABLE":
         findings.append(
@@ -2160,7 +2308,9 @@ def _semantic_heuristic_question_findings(
         )
     if not candidates and status == "NOT_APPLICABLE" and "候选=NONE" not in fact:
         findings.append(
-            _report_finding("QG982", "Q10 标记 NOT_APPLICABLE 时必须明确填写 `候选=NONE`。")
+            _report_finding(
+                "QG982", "Q10 标记 NOT_APPLICABLE 时必须明确填写 `候选=NONE`。"
+            )
         )
     return findings
 
@@ -2168,19 +2318,26 @@ def _semantic_heuristic_question_findings(
 def _question_findings(text: str, report: ScanReport) -> list[Finding]:
     """验证通用审判及 profile 专项审判均有事实和独立结论。"""
     findings: list[Finding] = []
-    matches = {match.group("title"): match for match in report_schema.QUESTION_BLOCK.finditer(text)}
+    matches = {
+        match.group("title"): match
+        for match in report_schema.QUESTION_BLOCK.finditer(text)
+    }
     fact_values: list[tuple[str, str]] = []
     conclusion_values: list[tuple[str, str]] = []
     for title in report_schema.question_titles(report):
         match = matches.get(title)
         if match is None:
-            findings.append(_report_finding("QG980", f"架构与必要性审判缺失或格式错误：{title}"))
+            findings.append(
+                _report_finding("QG980", f"架构与必要性审判缺失或格式错误：{title}")
+            )
             continue
         status = match.group("status")
         fact = match.group("fact").strip()
         conclusion = match.group("conclusion").strip()
         if status not in report_schema.VALID_ITEM_STATUSES:
-            findings.append(_report_finding("QG982", f"{title} 使用了非法状态 `{status}`。"))
+            findings.append(
+                _report_finding("QG982", f"{title} 使用了非法状态 `{status}`。")
+            )
         if (
             report_schema.contains_placeholder(fact)
             or len(fact) < report_schema.MIN_MANUAL_TEXT
@@ -2245,7 +2402,8 @@ def _validation_findings(text: str) -> list[Finding]:
     commands = [row.group("command") for row in rows]
     required_categories = {
         "quality-guard": any(
-            "quality_check.py" in command or "quality-guard" in command for command in commands
+            "quality_check.py" in command or "quality-guard" in command
+            for command in commands
         ),
         "git diff --check": any("git diff --check" in command for command in commands),
         "项目验证": any(
@@ -2256,7 +2414,9 @@ def _validation_findings(text: str) -> list[Finding]:
     }
     for category, present in required_categories.items():
         if not present:
-            findings.append(_report_finding("QG983", f"验证章节缺少 `{category}` 类命令。"))
+            findings.append(
+                _report_finding("QG983", f"验证章节缺少 `{category}` 类命令。")
+            )
     for row in rows:
         values = (row.group("command"), row.group("purpose"), row.group("result"))
         if any(
@@ -2305,7 +2465,9 @@ def _risk_findings(
             or report_schema.contains_placeholder(proposal)
             or len(proposal.strip()) < report_schema.MIN_RISK_TEXT
         ):
-            findings.append(_report_finding("QG982", "剩余风险表仍包含占位或空泛说明。"))
+            findings.append(
+                _report_finding("QG982", "剩余风险表仍包含占位或空泛说明。")
+            )
     has_open_quality = bool(
         _current_quality_findings(report) or _current_test_quality_findings(report)
     )
@@ -2314,7 +2476,11 @@ def _risk_findings(
         findings.append(
             _report_finding("QG982", "代码结论为 ACCEPT 时不得继续声明三档未解决问题。")
         )
-    if final_status in {"REVIEW_REQUIRED", "REJECT"} and has_open_quality and not has_declared_risk:
+    if (
+        final_status in {"REVIEW_REQUIRED", "REJECT"}
+        and has_open_quality
+        and not has_declared_risk
+    ):
         findings.append(
             _report_finding(
                 "QG982",
@@ -2334,7 +2500,9 @@ def _commit_findings(text: str) -> list[Finding]:
     subject = lines[0] if lines else ""
     bullets = [line for line in lines[1:] if line.startswith("- ")]
     subject_ok = bool(
-        re.search(r'^git commit -m "[a-z]+(?:\([^)]+\))?!?:\s*.*[\u4e00-\u9fff]', subject)
+        re.search(
+            r'^git commit -m "[a-z]+(?:\([^)]+\))?!?:\s*.*[\u4e00-\u9fff]', subject
+        )
     )
     valid = (
         subject_ok
@@ -2405,7 +2573,9 @@ def validate_modification_report(
         )
     for title in report_schema.question_titles(report):
         if text.count(f"### {title}") != 1:
-            findings.append(_report_finding("QG980", f"架构与必要性审判缺失或重复：{title}"))
+            findings.append(
+                _report_finding("QG980", f"架构与必要性审判缺失或重复：{title}")
+            )
     front = report_schema.front_matter(text)
     tool_status = code_status(report)
     final_status = front.get("final_status", "")
@@ -2420,8 +2590,9 @@ def validate_modification_report(
                 "schema、change_digest 或 tool_status 与当前 Git/接口/架构静态事实不一致。",
             )
         )
-    if final_status not in report_schema.VALID_FINAL_STATUSES or not _status_can_be_downgraded(
-        tool_status, final_status
+    if (
+        final_status not in report_schema.VALID_FINAL_STATUSES
+        or not _status_can_be_downgraded(tool_status, final_status)
     ):
         findings.append(
             _report_finding(
@@ -2431,7 +2602,9 @@ def validate_modification_report(
         )
     expected_auto = {
         match.group("name"): match.group("body")
-        for match in report_schema.AUTO_BLOCK.finditer(_fresh_template(report, revision))
+        for match in report_schema.AUTO_BLOCK.finditer(
+            _fresh_template(report, revision)
+        )
     }
     actual_matches = list(report_schema.AUTO_BLOCK.finditer(text))
     actual_auto = {match.group("name"): match.group("body") for match in actual_matches}
@@ -2459,7 +2632,9 @@ def validate_modification_report(
             or report_schema.contains_placeholder(value)
             or len(value) < report_schema.MIN_SUMMARY_TEXT
         ):
-            findings.append(_report_finding("QG982", f"必填结论缺失或仍是占位：{marker}"))
+            findings.append(
+                _report_finding("QG982", f"必填结论缺失或仍是占位：{marker}")
+            )
     final_line = next(
         (item for item in text.splitlines() if item.startswith("- 最终人工结论：")),
         "",
@@ -2476,16 +2651,46 @@ def validate_modification_report(
             )
         )
     item_statuses = [
-        *(match.group("status") for match in report_schema.FILE_MANUAL_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.ARTIFACT_MANUAL_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.TEST_FILE_MANUAL_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.ADDITION_MANUAL_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.ARCH_MANUAL_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.QUALITY_DELTA_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.INTERFACE_REVIEW_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.PROTOCOL_REVIEW_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.TEST_RISK_MANUAL_ROW.finditer(text)),
-        *(match.group("status") for match in report_schema.QUESTION_BLOCK.finditer(text)),
+        *(
+            match.group("status")
+            for match in report_schema.FILE_MANUAL_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.ARTIFACT_MANUAL_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.TEST_FILE_MANUAL_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.ADDITION_MANUAL_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.ARCH_MANUAL_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.QUALITY_DELTA_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.INTERFACE_REVIEW_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.PROTOCOL_REVIEW_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.TEST_RISK_MANUAL_ROW.finditer(text)
+        ),
+        *(
+            match.group("status")
+            for match in report_schema.QUESTION_BLOCK.finditer(text)
+        ),
     ]
     has_blocking = "BLOCKING" in item_statuses
     if has_blocking and final_status != "REJECT":

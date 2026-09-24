@@ -7,7 +7,7 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
-# Release-only third-party binary payloads. Keep locally for Skill packaging; never track in Git.
+# Canonical full-repository ZIP payloads. Keep locally for packaging; never track in Git.
 /offline/wheelhouse/*.whl
 /offline/node_modules.zip
 

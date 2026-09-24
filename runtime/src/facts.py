@@ -425,12 +425,21 @@ class ModuleFacts:
     mapping_names: set[str] = field(default_factory=set)
 
 
-class FactsCollector(ast.NodeVisitor):
-    """
-    遍历 Python AST 并收集定义、引用与局部规则发现。
+@dataclass(slots=True, frozen=True)
+class _MappingCallContext:
+    """封装单次映射方法调用的静态接收者与边界事实。"""
 
-    收集器不修改源码，只产生结构化事实和可定位的问题。
-    """
+    receiver_name: str
+    receiver_tail: str
+    confirmed_mapping: bool
+    mapping_name_hint: bool
+    lookup_mapping: bool
+    boundary_module: bool
+    test_context: bool
+
+
+class _FactsCollectorNodeVisitor(ast.NodeVisitor):
+    """保存 AST 收集所需状态，并提供统一 finding 写入边界。"""
 
     def __init__(self, facts: ModuleFacts, config: GuardConfig) -> None:
         """
@@ -510,7 +519,10 @@ class FactsCollector(ast.NodeVisitor):
         module_parts = self.facts.module.lower().replace("-", "_").split(".")
         return any(
             marker.lower() in module_parts
-            for marker in (*self.config.boundary_module_markers, *self.config.config_module_markers)
+            for marker in (
+                *self.config.boundary_module_markers,
+                *self.config.config_module_markers,
+            )
         )
 
     def add_finding(
@@ -518,7 +530,6 @@ class FactsCollector(ast.NodeVisitor):
         node: ast.AST,
         code: str,
         message: str,
-        *,
         severity: Severity = "warning",
         confidence: Confidence = "high",
         suggestion: str = "",
@@ -584,6 +595,10 @@ class FactsCollector(ast.NodeVisitor):
                 evidence={"branch": block_name, "statement_kind": statement_kind},
             )
 
+
+class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
+    """收集导入、定义、作用域与函数签名事实。"""
+
     def visit_Import(self, node: ast.Import) -> None:
         """
         记录普通 import 语句建立的本地名称映射。
@@ -615,7 +630,9 @@ class FactsCollector(ast.NodeVisitor):
                 package_parts = package_parts[:-1]
             if node.level > 1:
                 package_parts = package_parts[: -(node.level - 1)]
-            module_name = ".".join([*package_parts, module_name] if module_name else package_parts)
+            module_name = ".".join(
+                [*package_parts, module_name] if module_name else package_parts
+            )
         if not module_name:
             return
         for alias in node.names:
@@ -700,7 +717,9 @@ class FactsCollector(ast.NodeVisitor):
             for child in node.body
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
         ]
-        public_methods = [method for method in direct_methods if not method.name.startswith("_")]
+        public_methods = [
+            method for method in direct_methods if not method.name.startswith("_")
+        ]
         tiny_methods = [
             method
             for method in direct_methods
@@ -773,7 +792,9 @@ class FactsCollector(ast.NodeVisitor):
         parameter_count, boolean_flags = self._function_signature_metrics(node)
         parameter_names = function_parameter_names(node)
         docstring = parse_docstring(node)
-        if self.function_stack and not is_decorator_inner_function(node, self.function_stack[-1]):
+        if self.function_stack and not is_decorator_inner_function(
+            node, self.function_stack[-1]
+        ):
             self.add_finding(
                 node,
                 "QG154",
@@ -783,7 +804,10 @@ class FactsCollector(ast.NodeVisitor):
                 suggestion=(
                     "新增嵌套函数仍须在修改说明中全量披露；仅在形成稳定共享契约时提升到模块级。"
                 ),
-                evidence={"outer_function": self.function_stack[-1], "nested_function": node.name},
+                evidence={
+                    "outer_function": self.function_stack[-1],
+                    "nested_function": node.name,
+                },
             )
         unreachable = first_unreachable_statement(node.body)
         if unreachable is not None:
@@ -833,9 +857,15 @@ class FactsCollector(ast.NodeVisitor):
                 documented_parameters=docstring.documented_parameters,
             )
         )
-        arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+        arguments = (
+            list(node.args.posonlyargs)
+            + list(node.args.args)
+            + list(node.args.kwonlyargs)
+        )
         parameter_mappings = {
-            argument.arg for argument in arguments if annotation_is_mapping(argument.annotation)
+            argument.arg
+            for argument in arguments
+            if annotation_is_mapping(argument.annotation)
         }
         typed_parameters = {
             argument.arg for argument in arguments if argument.annotation is not None
@@ -867,12 +897,20 @@ class FactsCollector(ast.NodeVisitor):
         Returns:
             参数总数与布尔开关数量。
         """
-        arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
-        parameter_count = sum(argument.arg not in {"self", "cls"} for argument in arguments)
-        parameter_count += int(node.args.vararg is not None) + int(node.args.kwarg is not None)
-        positional_defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
-            node.args.defaults
+        arguments = (
+            list(node.args.posonlyargs)
+            + list(node.args.args)
+            + list(node.args.kwonlyargs)
         )
+        parameter_count = sum(
+            argument.arg not in {"self", "cls"} for argument in arguments
+        )
+        parameter_count += int(node.args.vararg is not None) + int(
+            node.args.kwarg is not None
+        )
+        positional_defaults = [None] * (
+            len(node.args.args) - len(node.args.defaults)
+        ) + list(node.args.defaults)
         argument_defaults = [
             *zip(node.args.args, positional_defaults, strict=True),
             *zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True),
@@ -880,11 +918,19 @@ class FactsCollector(ast.NodeVisitor):
         boolean_flags = 0
         for argument, default in argument_defaults:
             annotation_name = (
-                dotted_name(argument.annotation) if argument.annotation is not None else ""
+                dotted_name(argument.annotation)
+                if argument.annotation is not None
+                else ""
             )
-            default_is_bool = isinstance(default, ast.Constant) and isinstance(default.value, bool)
+            default_is_bool = isinstance(default, ast.Constant) and isinstance(
+                default.value, bool
+            )
             boolean_flags += int(annotation_name == "bool" or default_is_bool)
         return parameter_count, boolean_flags
+
+
+class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
+    """检查条件、循环、异常分支及不可达控制流。"""
 
     def visit_IfExp(self, node: ast.IfExp) -> None:
         """检查条件表达式是否以另一种语法继续猜测映射契约。
@@ -947,7 +993,9 @@ class FactsCollector(ast.NodeVisitor):
                     _, _, present_when_true = guard
                     present_value = body_value if present_when_true else else_value
                     missing_value = else_value if present_when_true else body_value
-                    fallback = guarded_mapping_fallback(node.test, present_value, missing_value)
+                    fallback = guarded_mapping_fallback(
+                        node.test, present_value, missing_value
+                    )
                     if fallback is not None:
                         receiver_name, field_name = fallback
                         receiver_tail = receiver_name.rsplit(".", 1)[-1]
@@ -982,7 +1030,10 @@ class FactsCollector(ast.NodeVisitor):
                 severity="error",
                 confidence="high",
                 suggestion="删除死分支，只保留真实执行路径。",
-                evidence={"static_result": static_result, "unreachable_branch": branch_name},
+                evidence={
+                    "static_result": static_result,
+                    "unreachable_branch": branch_name,
+                },
             )
         reachable_blocks = (
             [("body", node.body), ("orelse", node.orelse)]
@@ -1035,6 +1086,155 @@ class FactsCollector(ast.NodeVisitor):
         self._report_unreachable_blocks("while", reachable_blocks)
         self.generic_visit(node)
 
+    def visit_Try(self, node: ast.Try) -> None:
+        """检查异常分支契约与 try 各块中的不可达代码。
+
+        Args:
+            node: 待分析的 try 语句节点。
+
+        Returns:
+            None。
+        """
+        try_assignment = (
+            simple_assignment(node.body[0]) if len(node.body) == 1 else None
+        )
+        for handler in node.handlers:
+            exception_names = (
+                {dotted_name(item) for item in handler.type.elts}
+                if isinstance(handler.type, ast.Tuple)
+                else {dotted_name(handler.type)}
+                if handler.type is not None
+                else {""}
+            )
+            self._check_keyerror_fallback(handler, try_assignment, exception_names)
+            self._check_exception_contracts(handler, exception_names)
+        blocks = [
+            ("body", node.body),
+            ("orelse", node.orelse),
+            ("finalbody", node.finalbody),
+        ]
+        blocks.extend(
+            (f"handler[{index}]", handler.body)
+            for index, handler in enumerate(node.handlers)
+        )
+        self._report_unreachable_blocks("try", blocks)
+        self.generic_visit(node)
+
+    def _check_keyerror_fallback(
+        self,
+        handler: ast.ExceptHandler,
+        try_assignment: tuple[str, ast.expr] | None,
+        exception_names: set[str],
+    ) -> None:
+        """检查 KeyError 捕获后把必需映射字段改成默认值的契约降级。"""
+        if (
+            try_assignment is None
+            or len(handler.body) != 1
+            or "KeyError" not in exception_names
+        ):
+            return
+        fallback_assignment = simple_assignment(handler.body[0])
+        if fallback_assignment is None:
+            return
+        try_target, try_value = try_assignment
+        fallback_target, fallback_value = fallback_assignment
+        access = mapping_subscript(try_value)
+        if (
+            try_target != fallback_target
+            or access is None
+            or not is_contract_fallback_value(fallback_value)
+        ):
+            return
+        receiver_name, field_name = access
+        receiver_tail = receiver_name.rsplit(".", 1)[-1]
+        confirmed_mapping = receiver_tail in self.mapping_names
+        self.add_finding(
+            handler,
+            "QG157",
+            f"捕获 KeyError 后为 `{receiver_name}[{field_name!r}]` 回退默认值，仍在消费方猜测字段契约。",
+            severity=(
+                "warning"
+                if is_test_path(self.facts.path)
+                else "critical"
+                if confirmed_mapping
+                else "error"
+            ),
+            confidence="high" if confirmed_mapping else "medium",
+            suggestion=(
+                "在输入边界验证或建模字段可选性；内部必需字段缺失应显式失败，"
+                "不要用异常分支维持隐式兼容。"
+            ),
+            evidence={"receiver": receiver_name, "field": field_name},
+        )
+
+    def _check_exception_contracts(
+        self,
+        handler: ast.ExceptHandler,
+        exception_names: set[str],
+    ) -> None:
+        """检查宽泛异常、契约异常吞噬与 ImportError 兼容分支。"""
+        broad = exception_names & {"", "BaseException", "Exception"}
+        if broad:
+            exception_name = next(
+                name for name in ("", "BaseException", "Exception") if name in broad
+            )
+            swallowed = bool(handler.body) and all(
+                is_constant_default(item) for item in handler.body
+            )
+            explicit_best_effort = in_explicit_best_effort_scope(self.function_stack)
+            self.add_finding(
+                handler,
+                "QG007",
+                "宽泛异常被捕获" + ("并转换为默认结果。" if swallowed else "。"),
+                severity=(
+                    "error" if swallowed and not explicit_best_effort else "warning"
+                ),
+                suggestion=(
+                    "捕获可预期的具体异常；失败若影响契约，应记录上下文并显式传播。"
+                    "显式 best-effort 接口也应限制捕获范围并保留诊断信息。"
+                ),
+                evidence={
+                    "exception": exception_name or "bare except",
+                    "swallowed": swallowed,
+                    "explicit_best_effort": explicit_best_effort,
+                },
+            )
+        contract_exceptions = exception_names & {
+            "AttributeError",
+            "KeyError",
+            "TypeError",
+        }
+        if contract_exceptions:
+            swallowed = bool(handler.body) and all(
+                is_constant_default(item) for item in handler.body
+            )
+            if swallowed:
+                self.add_finding(
+                    handler,
+                    "QG023",
+                    "通过捕获契约类异常返回默认结果，可能隐藏字段、属性或类型错误。",
+                    severity="warning",
+                    confidence="high",
+                    suggestion="在输入边界验证结构；内部契约失败应显式暴露，不要转成 None、空容器或常量。",
+                    evidence={"exceptions": sorted(contract_exceptions)},
+                )
+        if exception_names & {"ImportError", "ModuleNotFoundError"}:
+            has_fallback_import = any(
+                isinstance(item, (ast.Import, ast.ImportFrom)) for item in handler.body
+            )
+            if has_fallback_import:
+                self.add_finding(
+                    handler,
+                    "QG009",
+                    "通过 ImportError 选择备用实现，形成运行时兼容分支。",
+                    severity="info",
+                    suggestion="确认是否仍需兼容旧依赖；不需要时删除备用路径并固定依赖。",
+                )
+
+
+class _UsageFactsVisitor(_ControlFlowFactsVisitor):
+    """收集调用、名称、属性使用并检查调用契约。"""
+
     def visit_Constant(self, node: ast.Constant) -> None:
         """检查代码字符串中的无基线契约比较声明。
 
@@ -1063,17 +1263,25 @@ class FactsCollector(ast.NodeVisitor):
                 )
 
     def visit_Call(self, node: ast.Call) -> None:
-        """
-        记录调用关系并执行调用表达式级规则。
+        """记录调用关系并执行调用表达式级规则。
 
         Args:
-            node: 待分析的 AST 节点。
+            node: 待分析的调用节点。
 
         Returns:
             None。
         """
         self.call_nodes.add(id(node.func))
         target = dotted_name(node.func)
+        self._record_call_usage(node, target)
+        self._check_manual_projection_arguments(node)
+        self._check_dynamic_attribute_probe(node)
+        if isinstance(node.func, ast.Attribute):
+            self._check_attribute_call(node)
+        self.generic_visit(node)
+
+    def _record_call_usage(self, node: ast.Call, target: str) -> None:
+        """记录调用引用，并标记诊断消息中的字符串常量。"""
         if target in {"self.add_finding", "Finding"}:
             diagnostic_arguments = [
                 *node.args,
@@ -1083,20 +1291,24 @@ class FactsCollector(ast.NodeVisitor):
                 for child in ast.walk(argument):
                     if isinstance(child, ast.Constant) and isinstance(child.value, str):
                         self.diagnostic_string_nodes.add(id(child))
-        if target:
-            base, _, name = target.rpartition(".")
-            self.facts.usages.append(
-                Usage(
-                    module=self.facts.module,
-                    path=self.facts.path,
-                    line=node.lineno,
-                    column=node.col_offset + 1,
-                    target=name or target,
-                    base=base,
-                    is_call=True,
-                    owner_class=".".join(self.class_stack),
-                )
+        if not target:
+            return
+        base, _, name = target.rpartition(".")
+        self.facts.usages.append(
+            Usage(
+                module=self.facts.module,
+                path=self.facts.path,
+                line=node.lineno,
+                column=node.col_offset + 1,
+                target=name or target,
+                base=base,
+                is_call=True,
+                owner_class=".".join(self.class_stack),
             )
+        )
+
+    def _check_manual_projection_arguments(self, node: ast.Call) -> None:
+        """检查调用实参中逐字段复制映射的手写投影。"""
         for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
             if not isinstance(argument, ast.Dict):
                 continue
@@ -1116,56 +1328,61 @@ class FactsCollector(ast.NodeVisitor):
                 ),
                 evidence={"receiver": receiver_name, "fields": fields},
             )
-        if isinstance(node.func, ast.Name) and node.func.id in {"hasattr", "getattr"}:
-            test_context = is_test_path(self.facts.path)
-            receiver_name = dotted_name(node.args[0]) if node.args else ""
-            receiver_tail = receiver_name.rsplit(".", 1)[-1] if receiver_name else ""
-            statically_typed = receiver_tail in self.typed_names or receiver_name.startswith(
-                ("self", "cls")
+
+    def _check_dynamic_attribute_probe(self, node: ast.Call) -> None:
+        """检查 hasattr/getattr(default) 对静态对象契约的运行时猜测。"""
+        if not isinstance(node.func, ast.Name) or node.func.id not in {
+            "hasattr",
+            "getattr",
+        }:
+            return
+        test_context = is_test_path(self.facts.path)
+        receiver_name = dotted_name(node.args[0]) if node.args else ""
+        receiver_tail = receiver_name.rsplit(".", 1)[-1] if receiver_name else ""
+        statically_typed = (
+            receiver_tail in self.typed_names
+            or receiver_name.startswith(("self", "cls"))
+        )
+        boundary_module = self._is_contract_boundary_module()
+        severity: Severity = (
+            "warning" if test_context else "error" if statically_typed else "info"
+        )
+        if node.func.id == "hasattr":
+            self.add_finding(
+                node,
+                "QG005",
+                "使用 hasattr() 探测对象字段，把明确类型契约降级为运行时猜测。",
+                severity=severity,
+                confidence="high" if statically_typed else "medium",
+                suggestion=(
+                    "静态类型对象应直接访问正式属性；真正可选的能力应使用 Protocol、联合类型、"
+                    "显式 Optional 字段或独立适配器表达，不得在消费方 hasattr 猜测。"
+                ),
+                evidence={
+                    "receiver": receiver_name,
+                    "statically_typed": statically_typed,
+                    "test_context": test_context,
+                    "boundary_module": boundary_module,
+                },
             )
-            boundary_module = self._is_contract_boundary_module()
-            severity: Severity = (
-                "warning" if test_context else "error" if statically_typed else "info"
+        elif len(node.args) >= GETATTR_DEFAULT_ARG_COUNT:
+            self.add_finding(
+                node,
+                "QG006",
+                "getattr(..., default) 在对象契约缺失时静默兜底。",
+                severity=severity,
+                confidence="high" if statically_typed else "medium",
+                suggestion=(
+                    "静态类型对象应直接访问正式字段并让契约错误暴露；真正可选字段必须在"
+                    "Protocol、联合类型或显式 Optional 中表达。未知动态对象只保留审计信息。"
+                ),
+                evidence={
+                    "receiver": receiver_name,
+                    "statically_typed": statically_typed,
+                    "test_context": test_context,
+                    "boundary_module": boundary_module,
+                },
             )
-            if node.func.id == "hasattr":
-                self.add_finding(
-                    node,
-                    "QG005",
-                    "使用 hasattr() 探测对象字段，把明确类型契约降级为运行时猜测。",
-                    severity=severity,
-                    confidence="high" if statically_typed else "medium",
-                    suggestion=(
-                        "静态类型对象应直接访问正式属性；真正可选的能力应使用 Protocol、联合类型、"
-                        "显式 Optional 字段或独立适配器表达，不得在消费方 hasattr 猜测。"
-                    ),
-                    evidence={
-                        "receiver": receiver_name,
-                        "statically_typed": statically_typed,
-                        "test_context": test_context,
-                        "boundary_module": boundary_module,
-                    },
-                )
-            elif len(node.args) >= GETATTR_DEFAULT_ARG_COUNT:
-                self.add_finding(
-                    node,
-                    "QG006",
-                    "getattr(..., default) 在对象契约缺失时静默兜底。",
-                    severity=severity,
-                    confidence="high" if statically_typed else "medium",
-                    suggestion=(
-                        "静态类型对象应直接访问正式字段并让契约错误暴露；真正可选字段必须在"
-                        "Protocol、联合类型或显式 Optional 中表达。未知动态对象只保留审计信息。"
-                    ),
-                    evidence={
-                        "receiver": receiver_name,
-                        "statically_typed": statically_typed,
-                        "test_context": test_context,
-                        "boundary_module": boundary_module,
-                    },
-                )
-        if isinstance(node.func, ast.Attribute):
-            self._check_attribute_call(node)
-        self.generic_visit(node)
 
     def _check_attribute_call(self, node: ast.Call) -> None:
         """
@@ -1181,7 +1398,9 @@ class FactsCollector(ast.NodeVisitor):
         receiver = node.func.value
         receiver_name = dotted_name(receiver)
         receiver_tail = receiver_name.rsplit(".", 1)[-1] if receiver_name else ""
-        confirmed_mapping = isinstance(receiver, ast.Dict) or receiver_tail in self.mapping_names
+        confirmed_mapping = (
+            isinstance(receiver, ast.Dict) or receiver_tail in self.mapping_names
+        )
         mapping_name_hint = receiver_tail in MAPPING_NAME_HINTS
         self._check_mapping_call(
             node,
@@ -1200,115 +1419,130 @@ class FactsCollector(ast.NodeVisitor):
         confirmed_mapping: bool,
         mapping_name_hint: bool,
     ) -> None:
-        """
-        检查映射 get、setdefault 和 pop 兜底。
-
-        Args:
-            node: 待分析的 AST 节点。
-            attribute: 被调用的属性名称。
-            receiver_name: 接收者的点分名称。
-            confirmed_mapping: 接收者是否由类型标注或赋值静态确认为映射。
-            mapping_name_hint: 接收者名称是否只表现出映射倾向。
-
-        Returns:
-            None。
-        """
+        """检查映射读取、聚合初始化与删除时的隐式兜底契约。"""
         receiver_tail = receiver_name.rsplit(".", 1)[-1]
-        lookup_mapping = is_lookup_mapping_name(receiver_tail)
-        boundary_module = self._is_contract_boundary_module()
-        test_context = is_test_path(self.facts.path)
-        if attribute == "get" and confirmed_mapping and lookup_mapping:
+        context = _MappingCallContext(
+            receiver_name=receiver_name,
+            receiver_tail=receiver_tail,
+            confirmed_mapping=confirmed_mapping,
+            mapping_name_hint=mapping_name_hint,
+            lookup_mapping=is_lookup_mapping_name(receiver_tail),
+            boundary_module=self._is_contract_boundary_module(),
+            test_context=is_test_path(self.facts.path),
+        )
+        if attribute == "get" and context.confirmed_mapping and context.lookup_mapping:
             return
         if attribute == "get":
-            explicit_default = len(node.args) >= DICT_DEFAULT_ARG_COUNT
-            if confirmed_mapping or self.config.strict_get:
-                self.add_finding(
-                    node,
-                    "QG004" if explicit_default else "QG003",
-                    "字典 .get() 使用显式默认值，可能把缺字段错误转成静默兼容。"
-                    if explicit_default
-                    else "字典 .get() 将缺字段转换为 None，可能掩盖结构契约错误。",
-                    severity=(
-                        "warning"
-                        if test_context
-                        else "info"
-                        if boundary_module
-                        else "critical"
-                        if confirmed_mapping
-                        else "error"
-                    ),
-                    confidence="high" if confirmed_mapping else "medium",
-                    suggestion=(
-                        "内部稳定映射的必需字段必须使用 [] 直接读取；真正可选字段应通过 "
-                        "TypedDict(total=False)、Pydantic Optional 或显式联合类型声明，并在输入边界集中处理。"
-                    ),
-                    evidence={
-                        "receiver": receiver_name,
-                        "explicit_default": explicit_default,
-                        "confirmed_mapping": confirmed_mapping,
-                        "lookup_mapping": lookup_mapping,
-                        "boundary_module": boundary_module,
-                    },
-                )
-            else:
-                self.add_finding(
-                    node,
-                    "QG026",
-                    "发现无法静态确认接收者类型的 .get() 调用。",
-                    severity="info",
-                    confidence="medium" if mapping_name_hint else "low",
-                    suggestion="确认它是客户端 API 还是映射兜底；若是内部字典契约，改为直接索引或补充类型标注。",
-                    evidence={"receiver": receiver_name, "explicit_default": explicit_default},
-                )
-        if (
-            attribute == "setdefault"
-            and (confirmed_mapping or self.config.strict_get)
-            and not (confirmed_mapping and lookup_mapping)
-            and id(node) not in self.aggregation_setdefault_calls
-        ):
+            self._check_mapping_get(node, context)
+        elif attribute == "setdefault":
+            self._check_mapping_setdefault(node, context)
+        elif attribute == "pop":
+            self._check_mapping_pop(node, context)
+
+    def _check_mapping_get(self, node: ast.Call, context: _MappingCallContext) -> None:
+        """检查 mapping.get 对必需字段契约的静默降级。"""
+        explicit_default = len(node.args) >= DICT_DEFAULT_ARG_COUNT
+        if context.confirmed_mapping or self.config.strict_get:
             self.add_finding(
                 node,
-                "QG012",
-                "setdefault() 同时承担读取、兜底和写入，容易隐藏状态归并副作用。",
+                "QG004" if explicit_default else "QG003",
+                "字典 .get() 使用显式默认值，可能把缺字段错误转成静默兼容。"
+                if explicit_default
+                else "字典 .get() 将缺字段转换为 None，可能掩盖结构契约错误。",
                 severity=(
                     "warning"
-                    if test_context
+                    if context.test_context
                     else "info"
-                    if boundary_module
+                    if context.boundary_module
                     else "critical"
-                    if confirmed_mapping and receiver_tail in MAPPING_NAME_HINTS
+                    if context.confirmed_mapping
                     else "error"
                 ),
+                confidence="high" if context.confirmed_mapping else "medium",
                 suggestion=(
-                    "不要把 setdefault() 机械展开成 `if key not in mapping: mapping[key] = default`。"
-                    "若缺键是合法的聚合/缓存语义，保留 setdefault 或封装到唯一状态入口；"
-                    "若字段按契约必需，直接索引并让缺失错误暴露。"
+                    "内部稳定映射的必需字段必须使用 [] 直接读取；真正可选字段应通过 "
+                    "TypedDict(total=False)、Pydantic Optional 或显式联合类型声明，并在输入边界集中处理。"
                 ),
-                confidence="high" if confirmed_mapping else "medium",
+                evidence={
+                    "receiver": context.receiver_name,
+                    "explicit_default": explicit_default,
+                    "confirmed_mapping": context.confirmed_mapping,
+                    "lookup_mapping": context.lookup_mapping,
+                    "boundary_module": context.boundary_module,
+                },
             )
-        if (
-            attribute == "pop"
-            and len(node.args) >= DICT_DEFAULT_ARG_COUNT
-            and (confirmed_mapping or self.config.strict_get)
-            and not (confirmed_mapping and lookup_mapping)
-        ):
-            self.add_finding(
-                node,
-                "QG025",
-                "映射 pop(key, default) 在删除字段时静默忽略缺失。",
-                severity=(
-                    "warning"
-                    if test_context
-                    else "info"
-                    if boundary_module
-                    else "critical"
-                    if confirmed_mapping and receiver_tail in MAPPING_NAME_HINTS
-                    else "error"
-                ),
-                confidence="high" if confirmed_mapping else "medium",
-                suggestion="若字段按契约必须存在，使用 pop(key)；真正可选字段必须在类型中显式声明。",
-                evidence={"receiver": receiver_name},
-            )
+            return
+        self.add_finding(
+            node,
+            "QG026",
+            "发现无法静态确认接收者类型的 .get() 调用。",
+            severity="info",
+            confidence="medium" if context.mapping_name_hint else "low",
+            suggestion="确认它是客户端 API 还是映射兜底；若是内部字典契约，改为直接索引或补充类型标注。",
+            evidence={
+                "receiver": context.receiver_name,
+                "explicit_default": explicit_default,
+            },
+        )
+
+    def _check_mapping_setdefault(
+        self, node: ast.Call, context: _MappingCallContext
+    ) -> None:
+        """检查 setdefault 是否把读取、兜底与状态写入混成一个隐式入口。"""
+        if not (context.confirmed_mapping or self.config.strict_get):
+            return
+        if context.confirmed_mapping and context.lookup_mapping:
+            return
+        if id(node) in self.aggregation_setdefault_calls:
+            return
+        self.add_finding(
+            node,
+            "QG012",
+            "setdefault() 同时承担读取、兜底和写入，容易隐藏状态归并副作用。",
+            severity=(
+                "warning"
+                if context.test_context
+                else "info"
+                if context.boundary_module
+                else "critical"
+                if context.confirmed_mapping
+                and context.receiver_tail in MAPPING_NAME_HINTS
+                else "error"
+            ),
+            suggestion=(
+                "不要把 setdefault() 机械展开成 `if key not in mapping: mapping[key] = default`。"
+                "若缺键是合法的聚合/缓存语义，保留 setdefault 或封装到唯一状态入口；"
+                "若字段按契约必需，直接索引并让缺失错误暴露。"
+            ),
+            confidence="high" if context.confirmed_mapping else "medium",
+        )
+
+    def _check_mapping_pop(self, node: ast.Call, context: _MappingCallContext) -> None:
+        """检查 pop(key, default) 是否把必需字段缺失静默转换成正常删除。"""
+        if len(node.args) < DICT_DEFAULT_ARG_COUNT:
+            return
+        if not (context.confirmed_mapping or self.config.strict_get):
+            return
+        if context.confirmed_mapping and context.lookup_mapping:
+            return
+        self.add_finding(
+            node,
+            "QG025",
+            "映射 pop(key, default) 在删除字段时静默忽略缺失。",
+            severity=(
+                "warning"
+                if context.test_context
+                else "info"
+                if context.boundary_module
+                else "critical"
+                if context.confirmed_mapping
+                and context.receiver_tail in MAPPING_NAME_HINTS
+                else "error"
+            ),
+            confidence="high" if context.confirmed_mapping else "medium",
+            suggestion="若字段按契约必须存在，使用 pop(key)；真正可选字段必须在类型中显式声明。",
+            evidence={"receiver": context.receiver_name},
+        )
 
     def _check_special_attribute_call(self, node: ast.Call, full_name: str) -> None:
         """
@@ -1392,114 +1626,10 @@ class FactsCollector(ast.NodeVisitor):
             )
         self.generic_visit(node)
 
-    def visit_Try(self, node: ast.Try) -> None:
-        """
-        检查宽泛异常、契约异常和导入兼容分支。
 
-        Args:
-            node: 待分析的 AST 节点。
+class FactsCollector(_UsageFactsVisitor, ast.NodeVisitor):
+    """组合模块静态事实收集职责的公开 AST visitor。
 
-        Returns:
-            None。
-        """
-        try_assignment = simple_assignment(node.body[0]) if len(node.body) == 1 else None
-        for handler in node.handlers:
-            if try_assignment is not None and len(handler.body) == 1:
-                fallback_assignment = simple_assignment(handler.body[0])
-                handler_names = (
-                    {dotted_name(item) for item in handler.type.elts}
-                    if isinstance(handler.type, ast.Tuple)
-                    else {dotted_name(handler.type)}
-                    if handler.type is not None
-                    else {""}
-                )
-                if "KeyError" in handler_names and fallback_assignment is not None:
-                    try_target, try_value = try_assignment
-                    fallback_target, fallback_value = fallback_assignment
-                    access = mapping_subscript(try_value)
-                    if (
-                        try_target == fallback_target
-                        and access is not None
-                        and is_contract_fallback_value(fallback_value)
-                    ):
-                        receiver_name, field_name = access
-                        receiver_tail = receiver_name.rsplit(".", 1)[-1]
-                        confirmed_mapping = receiver_tail in self.mapping_names
-                        self.add_finding(
-                            handler,
-                            "QG157",
-                            f"捕获 KeyError 后为 `{receiver_name}[{field_name!r}]` 回退默认值，仍在消费方猜测字段契约。",
-                            severity=(
-                                "warning"
-                                if is_test_path(self.facts.path)
-                                else "critical"
-                                if confirmed_mapping
-                                else "error"
-                            ),
-                            confidence="high" if confirmed_mapping else "medium",
-                            suggestion=(
-                                "在输入边界验证或建模字段可选性；内部必需字段缺失应显式失败，"
-                                "不要用异常分支维持隐式兼容。"
-                            ),
-                            evidence={"receiver": receiver_name, "field": field_name},
-                        )
-            if isinstance(handler.type, ast.Tuple):
-                exception_names = {dotted_name(item) for item in handler.type.elts}
-            else:
-                exception_names = {dotted_name(handler.type)} if handler.type is not None else {""}
-            if exception_names & {"", "BaseException", "Exception"}:
-                exception_name = next(
-                    name for name in ("", "BaseException", "Exception") if name in exception_names
-                )
-                swallowed = bool(handler.body) and all(
-                    is_constant_default(item) for item in handler.body
-                )
-                explicit_best_effort = in_explicit_best_effort_scope(self.function_stack)
-                self.add_finding(
-                    handler,
-                    "QG007",
-                    "宽泛异常被捕获" + ("并转换为默认结果。" if swallowed else "。"),
-                    severity=("error" if swallowed and not explicit_best_effort else "warning"),
-                    suggestion=(
-                        "捕获可预期的具体异常；失败若影响契约，应记录上下文并显式传播。"
-                        "显式 best-effort 接口也应限制捕获范围并保留诊断信息。"
-                    ),
-                    evidence={
-                        "exception": exception_name or "bare except",
-                        "swallowed": swallowed,
-                        "explicit_best_effort": explicit_best_effort,
-                    },
-                )
-            contract_exceptions = exception_names & {"AttributeError", "KeyError", "TypeError"}
-            if contract_exceptions:
-                swallowed = bool(handler.body) and all(
-                    is_constant_default(item) for item in handler.body
-                )
-                if swallowed:
-                    self.add_finding(
-                        handler,
-                        "QG023",
-                        "通过捕获契约类异常返回默认结果，可能隐藏字段、属性或类型错误。",
-                        severity="warning",
-                        confidence="high",
-                        suggestion="在输入边界验证结构；内部契约失败应显式暴露，不要转成 None、空容器或常量。",
-                        evidence={"exceptions": sorted(contract_exceptions)},
-                    )
-            if exception_names & {"ImportError", "ModuleNotFoundError"}:
-                has_fallback_import = any(
-                    isinstance(item, (ast.Import, ast.ImportFrom)) for item in handler.body
-                )
-                if has_fallback_import:
-                    self.add_finding(
-                        handler,
-                        "QG009",
-                        "通过 ImportError 选择备用实现，形成运行时兼容分支。",
-                        severity="info",
-                        suggestion="确认是否仍需兼容旧依赖；不需要时删除备用路径并固定依赖。",
-                    )
-        blocks = [("body", node.body), ("orelse", node.orelse), ("finalbody", node.finalbody)]
-        blocks.extend(
-            (f"handler[{index}]", handler.body) for index, handler in enumerate(node.handlers)
-        )
-        self._report_unreachable_blocks("try", blocks)
-        self.generic_visit(node)
+    具体规则按定义/作用域、控制流和调用/使用三个内部 owner 分层实现；
+    该类保持原有 ``ast.NodeVisitor`` 公共继承契约，只提供唯一公开构造入口。
+    """

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import GuardConfig, is_test_path
+from .project_profiles import ProjectProfile
 
 _API_SCHEMA = "repository-quality-guard/api-catalog-v2"
 _FIELD_WEIGHTS = {
@@ -62,6 +63,39 @@ class _FileState:
     mtime_ns: int
 
 
+def apply_search_strategy(
+    profile: ProjectProfile | None,
+    query: str,
+    hits: list[Any],
+    root: Path,
+    limit: int,
+) -> list[Any]:
+    """Apply one optional Profile-owned reranker to Core BM25 hits.
+
+    Args:
+        profile: Frozen project Profile, or None for generic policy.
+        query: User search query.
+        hits: Core-owned BM25 hit objects.
+        root: Repository root supplied as reranking evidence.
+        limit: Maximum number of hits returned to the caller.
+
+    Returns:
+        Reordered or filtered subset of the original Core hit objects.
+
+    Raises:
+        ValueError: A Profile synthesizes objects outside the Core result set.
+    """
+    if profile is None or profile.search_strategy is None:
+        return hits
+    strategy = profile.search_strategy()
+    reranked = list(strategy.rerank(query, tuple(hits), root))
+    if any(item not in hits for item in reranked):
+        raise ValueError(
+            "Profile SearchStrategy may only rerank/filter Core search hits"
+        )
+    return reranked[:limit]
+
+
 def _render(node: ast.AST | None) -> str:
     """把 AST 节点稳定渲染为源码声明文本。"""
     if node is None:
@@ -88,7 +122,9 @@ def _argument_text(arguments: ast.arguments) -> str:
         parts.append(item)
     elif arguments.kwonlyargs:
         parts.append("*")
-    for argument, default in zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True):
+    for argument, default in zip(
+        arguments.kwonlyargs, arguments.kw_defaults, strict=True
+    ):
         item = argument.arg
         if argument.annotation is not None:
             item += f": {_render(argument.annotation)}"
@@ -121,7 +157,9 @@ def _type_text(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) -> s
 
 def _visibility(name: str) -> str:
     """按 Python 命名约定返回 public/private 可见性标签。"""
-    private = name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
+    private = name.startswith("_") and not (
+        name.startswith("__") and name.endswith("__")
+    )
     return "private" if private else "public"
 
 
@@ -193,7 +231,9 @@ def _file_state(path: Path, *, digest: str | None = None) -> _FileState:
     """计算源码文件内容摘要及廉价变更探针。"""
     stat = path.stat()
     content_digest = digest or hashlib.sha256(path.read_bytes()).hexdigest()
-    return _FileState(digest=content_digest, size=stat.st_size, mtime_ns=stat.st_mtime_ns)
+    return _FileState(
+        digest=content_digest, size=stat.st_size, mtime_ns=stat.st_mtime_ns
+    )
 
 
 def _catalog_digest(states: dict[str, _FileState]) -> str:
@@ -217,7 +257,13 @@ def _extract_path_records(root: Path, path: Path) -> list[_ApiRecord]:
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
             records.append(
-                _record(node=node, module=module, qualname=node.name, kind="class", path=relative)
+                _record(
+                    node=node,
+                    module=module,
+                    qualname=node.name,
+                    kind="class",
+                    path=relative,
+                )
             )
             for child in node.body:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -233,7 +279,11 @@ def _extract_path_records(root: Path, path: Path) -> list[_ApiRecord]:
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             records.append(
                 _record(
-                    node=node, module=module, qualname=node.name, kind="function", path=relative
+                    node=node,
+                    module=module,
+                    qualname=node.name,
+                    kind="function",
+                    path=relative,
                 )
             )
     return records
@@ -271,9 +321,13 @@ def _tokenize(text: str) -> list[str]:
         if re.fullmatch(r"[\u4e00-\u9fff]+", token):
             if len(token) <= _CJK_WHOLE_TOKEN_MAX:
                 tokens.append(token)
-            tokens.extend(token[index : index + 2] for index in range(max(0, len(token) - 1)))
+            tokens.extend(
+                token[index : index + 2] for index in range(max(0, len(token) - 1))
+            )
             if len(token) >= _CJK_TRIGRAM_MIN:
-                tokens.extend(token[index : index + 3] for index in range(len(token) - 2))
+                tokens.extend(
+                    token[index : index + 3] for index in range(len(token) - 2)
+                )
         else:
             tokens.extend(_identifier_tokens(token))
     return tokens
@@ -343,7 +397,9 @@ class _ApiBm25Index:
                     1 + (total - document_frequency + 0.5) / (document_frequency + 0.5)
                 )
                 for record_id, frequency in documents.items():
-                    denominator = frequency + 1.2 * (1 - 0.75 + 0.75 * lengths[record_id] / average)
+                    denominator = frequency + 1.2 * (
+                        1 - 0.75 + 0.75 * lengths[record_id] / average
+                    )
                     scores[record_id] += (
                         weight
                         * inverse_frequency
@@ -353,9 +409,9 @@ class _ApiBm25Index:
         for record_id in tuple(scores):
             if self.records[record_id].visibility == "public":
                 scores[record_id] *= 1.08
-        ranked = sorted(scores.items(), key=lambda item: (-item[1], self.records[item[0]].symbol))[
-            :limit
-        ]
+        ranked = sorted(
+            scores.items(), key=lambda item: (-item[1], self.records[item[0]].symbol)
+        )[:limit]
         return [
             _ApiSearchHit(record=self.records[record_id], score=score)
             for record_id, score in ranked
@@ -409,7 +465,9 @@ def _write_api_catalog(
     groups: dict[str, list[_ApiRecord]] = defaultdict(list)
     for record in records:
         groups[record.path.split("/", 1)[0]].append(record)
-    existing_group_files = {path.name for path in output.glob("*.md") if path.name != "INDEX.md"}
+    existing_group_files = {
+        path.name for path in output.glob("*.md") if path.name != "INDEX.md"
+    }
     target_groups = set(groups) if changed_groups is None else set(changed_groups)
     for group in sorted(target_groups):
         path = output / _group_filename(group)
@@ -436,12 +494,16 @@ def _write_api_catalog(
         "",
     ]
     for group in sorted(groups):
-        index_lines.append(f"- [{group}]({_group_filename(group)}) — {len(groups[group])} symbols")
+        index_lines.append(
+            f"- [{group}]({_group_filename(group)}) — {len(groups[group])} symbols"
+        )
     (output / "INDEX.md").write_text("\n".join(index_lines) + "\n", encoding="utf-8")
     payload = {
         "schema": _API_SCHEMA,
         "source_digest": digest,
-        "files": {relative: asdict(state) for relative, state in sorted(states.items())},
+        "files": {
+            relative: asdict(state) for relative, state in sorted(states.items())
+        },
         "records": [asdict(record) for record in records],
     }
     (output / "catalog.json").write_text(
@@ -456,7 +518,9 @@ def _load_api_catalog(path: Path) -> tuple[list[_ApiRecord], dict[str, _FileStat
     if payload["schema"] != _API_SCHEMA:
         raise ValueError(f"API catalog schema 不匹配: {payload['schema']}")
     records = [_ApiRecord(**item) for item in payload["records"]]
-    states = {relative: _FileState(**state) for relative, state in payload["files"].items()}
+    states = {
+        relative: _FileState(**state) for relative, state in payload["files"].items()
+    }
     return records, states
 
 
@@ -484,7 +548,11 @@ def _changed_paths_from_state(
             changed.add(relative)
             continue
         previous = cached[relative]
-        if not strong_check and previous.size == stat.st_size and previous.mtime_ns == stat.st_mtime_ns:
+        if (
+            not strong_check
+            and previous.size == stat.st_size
+            and previous.mtime_ns == stat.st_mtime_ns
+        ):
             continue
         state = _file_state(path)
         hashed += 1
@@ -534,7 +602,9 @@ def _refresh_catalog(
     current_paths = {path.relative_to(root).as_posix(): path for path in paths}
     if force_full or not cache_available:
         selected = set(current_paths)
-        states = {relative: _file_state(path) for relative, path in current_paths.items()}
+        states = {
+            relative: _file_state(path) for relative, path in current_paths.items()
+        }
         hashed = len(states)
         records = _extract_api_records(root, paths)
         changed_groups = {relative.split("/", 1)[0] for relative in selected}
@@ -564,7 +634,9 @@ def _refresh_catalog(
             mode = "scoped-incremental" if selected else "noop"
         records = [record for record in cached_records if record.path not in selected]
         selected_existing = tuple(
-            current_paths[relative] for relative in sorted(selected) if relative in current_paths
+            current_paths[relative]
+            for relative in sorted(selected)
+            if relative in current_paths
         )
         records.extend(_extract_api_records(root, selected_existing))
         records.sort(key=lambda item: (item.path, item.line, item.symbol))
@@ -575,7 +647,9 @@ def _refresh_catalog(
             output,
             records,
             states,
-            changed_groups=None if force_full or not cache_available else changed_groups,
+            changed_groups=None
+            if force_full or not cache_available
+            else changed_groups,
         )
     written = time.perf_counter()
     return (

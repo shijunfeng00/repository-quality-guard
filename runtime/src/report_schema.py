@@ -125,7 +125,9 @@ RISK_ROW = re.compile(
     r"(?P<reason>.+?) \| (?P<proposal>.+?) \|$",
     re.MULTILINE,
 )
-COMMIT_BLOCK = re.compile(r"```bash\n(?P<command>git commit -m \".*?\")\n```", re.DOTALL)
+COMMIT_BLOCK = re.compile(
+    r"```bash\n(?P<command>git commit -m \".*?\")\n```", re.DOTALL
+)
 CHINESE = re.compile(r"[\u4e00-\u9fff]")
 NUMSTAT_FIELDS = 3
 MIN_MANUAL_TEXT = 12
@@ -135,7 +137,15 @@ MIN_SUMMARY_TEXT = 8
 MIN_RISK_TEXT = 8
 TEST_INTERFACE_PREVIEW = 4
 MIN_DEBT_REASON_TEXT = 36
-DELIVERY_ARTIFACT_SUFFIXES = (".patch", ".diff", ".log", ".zip", ".tar", ".tgz", ".tar.gz")
+DELIVERY_ARTIFACT_SUFFIXES = (
+    ".patch",
+    ".diff",
+    ".log",
+    ".zip",
+    ".tar",
+    ".tgz",
+    ".tar.gz",
+)
 MIN_ADDITION_FACT_TEXT = 28
 MIN_ADDITION_ALTERNATIVE_TEXT = 36
 MIN_ADDITION_VERIFICATION_TEXT = 10
@@ -146,7 +156,13 @@ INTERFACE_DEFINITION_KINDS = frozenset({"class", "function", "method"})
 EVIDENCE_REFERENCE = re.compile(
     r"(?:FILE|ARTIFACT|ADD|ARCH|DELTA|INTERFACE|PROTOCOL|TEST-FILE|TEST-DELTA|TEST-RISK)-\d{3,}|QG\d{3}|无对应自动事实："
 )
-REQUIRED_ADDITION_REASON_MARKERS = ("失败=", "职责=", "边界=", "绝对必要性=", "不可替代=")
+REQUIRED_ADDITION_REASON_MARKERS = (
+    "失败=",
+    "职责=",
+    "边界=",
+    "绝对必要性=",
+    "不可替代=",
+)
 REQUIRED_EXISTING_MARKERS = (
     "接口目录=",
     "查询=",

@@ -28,7 +28,9 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
             message="example",
         )
 
-    def _report(self, findings: list[Finding], *, baseline: object | None = None) -> ScanReport:
+    def _report(
+        self, findings: list[Finding], *, baseline: object | None = None
+    ) -> ScanReport:
         return ScanReport(
             root=Path("."),
             files_scanned=1,
@@ -55,7 +57,9 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
             built = profile.build() if profile is not None else None
 
             self.assertIsNotNone(built)
-            self.assertEqual(dict(built.rule_levels), {"QG203": "critical", "QG205": "semantic"})
+            self.assertEqual(
+                dict(built.rule_levels), {"QG203": "critical", "QG205": "semantic"}
+            )
 
     def test_semantic_level_moves_finding_out_of_static_quality_gate(self) -> None:
         report = self._report([self._finding("QG205", "error")], baseline=object())
@@ -129,7 +133,9 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
             self.assertFalse(any(item.path == sibling.name for item in report.findings))
             self.assertFalse(any(item.code == "QG203" for item in report.findings))
 
-    def test_worker_carries_resolved_profile_without_replaying_user_cli_selection(self) -> None:
+    def test_worker_carries_resolved_profile_without_replaying_user_cli_selection(
+        self,
+    ) -> None:
         options = build_worker_parser().parse_args(
             [
                 "--path",
@@ -154,8 +160,9 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
         self.assertEqual(args.resolved_profile_name, "geek-ai-agent")
         self.assertEqual(args.resolved_profile_source, "sealed-installed")
 
-
-    def test_external_profile_path_survives_worker_and_contract_validation(self) -> None:
+    def test_external_profile_path_survives_worker_and_contract_validation(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             repo = root / "target-repo"
@@ -198,7 +205,9 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
                 __import__("os").environ,
                 {"REPO_QUALITY_GUARD_RELEASE_SEAL": "test-seal"},
             ):
-                _target, report, _interface, _revision, _status = scan_target_cached(args)
+                _target, report, _interface, _revision, _status = scan_target_cached(
+                    args
+                )
 
             self.assertEqual(report.project_name, "private-profile")
             self.assertEqual(report.profile_source, "explicit-cli")

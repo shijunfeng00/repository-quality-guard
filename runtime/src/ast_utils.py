@@ -133,7 +133,11 @@ def parent_nodes(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     Returns:
         子节点到父节点的映射。
     """
-    return {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    return {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
 
 
 def enclosing_class_name(
@@ -266,11 +270,17 @@ def _trivial_wrapper_value(
             and isinstance(statement.value, ast.Name)
         ):
             target = statement.target
-        if property_facade and isinstance(statement, ast.Delete) and len(statement.targets) == 1:
+        if (
+            property_facade
+            and isinstance(statement, ast.Delete)
+            and len(statement.targets) == 1
+        ):
             target = statement.targets[0]
         if isinstance(target, ast.Attribute) and target.attr.startswith("_"):
             return None, dotted_name(target)
-        value = statement.value if isinstance(statement, (ast.Return, ast.Expr)) else None
+        value = (
+            statement.value if isinstance(statement, (ast.Return, ast.Expr)) else None
+        )
         return value, ""
     if len(body) != TRIVIAL_WRAPPER_ASSIGN_RETURN_STATEMENTS:
         return None, ""
@@ -283,7 +293,9 @@ def _trivial_wrapper_value(
         target = assignment.targets[0]
         assigned_name = target.id if isinstance(target, ast.Name) else ""
         assigned_value = assignment.value if assigned_name else None
-    if isinstance(assignment, ast.AnnAssign) and isinstance(assignment.target, ast.Name):
+    if isinstance(assignment, ast.AnnAssign) and isinstance(
+        assignment.target, ast.Name
+    ):
         assigned_name = assignment.target.id
         assigned_value = assignment.value
     returned = body[1].value
@@ -317,11 +329,15 @@ def is_trivial_wrapper(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     parameter_names = {
         argument.arg
         for argument in (
-            list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+            list(node.args.posonlyargs)
+            + list(node.args.args)
+            + list(node.args.kwonlyargs)
         )
     }
     optional_arguments = (node.args.vararg, node.args.kwarg)
-    parameter_names.update(argument.arg for argument in optional_arguments if argument is not None)
+    parameter_names.update(
+        argument.arg for argument in optional_arguments if argument is not None
+    )
     forwarded: set[str] = set()
     for argument in value.args:
         if isinstance(argument, ast.Name):
@@ -329,7 +345,9 @@ def is_trivial_wrapper(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         elif isinstance(argument, ast.Starred) and isinstance(argument.value, ast.Name):
             forwarded.add(argument.value.id)
     forwarded.update(
-        keyword.value.id for keyword in value.keywords if isinstance(keyword.value, ast.Name)
+        keyword.value.id
+        for keyword in value.keywords
+        if isinstance(keyword.value, ast.Name)
     )
     meaningful_parameters = parameter_names - {"self", "cls"}
     if meaningful_parameters and not meaningful_parameters.issubset(forwarded):

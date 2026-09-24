@@ -46,7 +46,12 @@ class TestReleaseIdentityRules(unittest.TestCase):
         self.assertNotIn("README.md", paths)
         self.assertNotIn("README_zh.md", paths)
         self.assertIn("README_ja.md", paths)
-        self.assertTrue(any(item.code == "QG205" and item.path == "ARCHITECTURE.md" for item in findings))
+        self.assertTrue(
+            any(
+                item.code == "QG205" and item.path == "ARCHITECTURE.md"
+                for item in findings
+            )
+        )
 
     def test_release_bound_filename_is_generic_critical(self) -> None:
         temp, root = self._repo()
@@ -54,7 +59,9 @@ class TestReleaseIdentityRules(unittest.TestCase):
         tests = root / "tests"
         tests.mkdir()
         filename = "test_v28_" + "rc" + "3_graph_backend.py"
-        (tests / filename).write_text("def test_graph_backend():\n    assert True\n", encoding="utf-8")
+        (tests / filename).write_text(
+            "def test_graph_backend():\n    assert True\n", encoding="utf-8"
+        )
 
         findings = self._scan(root)
         matched = [item for item in findings if item.code == "QG203"]
@@ -128,14 +135,18 @@ class TestReleaseIdentityRules(unittest.TestCase):
         findings = self._scan(root)
 
         self.assertFalse(any(item.code == "QG203" for item in findings))
-        self.assertTrue(any(item.code == "QG205" and item.path == "pyproject.toml" for item in findings))
-
+        self.assertTrue(
+            any(
+                item.code == "QG205" and item.path == "pyproject.toml"
+                for item in findings
+            )
+        )
 
     def test_minified_html_visual_decimals_are_not_versions(self) -> None:
         temp, root = self._repo()
         self.addCleanup(temp.cleanup)
         (root / "dashboard.html").write_text(
-            '<style>.card{line-height:1.4;opacity:.52}</style>'
+            "<style>.card{line-height:1.4;opacity:.52}</style>"
             '<script>const versionLabel="current"; if(x>1.2){y=.5}</script>'
             '<svg stroke-width="1.2" viewBox="0 0 21.8625 11.0292"></svg>\n',
             encoding="utf-8",
@@ -171,7 +182,9 @@ class TestReleaseIdentityRules(unittest.TestCase):
     def test_three_part_semver_does_not_generate_two_part_submatch(self) -> None:
         temp, root = self._repo()
         self.addCleanup(temp.cleanup)
-        (root / "config.toml").write_text('dependency = "lib==0.20.1"\n', encoding="utf-8")
+        (root / "config.toml").write_text(
+            'dependency = "lib==0.20.1"\n', encoding="utf-8"
+        )
 
         findings = self._scan(root)
         row = next(item for item in findings if item.code == "QG205")
@@ -185,7 +198,9 @@ class TestReleaseIdentityRules(unittest.TestCase):
         temp, root = self._repo()
         self.addCleanup(temp.cleanup)
         token = _release_token()
-        (root / "policy.toml").write_text(f"expected_tag = {token!r}\n", encoding="utf-8")
+        (root / "policy.toml").write_text(
+            f"expected_tag = {token!r}\n", encoding="utf-8"
+        )
         _git(root, "add", ".")
         _git(root, "commit", "-qm", "base")
         _git(root, "tag", token)
@@ -194,6 +209,39 @@ class TestReleaseIdentityRules(unittest.TestCase):
         semantic = next(item for item in findings if item.code == "QG205")
 
         self.assertIn(token, semantic.evidence.get("git_tags_checked", []))
+
+    def test_generated_modification_report_is_not_scanned_for_release_identity(
+        self,
+    ) -> None:
+        temp, root = self._repo()
+        self.addCleanup(temp.cleanup)
+        token = _release_token()
+        (root / "修改说明.md").write_text(
+            f"# audit artifact\nrelease={token}\ndigest={'a' * 64}\n",
+            encoding="utf-8",
+        )
+        (root / "feature.py").write_text(f"TOKEN = {token!r}\n", encoding="utf-8")
+
+        findings = self._scan(root)
+
+        self.assertFalse(any(item.path == "修改说明.md" for item in findings))
+        self.assertTrue(any(item.path == "feature.py" for item in findings))
+
+    def test_generated_outputs_remain_excluded_with_custom_repository_excludes(
+        self,
+    ) -> None:
+        temp, root = self._repo()
+        self.addCleanup(temp.cleanup)
+        (root / "pyproject.toml").write_text(
+            '[tool.repo_quality_guard]\nexclude = ["vendor/**"]\n',
+            encoding="utf-8",
+        )
+
+        config = GuardConfig.load(root)
+
+        self.assertIn("vendor/**", config.exclude)
+        self.assertIn("修改说明.md", config.exclude)
+        self.assertIn("docs/api-reference/**", config.exclude)
 
     def test_non_git_directory_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -215,7 +263,11 @@ class TestReleaseIdentityRules(unittest.TestCase):
         routed = [item for item in findings if item.code in {"QG203", "QG205"}]
 
         self.assertEqual({item.code for item in routed}, {"QG203", "QG205"})
-        self.assertTrue(all(item.evidence.get("semantic_review_required") is True for item in routed))
+        self.assertTrue(
+            all(
+                item.evidence.get("semantic_review_required") is True for item in routed
+            )
+        )
 
 
 if __name__ == "__main__":

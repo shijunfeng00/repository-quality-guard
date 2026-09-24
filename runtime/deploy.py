@@ -58,7 +58,9 @@ def _release_identity(bundle: Path) -> str:
             }
         )
         if not result.passed:
-            raise RuntimeError("source Skill integrity failed: " + "; ".join(result.issues))
+            raise RuntimeError(
+                "source Skill integrity failed: " + "; ".join(result.issues)
+            )
         return str(seal)
     finally:
         del sys.modules[module_name]
@@ -73,7 +75,10 @@ def _repo_for_destination(destination: Path) -> Path:
     """Validate the fixed `.agents/skills/repository-quality-guard` layout."""
     if destination.name != "repository-quality-guard":
         raise RuntimeError("destination must end with repository-quality-guard")
-    if destination.parent.name != "skills" or destination.parent.parent.name != ".agents":
+    if (
+        destination.parent.name != "skills"
+        or destination.parent.parent.name != ".agents"
+    ):
         raise RuntimeError(
             "destination must be <repo>/.agents/skills/repository-quality-guard"
         )
@@ -93,7 +98,9 @@ def _profile_runtime(bundle: Path) -> Any:
             sys.path.remove(bundle_text)
 
 
-def _profile_selection(bundle: Path, repo: Path, explicit: str) -> tuple[Any, Any | None]:
+def _profile_selection(
+    bundle: Path, repo: Path, explicit: str
+) -> tuple[Any, Any | None]:
     """Resolve install-time Profile using the same Portable precedence."""
     profiles = _profile_runtime(bundle)
     selection = profiles.resolve_profile_reference(
@@ -102,14 +109,18 @@ def _profile_selection(bundle: Path, repo: Path, explicit: str) -> tuple[Any, An
         release_root=bundle,
     )
     if selection.source == "explicit-cli":
-        print(f"[QG] Install profile selected: '{selection.name}' (source=explicit-cli).")
+        print(
+            f"[QG] Install profile selected: '{selection.name}' (source=explicit-cli)."
+        )
     elif selection.source == "auto-directory-name":
         print(
             f"[QG] Auto-selected install profile '{selection.name}' because repository "
             "directory name matches an available profile. (source=auto-directory-name)"
         )
     else:
-        print("[QG] No install profile selected; freezing generic policy. (source=generic)")
+        print(
+            "[QG] No install profile selected; freezing generic policy. (source=generic)"
+        )
     profile = profiles.get_project_profile(selection.reference)
     return selection, profile
 
@@ -157,7 +168,9 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
     ]
     existing = [path for path in forbidden if path.exists()]
     if existing:
-        raise RuntimeError(f"installed tree contains distribution-only path: {existing[0]}")
+        raise RuntimeError(
+            f"installed tree contains distribution-only path: {existing[0]}"
+        )
     if any(target.rglob("*.whl")) or any(target.rglob("*.pyc")):
         raise RuntimeError("installed tree must not contain wheels or Python bytecode")
     if any(path.name == "node_modules" for path in target.rglob("*")):
@@ -203,8 +216,16 @@ def _write_installed_policy(
             source_dir,
             installed / "profile",
             ignore=shutil.ignore_patterns(
-                "__pycache__", "*.pyc", "*.pyo", "AGENTS.md", "README.md", "README_zh.md",
-                "tests", "dev-tests", "docs", "examples",
+                "__pycache__",
+                "*.pyc",
+                "*.pyo",
+                "AGENTS.md",
+                "README.md",
+                "README_zh.md",
+                "tests",
+                "dev-tests",
+                "docs",
+                "examples",
             ),
         )
     payload = {
@@ -228,13 +249,17 @@ def _agents_source(bundle: Path, selection: Any, profile: Any | None) -> Path:
     if profile is not None and profile.agents_file:
         if not selection.reference:
             raise RuntimeError("profile AGENTS.md has no source reference")
-        source = _profile_source_dir(bundle, str(selection.reference)) / profile.agents_file
+        source = (
+            _profile_source_dir(bundle, str(selection.reference)) / profile.agents_file
+        )
         if not source.is_file():
             raise RuntimeError(f"selected Profile AGENTS.md missing: {source}")
         return source
     source = bundle / "templates" / "AGENTS.template.md"
     if not source.is_file():
-        raise RuntimeError("source Skill is missing generic templates/AGENTS.template.md")
+        raise RuntimeError(
+            "source Skill is missing generic templates/AGENTS.template.md"
+        )
     return source
 
 
@@ -252,7 +277,9 @@ def _seal_agents_tree(target: Path) -> str:
             }
         )
         if not result.passed:
-            raise RuntimeError("installed integrity failed: " + "; ".join(result.issues))
+            raise RuntimeError(
+                "installed integrity failed: " + "; ".join(result.issues)
+            )
         return seal
     finally:
         del sys.modules[module_name]
@@ -328,7 +355,9 @@ def _create_host_agents_if_missing(repo: Path, source: Path) -> bool:
     return True
 
 
-def _activate_release(staging: Path, destination: Path, repo: Path, agents_source: Path) -> None:
+def _activate_release(
+    staging: Path, destination: Path, repo: Path, agents_source: Path
+) -> None:
     """Atomically activate `.agents`; root AGENTS.md is host-owned/create-if-missing only."""
     old = destination.with_name(f".{destination.name}.old-{uuid.uuid4().hex}")
     moved_old = destination.exists()
@@ -379,7 +408,9 @@ def deploy(bundle: Path, destination: Path, profile_reference: str = "") -> str:
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(
-        tempfile.mkdtemp(prefix=".repository-quality-guard.new-", dir=destination.parent)
+        tempfile.mkdtemp(
+            prefix=".repository-quality-guard.new-", dir=destination.parent
+        )
     )
     _remove_tree(staging)
     _copy_agents_tree(bundle, staging)

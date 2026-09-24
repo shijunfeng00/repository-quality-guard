@@ -23,7 +23,9 @@ class TestHostAgentsContract(unittest.TestCase):
             expected.write_text("profile instructions\n", encoding="utf-8")
             selection = SimpleNamespace(reference="sample")
             profile = SimpleNamespace(agents_file="AGENTS.md")
-            self.assertEqual(_agents_source(bundle, selection, profile), expected.resolve())
+            self.assertEqual(
+                _agents_source(bundle, selection, profile), expected.resolve()
+            )
 
     def test_generic_agents_source_uses_bootstrap_resource(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -52,7 +54,9 @@ class TestHostAgentsContract(unittest.TestCase):
             template = repo / "template.md"
             template.write_text("qg template\n", encoding="utf-8")
             self.assertTrue(_create_host_agents_if_missing(repo, template))
-            self.assertEqual((repo / "AGENTS.md").read_text(encoding="utf-8"), "qg template\n")
+            self.assertEqual(
+                (repo / "AGENTS.md").read_text(encoding="utf-8"), "qg template\n"
+            )
 
     def test_agents_creation_race_fails_instead_of_overwriting(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -66,13 +70,16 @@ class TestHostAgentsContract(unittest.TestCase):
     def test_skill_and_references_define_host_owned_semantics(self) -> None:
         texts = {
             path: (ROOT / path).read_text(encoding="utf-8")
-            for path in ("SKILL.md", "references/CODING_GUIDE.md", "references/AUDIT.md")
+            for path in (
+                "SKILL.md",
+                "references/CODING_GUIDE.md",
+                "references/AUDIT.md",
+            )
         }
         self.assertIn("逐字节保留", texts["SKILL.md"])
         self.assertIn("create-if-missing", texts["references/CODING_GUIDE.md"])
         self.assertNotIn("Profile 模板覆盖", texts["references/CODING_GUIDE.md"])
         self.assertNotIn("Profile 模板覆盖", texts["references/AUDIT.md"])
-
 
     def test_bilingual_readmes_present_human_facing_project_overview(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -125,18 +132,16 @@ class TestHostAgentsContract(unittest.TestCase):
 
     def test_managed_pre_push_gate_is_part_of_agent_contract(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        agents = (ROOT / "templates" / "AGENTS.template.md").read_text(
-            encoding="utf-8"
-        )
+        agents = (ROOT / "templates" / "AGENTS.template.md").read_text(encoding="utf-8")
         for text in (skill, agents):
             self.assertIn("pre-push", text)
             self.assertIn("git_hook_install.py", text)
             self.assertIn("--no-verify", text)
 
     def test_rule_tables_have_markdown_headers(self) -> None:
-        lines = (ROOT / "references" / "RULES.md").read_text(
-            encoding="utf-8"
-        ).splitlines()
+        lines = (
+            (ROOT / "references" / "RULES.md").read_text(encoding="utf-8").splitlines()
+        )
         for index, line in enumerate(lines):
             if not line.startswith("| `QG"):
                 continue
@@ -153,7 +158,7 @@ class TestHostAgentsContract(unittest.TestCase):
             text=True,
             capture_output=True,
             check=True,
-            env={**__import__('os').environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
         self.assertIn("--profile", result.stdout)
         self.assertNotIn("--agents-profile", result.stdout)
@@ -177,13 +182,13 @@ class TestHostAgentsContract(unittest.TestCase):
             "allowed-tools",
         }
         self.assertLessEqual(top_level, allowed)
-        self.assertIn('  version: "0.21.1"', frontmatter)
+        self.assertIn('  version: "0.21.2"', frontmatter)
         self.assertIn("  status: stable", frontmatter)
 
     def test_skill_describes_stable_commands_and_version(self) -> None:
         text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         lock = (ROOT / "runtime" / "RELEASE.lock").read_text(encoding="utf-8")
-        self.assertIn("version=0.21.1", lock)
+        self.assertIn("version=0.21.2", lock)
         for command in ("doc-generate", "doc-search", "audit", "verify"):
             self.assertIn(command, text)
         self.assertIn("Portable", text)

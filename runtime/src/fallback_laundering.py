@@ -45,7 +45,9 @@ class FallbackPattern:
             由行为种类、接收者和选择器组成的稳定键。
         """
         normalized_kind = (
-            "missing_read" if self.kind in {"mapping_read", "attribute_read"} else self.kind
+            "missing_read"
+            if self.kind in {"mapping_read", "attribute_read"}
+            else self.kind
         )
         return normalized_kind, self.receiver, self.selector
 
@@ -254,7 +256,9 @@ def _pattern(
 def _membership(node: ast.AST) -> tuple[ast.AST, ast.AST, bool] | None:
     """解析 `key in mapping` / `key not in mapping`。"""
     valid_compare = (
-        isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and len(node.comparators) == 1
     )
     if not valid_compare:
         return None
@@ -288,7 +292,11 @@ def _handler_exception_names(handler: ast.ExceptHandler) -> set[str]:
     exception_type = handler.type
     if exception_type is None:
         return {"<bare>"}
-    candidates = exception_type.elts if isinstance(exception_type, ast.Tuple) else [exception_type]
+    candidates = (
+        exception_type.elts
+        if isinstance(exception_type, ast.Tuple)
+        else [exception_type]
+    )
     return {_display_expr(item).rsplit(".", 1)[-1] for item in candidates}
 
 
@@ -343,7 +351,9 @@ def _call_patterns(
     if isinstance(node.func, ast.Attribute) and node.args:
         receiver = node.func.value
         if node.func.attr in {"get", "setdefault"}:
-            default = node.args[1] if len(node.args) >= _DICT_DEFAULT_ARG_COUNT else None
+            default = (
+                node.args[1] if len(node.args) >= _DICT_DEFAULT_ARG_COUNT else None
+            )
             kind = "mapping_read" if node.func.attr == "get" else "mapping_init"
             patterns.append(
                 _pattern(
@@ -739,7 +749,9 @@ def fallback_laundering_findings(
             after_unit.tree if after_unit is not None else None,
         )
         removed, added = _changed_patterns(before, after)
-        added_by_key: dict[tuple[str, str, str, str], list[FallbackPattern]] = defaultdict(list)
+        added_by_key: dict[tuple[str, str, str, str], list[FallbackPattern]] = (
+            defaultdict(list)
+        )
         for pattern in added:
             added_by_key[(pattern.qualname, *pattern.semantic_key)].append(pattern)
         seen: set[tuple[str, str, str, str, str, str]] = set()
@@ -750,7 +762,9 @@ def fallback_laundering_findings(
                 if old.syntax == new.syntax or identity in seen:
                     continue
                 seen.add(identity)
-                findings.append(_laundering_finding(path, old, new, config, base_revision))
+                findings.append(
+                    _laundering_finding(path, old, new, config, base_revision)
+                )
                 break
     findings.sort(key=lambda item: (item.path, item.line, item.symbol, item.code))
     return findings

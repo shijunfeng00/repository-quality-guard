@@ -200,7 +200,9 @@ class _NameTable:
 class _AstCanonicalizer:
     """把 Python AST 转换为去标识符、去位置的有序规范树。"""
 
-    _SKIPPED_FIELDS: ClassVar[frozenset[str]] = frozenset({"ctx", "type_comment", "type_ignores"})
+    _SKIPPED_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"ctx", "type_comment", "type_ignores"}
+    )
 
     def __init__(
         self,
@@ -232,7 +234,11 @@ class _AstCanonicalizer:
         """
         if node is None:
             return CanonicalNode("NONE")
-        behavior = self._behavior_node(node) if isinstance(node, (ast.expr, ast.stmt)) else None
+        behavior = (
+            self._behavior_node(node)
+            if isinstance(node, (ast.expr, ast.stmt))
+            else None
+        )
         if behavior is not None:
             return behavior
         special = self._special_node(node)
@@ -272,7 +278,9 @@ class _AstCanonicalizer:
                 children.append(CanonicalNode(field_name, [self.convert(value)]))
                 continue
             if isinstance(value, list):
-                converted = [self.convert(item) for item in value if isinstance(item, ast.AST)]
+                converted = [
+                    self.convert(item) for item in value if isinstance(item, ast.AST)
+                ]
                 if converted:
                     children.append(CanonicalNode(field_name, converted))
             elif isinstance(value, str) and field_name in {"name", "arg", "attr"}:
@@ -425,7 +433,9 @@ class _OwnedVisitor(ast.NodeVisitor):
         Returns:
             None。
         """
-        nested = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+        nested = isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+        )
         if node is not self.root and nested:
             return
         self.nodes.append(node)
@@ -452,7 +462,9 @@ def _canonical_expression(node: ast.AST, names: _NameTable) -> str:
     if isinstance(node, ast.Attribute):
         return f"ATTR({_canonical_expression(node.value, names)},{node.attr})"
     if isinstance(node, ast.Subscript):
-        return f"ITEM({_canonical_expression(node.value, names)},{_selector(node.slice)})"
+        return (
+            f"ITEM({_canonical_expression(node.value, names)},{_selector(node.slice)})"
+        )
     if isinstance(node, ast.Constant):
         return _selector(node)
     return ast.dump(node, annotate_fields=False, include_attributes=False)
@@ -616,7 +628,8 @@ def build_function_models(
             parameters=parameters,
             tree=canonicalizer.convert(node),
             obligations=tuple(
-                _pattern_obligation(pattern, parameters) for pattern in function_patterns
+                _pattern_obligation(pattern, parameters)
+                for pattern in function_patterns
             ),
             calls=_local_calls(node, parameters, owner),
             line=node.lineno,
@@ -664,7 +677,9 @@ def tree_similarity(
 def _rewrite_receiver(receiver: str, replacements: dict[str, str]) -> str:
     """将被调用函数参数占位符替换为调用点表达式。"""
     rewritten = receiver
-    for parameter, argument in sorted(replacements.items(), key=lambda item: -len(item[0])):
+    for parameter, argument in sorted(
+        replacements.items(), key=lambda item: -len(item[0])
+    ):
         if rewritten == parameter:
             return argument
         rewritten = rewritten.replace(f"({parameter},", f"({argument},")
@@ -686,13 +701,19 @@ def _resolve_call(
         for model in same_path:
             if model.qualname == owned_hint:
                 return model
-    same_path_short = [model for model in same_path if model.short_name == call.target_hint]
+    same_path_short = [
+        model for model in same_path if model.short_name == call.target_hint
+    ]
     if len(same_path_short) == 1:
         return same_path_short[0]
-    global_exact = [model for model in models.values() if model.qualname == call.target_hint]
+    global_exact = [
+        model for model in models.values() if model.qualname == call.target_hint
+    ]
     if len(global_exact) == 1:
         return global_exact[0]
-    global_short = [model for model in models.values() if model.short_name == call.target_hint]
+    global_short = [
+        model for model in models.values() if model.short_name == call.target_hint
+    ]
     return global_short[0] if len(global_short) == 1 else None
 
 
@@ -712,7 +733,9 @@ def _summary(
         target = _resolve_call(model, call, models)
         if target is None or target.key in next_stack:
             continue
-        replacements = {f"ARG{index}": argument for index, argument in enumerate(call.arguments)}
+        replacements = {
+            f"ARG{index}": argument for index, argument in enumerate(call.arguments)
+        }
         for obligation in _summary(target, models, depth=depth - 1, stack=next_stack):
             result.append(
                 BehaviorObligation(
@@ -799,7 +822,9 @@ def _match_functions(
     before_metrics = {
         model.key: (model.tree.size, model.tree.labels()) for model in unmatched_before
     }
-    after_metrics = {model.key: (model.tree.size, model.tree.labels()) for model in unmatched_after}
+    after_metrics = {
+        model.key: (model.tree.size, model.tree.labels()) for model in unmatched_after
+    }
     for old in unmatched_before:
         old_size, old_labels = before_metrics[old.key]
         for new in unmatched_after:
@@ -812,7 +837,9 @@ def _match_functions(
             label_upper_bound = label_overlap / max_size
             if label_upper_bound < threshold:
                 continue
-            similarity, algorithm = tree_similarity(old.tree, new.tree, max_nodes=max_nodes)
+            similarity, algorithm = tree_similarity(
+                old.tree, new.tree, max_nodes=max_nodes
+            )
             if similarity >= threshold:
                 candidates.append((similarity, old, new, algorithm))
     used_before_keys: set[str] = set()
@@ -833,8 +860,12 @@ def _removed_direct_obligations(
     new: FunctionModel,
 ) -> list[BehaviorObligation]:
     """返回在函数自身局部语法中消失的旧行为义务。"""
-    old_counts = Counter((item.semantic_key, item.default, item.syntax) for item in old.obligations)
-    new_counts = Counter((item.semantic_key, item.default, item.syntax) for item in new.obligations)
+    old_counts = Counter(
+        (item.semantic_key, item.default, item.syntax) for item in old.obligations
+    )
+    new_counts = Counter(
+        (item.semantic_key, item.default, item.syntax) for item in new.obligations
+    )
     removed_budget = old_counts - (old_counts & new_counts)
     removed: list[BehaviorObligation] = []
     for item in old.obligations:
@@ -947,7 +978,9 @@ def _findings_for_match(
     removed = _removed_direct_obligations(old, new)
     if not removed:
         return []
-    survivors_by_key: dict[tuple[str, str, str], list[BehaviorObligation]] = defaultdict(list)
+    survivors_by_key: dict[tuple[str, str, str], list[BehaviorObligation]] = (
+        defaultdict(list)
+    )
     for item in _summary(new, after_models, depth=_DEFAULT_CALL_DEPTH):
         survivors_by_key[item.semantic_key].append(item)
     findings: list[Finding] = []
@@ -1038,4 +1071,6 @@ def semantic_repair_findings(
         )
         if identity not in unique:
             unique[identity] = finding
-    return sorted(unique.values(), key=lambda item: (item.path, item.line, item.symbol, item.code))
+    return sorted(
+        unique.values(), key=lambda item: (item.path, item.line, item.symbol, item.code)
+    )

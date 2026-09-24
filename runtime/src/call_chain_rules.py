@@ -83,7 +83,9 @@ class _DefinitionCollector(ast.NodeVisitor):
         """把函数结构转换为稳定限定名称事实。"""
         qualname = ".".join([*self.class_stack, *self.function_stack, node.name])
         owner = qualname.rsplit(".", 1)[0] if "." in qualname else ""
-        decorators = tuple(_dotted_name(item) for item in node.decorator_list if _dotted_name(item))
+        decorators = tuple(
+            _dotted_name(item) for item in node.decorator_list if _dotted_name(item)
+        )
         branches = sum(isinstance(item, _BRANCH_NODES) for item in ast.walk(node))
         self.functions[qualname] = _FunctionInfo(
             path=self.path,
@@ -226,7 +228,9 @@ def _resolve_target(node: ast.AST, current: _FunctionInfo, known: set[str]) -> s
     elif isinstance(node, ast.Attribute):
         base = _dotted_name(node.value)
         if base in {"self", "cls"}:
-            candidates = [f"{current.owner}.{node.attr}" if current.owner else node.attr]
+            candidates = [
+                f"{current.owner}.{node.attr}" if current.owner else node.attr
+            ]
         elif current.owner and base == current.owner.rsplit(".", 1)[-1]:
             candidates = [f"{current.owner}.{node.attr}"]
         else:
@@ -247,7 +251,9 @@ def _load_functions(
         path = root / relative
         if not path.is_file() or path.suffix != ".py":
             continue
-        unit = analysis_snapshot.unit(relative) if analysis_snapshot is not None else None
+        unit = (
+            analysis_snapshot.unit(relative) if analysis_snapshot is not None else None
+        )
         if unit is not None:
             tree = unit.tree
             if tree is None:
@@ -259,7 +265,9 @@ def _load_functions(
                 continue
         collector = _DefinitionCollector(relative)
         collector.visit(tree)
-        result.update(((relative, symbol), item) for symbol, item in collector.functions.items())
+        result.update(
+            ((relative, symbol), item) for symbol, item in collector.functions.items()
+        )
     return result
 
 
@@ -271,8 +279,12 @@ def _call_graph(
     dict[tuple[str, str], int],
 ]:
     """构造同文件函数调用边、反向调用边和非调用引用数量。"""
-    outgoing: dict[tuple[str, str], set[tuple[str, str]]] = {key: set() for key in functions}
-    incoming: dict[tuple[str, str], set[tuple[str, str]]] = {key: set() for key in functions}
+    outgoing: dict[tuple[str, str], set[tuple[str, str]]] = {
+        key: set() for key in functions
+    }
+    incoming: dict[tuple[str, str], set[tuple[str, str]]] = {
+        key: set() for key in functions
+    }
     references: dict[tuple[str, str], int] = dict.fromkeys(functions, 0)
     by_path: dict[str, set[str]] = {}
     for path, symbol in functions:
@@ -387,7 +399,9 @@ def single_use_chain_findings(
         return []
     outgoing, incoming, references = _call_graph(functions)
     eligible = {
-        key for key, info in functions.items() if _eligible_helper(key, info, incoming, references)
+        key
+        for key, info in functions.items()
+        if _eligible_helper(key, info, incoming, references)
     }
     findings: list[Finding] = []
     emitted: set[tuple[str, ...]] = set()
@@ -447,9 +461,12 @@ def single_use_chain_findings(
                     "helper_branches": [functions[item].branches for item in chain],
                     "total_helper_lines": sum(functions[item].lines for item in chain),
                     "single_callers": {
-                        item[1]: sorted(source[1] for source in incoming[item]) for item in chain
+                        item[1]: sorted(source[1] for source in incoming[item])
+                        for item in chain
                     },
-                    "non_call_references": {item[1]: references[item] for item in chain},
+                    "non_call_references": {
+                        item[1]: references[item] for item in chain
+                    },
                 },
             )
         )

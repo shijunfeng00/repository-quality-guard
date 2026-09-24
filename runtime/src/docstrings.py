@@ -53,7 +53,9 @@ class DocstringInfo:
         return "Returns" in self.sections or "Yields" in self.sections
 
 
-def definition_code_lines(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+def definition_code_lines(
+    node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+) -> int:
     """
     计算定义的物理跨度，并排除首部 docstring 所占行数。
 
@@ -78,7 +80,9 @@ def definition_code_lines(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFuncti
     return max(1, total_lines - (doc_end - first.lineno + 1))
 
 
-def function_parameter_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]:
+def function_parameter_names(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[str, ...]:
     """
     提取函数需要在 Args 章节中说明的参数名称。
 
@@ -100,7 +104,9 @@ def function_parameter_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tu
     return tuple(names)
 
 
-def parse_docstring(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) -> DocstringInfo:
+def parse_docstring(
+    node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+) -> DocstringInfo:
     """
     解析定义的 docstring，并识别 Google 风格章节与参数名称。
 
@@ -112,10 +118,14 @@ def parse_docstring(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
     """
     raw = ast.get_docstring(node, clean=False)
     if raw is None:
-        return DocstringInfo(text="", content_lines=0, sections=(), documented_parameters=())
+        return DocstringInfo(
+            text="", content_lines=0, sections=(), documented_parameters=()
+        )
     text = inspect.cleandoc(raw).strip()
     if not text:
-        return DocstringInfo(text="", content_lines=0, sections=(), documented_parameters=())
+        return DocstringInfo(
+            text="", content_lines=0, sections=(), documented_parameters=()
+        )
     lines = text.splitlines()
     content_lines = sum(bool(line.strip()) for line in lines)
     sections: list[str] = []

@@ -23,7 +23,16 @@ from .policy_common import (
 
 MIN_CONFIG_SOURCES_FOR_FALLBACK = 2
 MIN_POSITIONAL_ARGS_WITH_DEFAULT = 2
-PROCESS_ENVIRONMENT_KEYS = {"HOME", "PATH", "PWD", "SHELL", "TEMP", "TMP", "TMPDIR", "USER"}
+PROCESS_ENVIRONMENT_KEYS = {
+    "HOME",
+    "PATH",
+    "PWD",
+    "SHELL",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USER",
+}
 DEPLOYMENT_CONFIG_MARKERS = (
     "BASE_URL",
     "DATABASE",
@@ -56,7 +65,9 @@ def _collect_module_constant_signals(
     for statement in parsed.tree.body:
         if isinstance(statement, (ast.Assign, ast.AnnAssign)):
             for name in assignment_names(statement):
-                if name.isupper() and not (name.startswith("__") and name.endswith("__")):
+                if name.isupper() and not (
+                    name.startswith("__") and name.endswith("__")
+                ):
                     signals.module_constants[name].append(
                         (parsed.facts.path, statement.lineno, parsed.facts.module)
                     )
@@ -66,7 +77,9 @@ def _collect_module_constant_signals(
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
             signals.referenced_names.add(node.attr)
         elif isinstance(node, ast.ImportFrom):
-            signals.referenced_names.update(alias.name for alias in node.names if alias.name != "*")
+            signals.referenced_names.update(
+                alias.name for alias in node.names if alias.name != "*"
+            )
     for statement in parsed.tree.body:
         if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
             continue
@@ -253,7 +266,9 @@ def check_environment_read(
                 f"读取配置 `{key}` 时提供默认值 {default}。",
                 symbol=facts.module,
                 severity=configuration_default_severity(key),
-                confidence="high" if configuration_default_severity(key) == "warning" else "medium",
+                confidence="high"
+                if configuration_default_severity(key) == "warning"
+                else "medium",
                 suggestion="必填配置缺失时直接失败；真实可选配置只在唯一配置模型中声明默认值。",
             )
         )
@@ -295,7 +310,11 @@ def configuration_default_severity(key: str) -> str:
         部署关键配置返回 warning，普通行为参数返回 info。
     """
     upper = key.upper()
-    return "warning" if any(marker in upper for marker in DEPLOYMENT_CONFIG_MARKERS) else "info"
+    return (
+        "warning"
+        if any(marker in upper for marker in DEPLOYMENT_CONFIG_MARKERS)
+        else "info"
+    )
 
 
 def check_hardcoded_endpoint(facts: ModuleFacts, node: ast.Constant) -> list[Finding]:
@@ -374,7 +393,10 @@ def config_source_fallback_count(node: ast.BoolOp) -> int:
     count = 0
     for value in node.values:
         if (
-            (isinstance(value, ast.Call) and call_name(value) in CONFIG_CALLS | CONFIG_FILE_CALLS)
+            (
+                isinstance(value, ast.Call)
+                and call_name(value) in CONFIG_CALLS | CONFIG_FILE_CALLS
+            )
             or "config" in dotted_name(value).lower()
             or "settings" in dotted_name(value).lower()
         ):
@@ -429,7 +451,9 @@ def check_prompt_rules(
         is_prompt_template = isinstance(value, (ast.Constant, ast.BinOp, ast.JoinedStr))
         if prompt_named and is_prompt_template:
             text = collect_string_text(value)
-            negative_count = sum(text.count(marker) for marker in PROMPT_NEGATIVE_MARKERS)
+            negative_count = sum(
+                text.count(marker) for marker in PROMPT_NEGATIVE_MARKERS
+            )
             if negative_count >= config.prompt_constraint_threshold:
                 findings.append(
                     make_finding(
@@ -462,7 +486,14 @@ def check_prompt_rules(
         suspicious_case_table = any(
             marker in name.lower()
             for name in names
-            for marker in ("case", "fallback", "pattern", "prompt", "rule", "uncertainty")
+            for marker in (
+                "case",
+                "fallback",
+                "pattern",
+                "prompt",
+                "rule",
+                "uncertainty",
+            )
         )
         if suspicious_case_table and isinstance(value, (ast.Tuple, ast.List, ast.Set)):
             strings = [
@@ -531,11 +562,14 @@ def count_string_fragments(node: ast.expr | None) -> int:
     if node is None:
         return 0
     return sum(
-        isinstance(item, ast.Constant) and isinstance(item.value, str) for item in ast.walk(node)
+        isinstance(item, ast.Constant) and isinstance(item.value, str)
+        for item in ast.walk(node)
     )
 
 
-def check_module_state_rules(parsed: ParsedModule, config: GuardConfig) -> list[Finding]:
+def check_module_state_rules(
+    parsed: ParsedModule, config: GuardConfig
+) -> list[Finding]:
     """
     检查模块级可变状态、动态导入、兼容路径和嵌套定义。
 
@@ -583,7 +617,9 @@ def check_module_statement(facts: ModuleFacts, statement: ast.stmt) -> list[Find
     return findings
 
 
-def check_module_mutable_state(facts: ModuleFacts, statement: ast.stmt) -> list[Finding]:
+def check_module_mutable_state(
+    facts: ModuleFacts, statement: ast.stmt
+) -> list[Finding]:
     """
     检查模块顶层可变容器。
 

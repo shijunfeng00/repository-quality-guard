@@ -4,7 +4,7 @@
 
 `.agents/skills/repository-quality-guard/**` 是仓库协作运行时，必须进入 Git；根 `AGENTS.md` 是宿主共享协调文件；QG 从不覆盖已有文件，仅当本轮 deploy 在原本缺失时创建了根 `AGENTS.md` 才可能属于同一升级提交。它们与默认不入 Git 的 `修改说明.md` 属于不同交付通道。正式升级默认始终是**从任意旧/残缺版本到当前 manifest 的全量替换**，不要求逐版本升级；deploy 用 staging 构造完整目标树并原子替换旧目录，目标版本不存在的历史文件必须消失。仅在本机 deploy 成功不证明可交付：必须至少 `git add -A -- .agents/skills/repository-quality-guard`，只有本轮同步过根 `AGENTS.md` 时才一并 stage，提交新增/修改/删除，并从 commit fresh clone。clone 中必须存在 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py`、完整 `runtime/src` 与 `SKILL.md`；根 `AGENTS.md` 仅对本轮受管理模板做条件验证，且必须能实跑报告闭环。若用户明确要求本机临时安装而不提交，必须把“不可由同事 pull 复现”列为显式非持久化状态，不得声称仓库升级完成。
 
-正式 `.skill.zip` 是外部独立运行与 authoring 介质：可以携带 `README.md`、`README_zh.md`、`dev-tests/`、authoring/release tools，同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
+Canonical full-repository ZIP 是外部独立运行、备份与 authoring 的唯一完整介质：必须携带 `.git`、完整本地 Profile catalog，并可以携带 `README.md`、`README_zh.md`、`dev-tests/`、authoring/release tools，同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
 
 ## 报告结构
 
@@ -32,7 +32,7 @@
 
 ## SEM
 
-本轮 Delta 必须逐项裁决。历史语义候选按规则聚合；本轮触及 owner/调用链附近的历史候选优先进入有限风险抽样，不要求逐项展开数百行。抽样发现 INVALID 时必须修复并重新 audit；全部 JUSTIFIED 时允许历史修复数为 0。
+本轮 Delta 必须逐项裁决。对本轮实际触达的生产 `.py` 文件，历史 Critical / Error / Warning 也必须进入 touched-debt gate：逐项判断真实债务或合法边界契约，真实债务必须修复后重新 audit；只有源码、调用方和行为证据都支持的候选才可 JUSTIFIED。不得仅因 finding 属于 baseline 历史而跳过，也不得通过 `.get(default)` 改成等价 membership/try-except 等语法来隐藏同一 fallback 语义。未触达文件仍按正常历史抽样规则处理，避免清债范围无边界扩张。
 
 fallback/宽松契约的保留必须属于明确的外部兼容、用户可见降级、可选能力或 best-effort side effect；内部确定性契约默认 fail-loud。用户降级必须保持失败可观测，不伪造工具/检索/证据成功，不污染 canonical state，也不能吞未知程序 bug。
 

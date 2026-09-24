@@ -32,45 +32,49 @@ class Profile(QualityGuardProfile):
 
         self.add_values(
             "stable_mapping_contracts",
-            StableMappingContract(
-                state_path,
-                state_type,
-                channel="state_keys",
-                relative_severity="warning",
-                relative_code="QG182",
-                review_kind=f"{state_type} keys",
-                state_type=state_type,
-                state_source_suffix="state.py",
-                state_conventional_names=("state", "runtime_state"),
-                state_constructor_fields=("initial", "resources", "evidence"),
-                state_writer_methods=("update", "define_field"),
-                state_key_writer_methods=("update", "define_field"),
+            (
+                StableMappingContract(
+                    state_path,
+                    state_type,
+                    channel="state_keys",
+                    relative_severity="warning",
+                    relative_code="QG182",
+                    review_kind=f"{state_type} keys",
+                    state_type=state_type,
+                    state_source_suffix="state.py",
+                    state_conventional_names=("state", "runtime_state"),
+                    state_constructor_fields=("initial", "resources", "evidence"),
+                    state_writer_methods=("update", "define_field"),
+                    state_key_writer_methods=("update", "define_field"),
+                ),
             ),
         )
         self.add_values(
             "callable_contracts",
-            CallableContract(
-                adapter_path,
-                f"{adapter_type}.generate",
-                (
-                    ("self", "positional_or_keyword", False),
-                    ("messages", "positional_or_keyword", False),
-                    ("stop", "positional_or_keyword", True),
-                    ("kwargs", "var_keyword", False),
+            (
+                CallableContract(
+                    adapter_path,
+                    f"{adapter_type}.generate",
+                    (
+                        ("self", "positional_or_keyword", False),
+                        ("messages", "positional_or_keyword", False),
+                        ("stop", "positional_or_keyword", True),
+                        ("kwargs", "var_keyword", False),
+                    ),
+                    ("ModelResponse",),
+                    False,
                 ),
-                ("ModelResponse",),
-                False,
-            ),
-            CallableContract(
-                adapter_path,
-                f"{adapter_type}.stream",
-                (
-                    ("self", "positional_or_keyword", False),
-                    ("messages", "positional_or_keyword", False),
-                    ("stop", "positional_or_keyword", True),
-                    ("kwargs", "var_keyword", False),
+                CallableContract(
+                    adapter_path,
+                    f"{adapter_type}.stream",
+                    (
+                        ("self", "positional_or_keyword", False),
+                        ("messages", "positional_or_keyword", False),
+                        ("stop", "positional_or_keyword", True),
+                        ("kwargs", "var_keyword", False),
+                    ),
+                    ("Iterator", "ModelChunk"),
+                    False,
                 ),
-                ("Iterator", "ModelChunk"),
-                False,
             ),
         )

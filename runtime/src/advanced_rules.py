@@ -84,7 +84,9 @@ class AdvancedRuleEvaluator:
         signatures = collect_function_signatures(parsed)
         findings.extend(check_positional_boolean_calls(parsed, signatures))
         findings.extend(check_state_write_types(self.signals))
-        findings.extend(check_repository_architecture(definitions, self.signals, self.config))
+        findings.extend(
+            check_repository_architecture(definitions, self.signals, self.config)
+        )
         return findings
 
     def _evaluate_module(
@@ -117,12 +119,16 @@ class AdvancedRuleEvaluator:
                     )
                 )
                 continue
-            boundary = is_boundary_module(facts.module, self.config.boundary_module_markers)
+            boundary = is_boundary_module(
+                facts.module, self.config.boundary_module_markers
+            )
             findings.extend(check_signature_rules(facts, node, qualname, self.config))
             findings.extend(check_return_rules(facts, node, qualname))
             if not boundary:
                 findings.extend(check_contract_rules(facts, node, qualname))
-            findings.extend(check_side_effect_rules(facts, node, qualname, allow_print=boundary))
+            findings.extend(
+                check_side_effect_rules(facts, node, qualname, allow_print=boundary)
+            )
             findings.extend(check_call_safety_rules(facts, node, qualname))
             findings.extend(
                 check_agent_rules(

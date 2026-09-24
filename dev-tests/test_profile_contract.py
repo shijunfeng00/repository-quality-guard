@@ -31,7 +31,7 @@ class _EmptyRule(QualityRule):
 
 class _Pack(RulePack):
     def register(self, profile: QualityGuardProfile) -> None:
-        profile.add_capability("packed")
+        profile.add_capability(("packed",))
 
 
 class TestProfileContract(unittest.TestCase):
@@ -41,7 +41,7 @@ class TestProfileContract(unittest.TestCase):
 
             def configure(self) -> None:
                 super().configure()
-                self.add_capability("python")
+                self.add_capability(("python",))
 
         profile = Profile(
             manifest={

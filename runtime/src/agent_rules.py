@@ -129,7 +129,9 @@ def collect_dynamic_state_fields(
     Returns:
         None。
     """
-    preferred = next((contracts[name] for name in configured if name in contracts), None)
+    preferred = next(
+        (contracts[name] for name in configured if name in contracts), None
+    )
     for module in modules:
         parents = module.parents
         for node in module.nodes:
@@ -241,7 +243,9 @@ def registered_tool_name(
         工具限定名称；当前节点不是工具入口时返回空字符串。
     """
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        names = {name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)}
+        names = {
+            name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+        }
         if names & decorators:
             owner = enclosing_class_name(node, parents)
             prefix = ".".join(part for part in (module, owner) if part)
@@ -371,7 +375,9 @@ def check_agent_rules(
     )
     state_parameters = set(parameter_contracts)
     findings.extend(check_state_scope(facts, node, qualname, accesses))
-    findings.extend(check_state_update_entry(facts, node, qualname, state_parameters, config))
+    findings.extend(
+        check_state_update_entry(facts, node, qualname, state_parameters, config)
+    )
     findings.extend(check_state_merge_methods(facts, node, qualname, methods))
     if is_tool:
         findings.extend(check_tool_contract(facts, node, qualname, nodes))
@@ -401,7 +407,9 @@ def is_tool_definition(
     Returns:
         命中 Tool 装饰器或 Tool 基类名称时返回 True。
     """
-    decorators = {name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)}
+    decorators = {
+        name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+    }
     symbol = f"{facts.module}.{qualname}" if facts.module else qualname
     if symbol in signals.registered_tools or decorators & set(config.tool_decorators):
         return True
@@ -439,12 +447,16 @@ def collect_state_operation_findings(
         if read is not None:
             parameter, field_name = read
             accesses[parameter].add(field_name)
-            findings.extend(check_declared_state_read(facts, item, qualname, contracts, read))
+            findings.extend(
+                check_declared_state_read(facts, item, qualname, contracts, read)
+            )
         write = state_write(item, state_parameters)
         if write is not None:
             methods[(write[0], write[1])].add(write[3])
             findings.extend(
-                record_state_write(facts, item, qualname, contracts, write, is_tool, signals)
+                record_state_write(
+                    facts, item, qualname, contracts, write, is_tool, signals
+                )
             )
     return findings, accesses, methods
 
@@ -513,7 +525,9 @@ def record_state_write(
     parameter, field_name, value_type, method_name = write
     contract = contracts[parameter]
     contract_name = contract.name if contract is not None else "<unknown>"
-    signals.state_writes[(contract_name, field_name)].append((value_type, facts.path, node.lineno))
+    signals.state_writes[(contract_name, field_name)].append(
+        (value_type, facts.path, node.lineno)
+    )
     findings = check_declared_state_write(facts, node, qualname, contract, field_name)
     if is_tool:
         findings.append(
@@ -745,7 +759,9 @@ def state_subscript_read(
     base = dotted_name(node.value)
     key = node.slice
     if not (
-        base in state_parameters and isinstance(key, ast.Constant) and isinstance(key.value, str)
+        base in state_parameters
+        and isinstance(key, ast.Constant)
+        and isinstance(key.value, str)
     ):
         return None
     return base, key.value
@@ -852,7 +868,9 @@ def state_target_write(
     return None
 
 
-def _state_parameter_escapes(node: ast.FunctionDef | ast.AsyncFunctionDef, parameter: str) -> bool:
+def _state_parameter_escapes(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, parameter: str
+) -> bool:
     """判断完整状态参数是否被直接透传、返回或保存，降低 QG128 误判。
 
     Args:
@@ -865,7 +883,10 @@ def _state_parameter_escapes(node: ast.FunctionDef | ast.AsyncFunctionDef, param
     for item in ast.walk(node):
         if isinstance(item, ast.Call):
             values = [*item.args, *(keyword.value for keyword in item.keywords)]
-            if any(isinstance(value, ast.Name) and value.id == parameter for value in values):
+            if any(
+                isinstance(value, ast.Name) and value.id == parameter
+                for value in values
+            ):
                 return True
         if isinstance(item, (ast.Return, ast.Yield, ast.YieldFrom)):
             value = item.value
@@ -878,7 +899,9 @@ def _state_parameter_escapes(node: ast.FunctionDef | ast.AsyncFunctionDef, param
     return False
 
 
-def _used_as_callback(facts: ModuleFacts, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _used_as_callback(
+    facts: ModuleFacts, node: ast.FunctionDef | ast.AsyncFunctionDef
+) -> bool:
     """判断定义是否被当前模块作为函数对象传给其他调用，识别图节点/路由等回调协议。
 
     Args:
@@ -904,7 +927,14 @@ def _protocol_like_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """判断方法签名是否明显受 Python/框架 protocol 约束。"""
     if node.name.startswith("__") and node.name.endswith("__"):
         return True
-    markers = {"override", "abstractmethod", "property", "callback", "route", "validator"}
+    markers = {
+        "override",
+        "abstractmethod",
+        "property",
+        "callback",
+        "route",
+        "validator",
+    }
     return any(
         marker in dotted_name(decorator).lower()
         for marker in markers
@@ -987,10 +1017,14 @@ def check_state_update_entry(
     Returns:
         状态更新入口发现列表。
     """
-    if not state_parameters or any(marker in node.name for marker in config.state_writer_names):
+    if not state_parameters or any(
+        marker in node.name for marker in config.state_writer_names
+    ):
         return []
     writes = [
-        item for item in direct_body_nodes(node) if state_write(item, state_parameters) is not None
+        item
+        for item in direct_body_nodes(node)
+        if state_write(item, state_parameters) is not None
     ]
     if not writes:
         return []
@@ -1169,7 +1203,9 @@ def check_history_trace_rules(
     Returns:
         History 与 Trace 发现列表。
     """
-    call_names = {call_name(item).lower() for item in nodes if isinstance(item, ast.Call)}
+    call_names = {
+        call_name(item).lower() for item in nodes if isinstance(item, ast.Call)
+    }
     uses_history = any(
         any(marker in name for marker in config.history_markers)
         and not any(marker in name for marker in config.trace_markers)
@@ -1201,7 +1237,9 @@ def check_history_trace_rules(
             for statement in item.body
             for child in ast.walk(statement)
             if isinstance(child, ast.Call)
-            and any(marker in call_name(child).lower() for marker in config.history_markers)
+            and any(
+                marker in call_name(child).lower() for marker in config.history_markers
+            )
         ]
         if history_calls:
             findings.append(

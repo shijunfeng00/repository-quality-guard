@@ -119,7 +119,9 @@ class _InstanceAttributeCollector(ast.NodeVisitor):
     收集器不会进入嵌套函数和嵌套类，避免把内部闭包状态误认为外层类成员。
     """
 
-    def __init__(self, receiver: str, class_name: str, path: str, in_constructor: bool) -> None:
+    def __init__(
+        self, receiver: str, class_name: str, path: str, in_constructor: bool
+    ) -> None:
         """
         初始化成员属性收集器。
 
@@ -214,7 +216,9 @@ class _InstanceAttributeCollector(ast.NodeVisitor):
         Returns:
             None。
         """
-        self._collect_target(node.target, "", f"<augassign:{type(node.op).__name__}>", node.lineno)
+        self._collect_target(
+            node.target, "", f"<augassign:{type(node.op).__name__}>", node.lineno
+        )
         self.generic_visit(node.value)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -236,11 +240,15 @@ class _InstanceAttributeCollector(ast.NodeVisitor):
             and isinstance(node.args[1], ast.Constant)
             and isinstance(node.args[1].value, str)
         ):
-            value = _render(node.args[2]) if len(node.args) >= _SETATTR_VALUE_ARGS else ""
+            value = (
+                _render(node.args[2]) if len(node.args) >= _SETATTR_VALUE_ARGS else ""
+            )
             self._add(node.args[1].value, "", value, node.lineno)
         self.generic_visit(node)
 
-    def _collect_target(self, target: ast.expr, annotation: str, value: str, line: int) -> None:
+    def _collect_target(
+        self, target: ast.expr, annotation: str, value: str, line: int
+    ) -> None:
         """
         从赋值目标中提取接收者属性。
 
@@ -332,14 +340,18 @@ class PythonInterfaceExtractor:
             try:
                 tree = ast.parse(self.source, filename=self.path, type_comments=True)
             except SyntaxError as error:
-                message = f"{self.path}:{error.lineno or 1}:{error.offset or 1}: {error.msg}"
+                message = (
+                    f"{self.path}:{error.lineno or 1}:{error.offset or 1}: {error.msg}"
+                )
                 return {}, (message,)
         self.loaded_names = {
             item.id
             for item in ast.walk(tree)
             if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Load)
         }
-        self._add(InterfaceSymbol(kind="file", path=self.path, qualname=self.path, line=1))
+        self._add(
+            InterfaceSymbol(kind="file", path=self.path, qualname=self.path, line=1)
+        )
         for node in _scope_statements(tree.body):
             self._extract_module_statement(node)
         for candidate in self._variables.values():
@@ -498,7 +510,9 @@ class PythonInterfaceExtractor:
             annotation = _render(node.annotation)
             value = _render(node.value)
         else:
-            targets = [item for target in node.targets for item in _flatten_targets(target)]
+            targets = [
+                item for target in node.targets for item in _flatten_targets(target)
+            ]
             annotation = node.type_comment or ""
             value = _render(node.value)
         for target in targets:
@@ -546,7 +560,9 @@ class PythonInterfaceExtractor:
             None。
         """
         if any(
-            _render(item.func if isinstance(item, ast.Call) else item).endswith("staticmethod")
+            _render(item.func if isinstance(item, ast.Call) else item).endswith(
+                "staticmethod"
+            )
             for item in node.decorator_list
         ):
             return
@@ -580,7 +596,9 @@ class PythonInterfaceExtractor:
             if isinstance(node, ast.AnnAssign)
             else [item for target in node.targets for item in _flatten_targets(target)]
         )
-        if not any(isinstance(item, ast.Name) and item.id == "__slots__" for item in targets):
+        if not any(
+            isinstance(item, ast.Name) and item.id == "__slots__" for item in targets
+        ):
             return
         value = node.value
         if not isinstance(value, (ast.Tuple, ast.List, ast.Set)):
@@ -726,12 +744,16 @@ class GitWorktreeInterfaceComparator:
                 base_label = "EMPTY_TREE"
             else:
                 message = verified_base.stderr.decode(errors="replace").strip()
-                raise RuntimeError(message or f"无法解析 Git 基准提交: {self.base_revision}")
+                raise RuntimeError(
+                    message or f"无法解析 Git 基准提交: {self.base_revision}"
+                )
         else:
             base_sources = (
                 self.base_analysis.sources()
                 if self.base_analysis is not None
-                else self._read_snapshot(repository_root, self.base_revision, scope_prefix)
+                else self._read_snapshot(
+                    repository_root, self.base_revision, scope_prefix
+                )
             )
             base_label = self.base_revision
         target_sources = (
@@ -743,12 +765,16 @@ class GitWorktreeInterfaceComparator:
                 else self._read_worktree(repository_root, scope_prefix)
             )
         )
-        base_trees = self.base_analysis.trees() if self.base_analysis is not None else None
+        base_trees = (
+            self.base_analysis.trees() if self.base_analysis is not None else None
+        )
         target_trees = (
             self.target_analysis.trees() if self.target_analysis is not None else None
         )
         base_symbols, base_errors = self._extract_snapshot(base_sources, base_trees)
-        target_symbols, target_errors = self._extract_snapshot(target_sources, target_trees)
+        target_symbols, target_errors = self._extract_snapshot(
+            target_sources, target_trees
+        )
         changes = _compare_symbols(base_symbols, target_symbols)
         contract_findings = validate_project_contracts(
             self.profile,
@@ -787,14 +813,18 @@ class GitWorktreeInterfaceComparator:
         Returns:
             相对路径到 UTF-8 源码文本的映射。
         """
-        listed = _run_git(repository_root, ["ls-tree", "-r", "-z", "--name-only", snapshot])
+        listed = _run_git(
+            repository_root, ["ls-tree", "-r", "-z", "--name-only", snapshot]
+        )
         if listed.returncode != 0:
             raise RuntimeError(
                 listed.stderr.decode(errors="replace").strip() or "无法列出 Git 文件"
             )
         paths = sorted(
             path
-            for path in listed.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+            for path in listed.stdout.decode("utf-8", errors="surrogateescape").split(
+                "\0"
+            )
             if path.endswith(".py")
         )
         result: dict[str, str] = {}
@@ -832,11 +862,14 @@ class GitWorktreeInterfaceComparator:
         listed = _run_git(repository_root, ["ls-files", "--cached", "-z"])
         if listed.returncode != 0:
             raise RuntimeError(
-                listed.stderr.decode(errors="replace").strip() or "无法列出 Git 暂存区文件"
+                listed.stderr.decode(errors="replace").strip()
+                or "无法列出 Git 暂存区文件"
             )
         paths = sorted(
             path
-            for path in listed.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+            for path in listed.stdout.decode("utf-8", errors="surrogateescape").split(
+                "\0"
+            )
             if path.endswith(".py")
         )
         result: dict[str, str] = {}
@@ -901,7 +934,8 @@ class GitWorktreeInterfaceComparator:
         )
         if result.returncode != 0:
             raise RuntimeError(
-                result.stderr.decode(errors="replace").strip() or "无法列出 Git 工作区文件"
+                result.stderr.decode(errors="replace").strip()
+                or "无法列出 Git 工作区文件"
             )
         paths = result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
         return sorted({path for path in paths if path.endswith(".py")})
@@ -1052,7 +1086,11 @@ def _parameters(arguments: ast.arguments) -> tuple[InterfaceParameter, ...]:
     for index, item in enumerate(positional):
         has_default = index >= default_offset
         default = arguments.defaults[index - default_offset] if has_default else None
-        kind = "positional_only" if index < len(arguments.posonlyargs) else "positional_or_keyword"
+        kind = (
+            "positional_only"
+            if index < len(arguments.posonlyargs)
+            else "positional_or_keyword"
+        )
         result.append(
             InterfaceParameter(
                 name=item.arg,
@@ -1153,7 +1191,9 @@ def _compare_symbols(
             item.path,
             _KIND_ORDER[item.kind],
             item.symbol,
-            (item.after or item.before).variant if (item.after or item.before) is not None else 0,
+            (item.after or item.before).variant
+            if (item.after or item.before) is not None
+            else 0,
         ),
     )
 
@@ -1179,10 +1219,14 @@ def _change_details(before: InterfaceSymbol, after: InterfaceSymbol) -> dict[str
             "before": [item.to_dict() for item in before.parameters],
             "after": [item.to_dict() for item in after.parameters],
             "added": [
-                after_by_name[name].to_dict() for name in after_names if name not in before_by_name
+                after_by_name[name].to_dict()
+                for name in after_names
+                if name not in before_by_name
             ],
             "removed": [
-                before_by_name[name].to_dict() for name in before_names if name not in after_by_name
+                before_by_name[name].to_dict()
+                for name in before_names
+                if name not in after_by_name
             ],
             "modified": [
                 {
@@ -1210,7 +1254,9 @@ def _change_details(before: InterfaceSymbol, after: InterfaceSymbol) -> dict[str
     for field_name, old_value, new_value in comparable_fields:
         if old_value != new_value:
             details[field_name] = {
-                "before": list(old_value) if isinstance(old_value, tuple) else old_value,
+                "before": list(old_value)
+                if isinstance(old_value, tuple)
+                else old_value,
                 "after": list(new_value) if isinstance(new_value, tuple) else new_value,
             }
     return details

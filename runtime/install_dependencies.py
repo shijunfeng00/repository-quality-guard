@@ -1,4 +1,4 @@
-"""安装/验证 Repository Quality Guard 锁定依赖；`.skill.zip` 支持离线介质，`.agents` 不携带介质。"""
+"""安装/验证 Repository Quality Guard 锁定依赖；canonical full-repository ZIP 支持离线介质，`.agents` 不携带介质。"""
 
 from __future__ import annotations
 
@@ -7,20 +7,54 @@ import importlib
 import importlib.metadata
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping
+
+from runtime.src.bootstrap_settings import BootstrapSettings, load_bootstrap_settings
+from runtime.src.process_lifecycle import process_alive
 
 _LOCK_FILE = "runtime/dependencies.lock.json"
 _OFFLINE_WHEELS = "offline/wheelhouse"
 _OFFLINE_NODE_ARCHIVE = "offline/node_modules.zip"
-_NODE_ENV = "RQG_NODE_MODULES"
-_OFFLINE_ENV = "RQG_OFFLINE_ONLY"
-_CACHE_ENV = "RQG_DEPENDENCY_CACHE"
-_SYSTEM_ENV = "RQG_INSTALL_SYSTEM_DEPS"
 _NETWORK_INSTALL_TIMEOUT_SECONDS = 90
+_CONNECT_TIMEOUT_SECONDS = 3
+_CONNECT_ATTEMPTS = 3
+
+
+def _log(message: str) -> None:
+    """Write bootstrap decisions to the agent-visible error stream."""
+    sys.stderr.write(f"[QG] {message}\n")
+    sys.stderr.flush()
+
+
+def _network_available(url: str) -> bool:
+    """Probe the exact package registry before any online fallback."""
+    for attempt in range(1, _CONNECT_ATTEMPTS + 1):
+        _log(
+            f"检查网络 {attempt}/{_CONNECT_ATTEMPTS}: {url} (timeout={_CONNECT_TIMEOUT_SECONDS}s)"
+        )
+        try:
+            with urllib.request.urlopen(
+                url, timeout=_CONNECT_TIMEOUT_SECONDS
+            ) as response:
+                response.read(1)
+            return True
+        except urllib.error.HTTPError:
+            return True
+        except (OSError, urllib.error.URLError) as error:
+            _log(f"网络探测失败: {error}")
+    _log(
+        "网络不可用；无法在线安装锁定依赖。完整 skill.zip 应自带锁定依赖介质；若当前安装形态缺少本地介质或缓存，请请求用户授权联网安装，或让用户提供完整 skill.zip / 重新安装。"
+    )
+    return False
 
 
 def _read_lock(bundle: Path) -> dict[str, object]:
@@ -29,31 +63,147 @@ def _read_lock(bundle: Path) -> dict[str, object]:
     if not path.is_file():
         raise RuntimeError(f"缺少 {_LOCK_FILE}。")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema") != "repository-quality-guard/dependencies-v1":
+    if type(payload) is not dict or not {
+        "schema",
+        "registry",
+        "python",
+        "node",
+    }.issubset(payload):
+        raise RuntimeError("runtime dependencies lock 缺少必需字段。")
+    if payload["schema"] != "repository-quality-guard/dependencies-v1":
         raise RuntimeError("runtime dependencies lock schema 非法。")
+    registry = payload["registry"]
+    if type(registry) is not dict or set(registry) != {"python", "node"}:
+        raise RuntimeError("runtime dependencies lock 缺少 registry 地址。")
     return payload
 
 
-def _cache_root(environment: Mapping[str, str]) -> Path:
-    """返回仓库外的用户级依赖缓存根目录。"""
-    explicit = environment.get(_CACHE_ENV, "").strip()
-    if explicit:
-        return Path(explicit).expanduser().resolve()
-    if os.name == "nt":
-        base = environment.get("LOCALAPPDATA", "").strip()
-        if base:
-            return Path(base) / "repository-quality-guard" / "dependencies"
-    xdg = environment.get("XDG_CACHE_HOME", "").strip()
-    base = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
-    return base / "repository-quality-guard" / "dependencies"
+def _registry_url(
+    lock: dict[str, object], kind: str, settings: BootstrapSettings
+) -> str:
+    """Return the configured registry for one dependency ecosystem."""
+    override = settings.python_index_url if kind == "python" else settings.npm_registry
+    if override:
+        return override.strip()
+    registry = lock["registry"]
+    if type(registry) is not dict or type(registry[kind]) is not str:
+        raise RuntimeError(f"依赖锁缺少 {kind} registry 地址。")
+    return registry[kind]
 
 
-def _version_matches(distribution: str, expected: str) -> bool:
-    """判断当前 Python 环境中的 distribution 是否为锁定版本。"""
+def _cache_root(settings: BootstrapSettings) -> Path:
+    """Return the normalized repository-external dependency cache root."""
+    return settings.cache_root
+
+
+def _bootstrap_owner_pid(owner_file: Path) -> int | None:
+    """Read a bootstrap-lock owner PID from the canonical lock envelope.
+
+    Missing owner files are treated as an incomplete lock publication so the
+    caller can use lock age to distinguish a concurrent creator from stale state.
+    Malformed published envelopes are contract failures and are not downgraded to
+    an anonymous lock.
+    """
     try:
-        return importlib.metadata.version(distribution) == expected
-    except importlib.metadata.PackageNotFoundError:
-        return False
+        raw = owner_file.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise RuntimeError(f"无法读取依赖安装锁 owner: {owner_file}") from error
+    try:
+        owner = json.loads(raw)
+    except ValueError as error:
+        raise RuntimeError(f"依赖安装锁 owner JSON 非法: {owner_file}") from error
+    if type(owner) is not dict or "pid" not in owner or type(owner["pid"]) is not int:
+        raise RuntimeError(f"依赖安装锁 owner 协议非法: {owner_file}")
+    return owner["pid"] if owner["pid"] > 0 else None
+
+
+@contextmanager
+def _bootstrap_single_flight(settings: BootstrapSettings):
+    """Serialize dependency preparation for one user cache to avoid concurrent pip/npm writes."""
+    root = _cache_root(settings)
+    root.mkdir(parents=True, exist_ok=True)
+    lock = root / "bootstrap.lock"
+    started = time.monotonic()
+    last_log = 0.0
+    while True:
+        try:
+            lock.mkdir()
+        except FileExistsError:
+            acquired = False
+        else:
+            acquired = True
+        if acquired:
+            (lock / "owner.json").write_text(
+                json.dumps({"pid": os.getpid(), "started_at": time.time()}),
+                encoding="utf-8",
+            )
+            break
+        owner_file = lock / "owner.json"
+        pid = _bootstrap_owner_pid(owner_file)
+        if pid is None:
+            try:
+                lock_age = time.time() - lock.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if lock_age > 5:
+                shutil.rmtree(lock, ignore_errors=True)
+                _log("清理无 owner 的失效依赖安装锁。")
+                continue
+        elif not process_alive(pid):
+            shutil.rmtree(lock, ignore_errors=True)
+            _log(f"清理失效依赖安装锁：owner pid={pid} 已退出。")
+            continue
+        now = time.monotonic()
+        if last_log == 0.0 or now - last_log >= 5:
+            detail = f" pid={pid}" if pid is not None else ""
+            _log(
+                "另一个 Repository Quality Guard 正在准备运行环境；"
+                f"正在等待{detail} elapsed={now - started:.1f}s。"
+            )
+            last_log = now
+        time.sleep(0.25)
+    try:
+        yield
+    finally:
+        shutil.rmtree(lock, ignore_errors=True)
+
+
+def _managed_wheelhouse(settings: BootstrapSettings) -> Path:
+    """Return the managed user cache used to persist verified Python wheels."""
+    return _cache_root(settings) / "python" / "wheelhouse"
+
+
+def _seed_wheel_cache(bundle: Path, settings: BootstrapSettings) -> Path | None:
+    """Copy release-provided wheels into the managed cache when media exists."""
+    source = bundle / _OFFLINE_WHEELS
+    if not source.is_dir() or not any(source.glob("*.whl")):
+        return None
+    target = _managed_wheelhouse(settings)
+    target.mkdir(parents=True, exist_ok=True)
+    for wheel in source.glob("*.whl"):
+        destination = target / wheel.name
+        if (
+            not destination.is_file()
+            or destination.stat().st_size != wheel.stat().st_size
+        ):
+            shutil.copy2(wheel, destination)
+    return target
+
+
+def _local_wheelhouses(bundle: Path, settings: BootstrapSettings) -> tuple[Path, ...]:
+    """Return unique usable local wheelhouses in deterministic preference order."""
+    candidates = (bundle / _OFFLINE_WHEELS, _managed_wheelhouse(settings))
+    result: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if resolved in seen or not resolved.is_dir() or not any(resolved.glob("*.whl")):
+            continue
+        seen.add(resolved)
+        result.append(resolved)
+    return tuple(result)
 
 
 def _python_ready(lock: dict[str, object]) -> bool:
@@ -61,27 +211,21 @@ def _python_ready(lock: dict[str, object]) -> bool:
     packages = lock["python"]
     if not isinstance(packages, dict):
         raise RuntimeError("dependencies.lock.json python 字段非法。")
-    if not all(
-        _version_matches(str(name), str(version)) for name, version in packages.items()
-    ):
-        return False
+    for name, version in packages.items():
+        try:
+            installed_version = importlib.metadata.version(str(name))
+        except importlib.metadata.PackageNotFoundError:
+            return False
+        if installed_version != str(version):
+            return False
     try:
         from apted import APTED, Config
         from tree_sitter import Language, Parser
         import tree_sitter_python
-
-        parser = Parser(Language(tree_sitter_python.language()))
-    except (ImportError, TypeError, ValueError):
+    except ImportError:
         return False
+    parser = Parser(Language(tree_sitter_python.language()))
     return APTED is not None and Config is not None and parser is not None
-
-
-def _requirements(lock: dict[str, object]) -> list[str]:
-    """把 Python lock 转成 pip 的精确 requirements。"""
-    packages = lock["python"]
-    if not isinstance(packages, dict):
-        raise RuntimeError("dependencies.lock.json python 字段非法。")
-    return [f"{name}=={version}" for name, version in sorted(packages.items())]
 
 
 def _run(
@@ -89,55 +233,100 @@ def _run(
     environment: Mapping[str, str],
     timeout: float | None = None,
 ) -> bool:
-    """执行安装命令并只返回成功状态；联网 bootstrap 必须受硬超时约束。"""
+    """执行安装命令；超时或中断时清理整个安装进程树。"""
+    process: subprocess.Popen[bytes] | None = None
     try:
-        return (
-            subprocess.run(
-                command,
-                check=False,
-                env=dict(environment),
-                timeout=timeout,
-            ).returncode
-            == 0
+        process = subprocess.Popen(
+            command,
+            env=dict(environment),
+            start_new_session=os.name != "nt",
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
+        return process.wait(timeout=timeout) == 0
     except subprocess.TimeoutExpired:
         executable = Path(command[0]).name if command else "dependency command"
-        sys.stderr.write(
-            "Repository Quality Guard dependency bootstrap timed out: "
-            f"{executable} exceeded {timeout:g}s.\n"
-        )
-        sys.stderr.flush()
+        _log(f"依赖安装超时：{executable} 超过 {timeout:g}s，正在清理安装进程树。")
         return False
+    finally:
+        if process is not None and process.poll() is None:
+            if os.name == "nt":
+                try:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                        timeout=5,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    process.kill()
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
+            if os.name != "nt":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=3)
 
 
 def _install_python(
-    bundle: Path, lock: dict[str, object], environment: Mapping[str, str]
+    bundle: Path, lock: dict[str, object], settings: BootstrapSettings
 ) -> None:
     """优先使用随包 wheelhouse；仅缺少/失效时才尝试有界联网安装。"""
     if _python_ready(lock):
+        _log("Python 锁定依赖已就绪。")
         return
     base = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check"]
-    requirements = _requirements(lock)
-    offline_only = environment.get(_OFFLINE_ENV, "") == "1"
-    wheelhouse = bundle / _OFFLINE_WHEELS
-    if wheelhouse.is_dir() and any(wheelhouse.glob("*.whl")):
-        if _run(
-            [*base, "--no-index", "--find-links", str(wheelhouse), *requirements],
-            environment=environment,
-        ):
-            importlib.invalidate_caches()
-            if _python_ready(lock):
-                return
-    if not offline_only and _run(
+    packages = lock["python"]
+    if not isinstance(packages, dict):
+        raise RuntimeError("dependencies.lock.json python 字段非法。")
+    requirements = [f"{name}=={version}" for name, version in sorted(packages.items())]
+    _seed_wheel_cache(bundle, settings)
+    wheelhouses = _local_wheelhouses(bundle, settings)
+    if wheelhouses:
+        for wheelhouse in wheelhouses:
+            _log(f"发现本地 Python wheelhouse，优先离线安装: {wheelhouse}")
+            if _run(
+                [*base, "--no-index", "--find-links", str(wheelhouse), *requirements],
+                environment=settings.environment,
+                timeout=60,
+            ):
+                importlib.invalidate_caches()
+                if _python_ready(lock):
+                    _log("离线 Python 依赖安装完成。")
+                    return
+        _log("本地 wheel 不适用于当前 Python/操作系统，准备检查网络。")
+    else:
+        _log("未找到可用的本地 Python wheelhouse。")
+    if settings.offline_only:
+        raise RuntimeError("缺少可用的锁定 Python 依赖；离线模式禁止联网。")
+    if not _network_available(_registry_url(lock, "python", settings)):
+        raise RuntimeError(
+            "缺少可用的锁定 Python 依赖，且 PyPI 网络不可用。完整 skill.zip 应包含兼容 wheel；若当前安装形态没有本地介质或缓存，请请求用户授权联网安装，或让用户提供完整 skill.zip / 重新安装。"
+        )
+    _log("正在从 PyPI 在线安装锁定 Python 依赖。")
+    if _run(
         [*base, "--retries", "2", "--timeout", "10", *requirements],
-        environment=environment,
+        environment=settings.environment,
         timeout=_NETWORK_INSTALL_TIMEOUT_SECONDS,
     ):
         importlib.invalidate_caches()
         if _python_ready(lock):
+            _log("在线 Python 依赖安装完成。")
             return
-    mode = "离线模式" if offline_only else "本地介质与有界在线 fallback"
-    raise RuntimeError(f"锁定 Python 依赖安装失败（{mode}）。")
+    raise RuntimeError(
+        "锁定 Python 依赖在线安装失败。请根据上方 pip 诊断处理；若需要再次联网，请先请求用户授权，或让用户提供完整 skill.zip / 重新安装以恢复本地依赖介质。"
+    )
 
 
 def _node_packages(lock: dict[str, object]) -> dict[str, str]:
@@ -148,15 +337,8 @@ def _node_packages(lock: dict[str, object]) -> dict[str, str]:
     return {str(name): str(version) for name, version in packages.items()}
 
 
-def _node_cache(lock: dict[str, object], environment: Mapping[str, str]) -> Path:
-    """根据锁定版本生成稳定的仓库外 node_modules cache。"""
-    packages = _node_packages(lock)
-    identity = "-".join(f"{name}-{packages[name]}" for name in sorted(packages))
-    return _cache_root(environment) / "node" / identity
-
-
 def _node_probe(
-    node_modules: Path, lock: dict[str, object], environment: Mapping[str, str]
+    node_modules: Path, lock: dict[str, object], settings: BootstrapSettings
 ) -> bool:
     """用 Node 实际加载 TypeScript/PostCSS 并校验版本。"""
     node = shutil.which("node")
@@ -179,20 +361,24 @@ for (const name of ['nanoid', 'picocolors', 'source-map-js']) {
   if (String(pkg.version) !== String(expected[name])) process.exit(5);
 }
 """
-    result = subprocess.run(
-        [
-            node,
-            "-e",
-            script,
-            str(node_modules),
-            json.dumps(packages, sort_keys=True),
-        ],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=dict(environment),
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            [
+                node,
+                "-e",
+                script,
+                str(node_modules),
+                json.dumps(packages, sort_keys=True),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=settings.environment,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def _copy_offline_node_modules(bundle: Path, node_modules: Path) -> bool:
@@ -204,7 +390,12 @@ def _copy_offline_node_modules(bundle: Path, node_modules: Path) -> bool:
     temporary = target_root.with_name(target_root.name + ".offline-new")
     shutil.rmtree(temporary, ignore_errors=True)
     temporary.mkdir(parents=True, exist_ok=True)
-    shutil.unpack_archive(str(archive), str(temporary / "node_modules"), "zip")
+    try:
+        shutil.unpack_archive(str(archive), str(temporary / "node_modules"), "zip")
+    except (OSError, ValueError):
+        shutil.rmtree(temporary, ignore_errors=True)
+        _log("离线 Node payload 解包失败，将检查在线安装条件。")
+        return False
     target_root.parent.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(target_root, ignore_errors=True)
     os.replace(temporary, target_root)
@@ -212,91 +403,135 @@ def _copy_offline_node_modules(bundle: Path, node_modules: Path) -> bool:
 
 
 def _existing_node_modules(
-    lock: dict[str, object], environment: Mapping[str, str]
+    lock: dict[str, object], settings: BootstrapSettings
 ) -> Path | None:
     """优先复用宿主已有且版本完全匹配的 Node packages。"""
     candidates: list[Path] = []
-    explicit = environment.get(_NODE_ENV, "").strip()
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
+    if settings.node_modules:
+        candidates.append(Path(settings.node_modules).expanduser())
     npm = shutil.which("npm")
     if npm is not None:
-        result = subprocess.run(
-            [npm, "root", "-g"],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            env=dict(environment),
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            candidates.append(Path(result.stdout.strip()))
+        try:
+            result = subprocess.run(
+                [npm, "root", "-g"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
+                env=settings.environment,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                candidates.append(Path(result.stdout.strip()))
+        except (OSError, subprocess.TimeoutExpired):
+            _log("宿主 npm 全局依赖探测失败，继续检查离线介质。")
     seen: set[Path] = set()
     for candidate in candidates:
         resolved = candidate.expanduser().resolve()
         if resolved in seen:
             continue
         seen.add(resolved)
-        if _node_probe(resolved, lock, environment):
+        if _node_probe(resolved, lock, settings):
             return resolved
     return None
 
 
-def _install_node(
-    bundle: Path, lock: dict[str, object], environment: Mapping[str, str]
+def _install_node_offline(
+    bundle: Path,
+    node_modules: Path,
+    lock: dict[str, object],
+    settings: BootstrapSettings,
 ) -> Path | None:
-    """优先使用随包 Node payload；仅缺少/失效时才尝试有界联网安装。"""
-    node = shutil.which("node")
-    if node is None:
+    """Install the locked Node payload from bundled offline media when present."""
+    if (bundle / _OFFLINE_NODE_ARCHIVE).is_file():
+        _log("发现离线 Node payload，优先离线安装。")
+    else:
+        _log("未找到离线 Node payload。")
         return None
-    existing = _existing_node_modules(lock, environment)
-    if existing is not None:
-        return existing
-    node_modules = _node_cache(lock, environment) / "node_modules"
-    if _node_probe(node_modules, lock, environment):
-        return node_modules
-    offline_only = environment.get(_OFFLINE_ENV, "") == "1"
-    if _copy_offline_node_modules(bundle, node_modules) and _node_probe(
-        node_modules, lock, environment
-    ):
-        return node_modules
+    if not _copy_offline_node_modules(bundle, node_modules):
+        return None
+    if not _node_probe(node_modules, lock, settings):
+        return None
+    _log("离线 Node parser 依赖安装完成。")
+    return node_modules
+
+
+def _install_node_online(
+    node_modules: Path,
+    packages: dict[str, str],
+    lock: dict[str, object],
+    settings: BootstrapSettings,
+) -> Path:
+    """Install the locked Node payload from npm with bounded network execution."""
     npm = shutil.which("npm")
-    packages = _node_packages(lock)
+    if npm is None:
+        raise RuntimeError(
+            "缺少 npm，且没有可用的离线 Node payload；请安装 npm 或提供离线介质。"
+        )
+    if not _network_available(_registry_url(lock, "node", settings)):
+        raise RuntimeError(
+            "缺少锁定 Node parser 依赖，且 npm registry 网络不可用。完整 skill.zip 应包含 Node 依赖介质；若当前安装形态没有本地介质或缓存，请请求用户授权联网安装，或让用户提供完整 skill.zip / 重新安装。"
+        )
+    _log("正在从 npm registry 在线安装锁定 Node parser 依赖。")
     prefix = node_modules.parent
-    if not offline_only and npm is not None:
-        prefix.mkdir(parents=True, exist_ok=True)
-        specs = [f"{name}@{version}" for name, version in sorted(packages.items())]
-        command = [
-            npm,
-            "install",
-            "--prefix",
-            str(prefix),
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--no-save",
-            "--fetch-retries=2",
-            "--fetch-timeout=15000",
-            *specs,
-        ]
-        if _run(
-            command,
-            environment=environment,
-            timeout=_NETWORK_INSTALL_TIMEOUT_SECONDS,
-        ) and _node_probe(node_modules, lock, environment):
-            return node_modules
-    if npm is None and not (bundle / _OFFLINE_NODE_ARCHIVE).is_file():
-        return None
-    mode = "离线模式" if offline_only else "本地介质与有界 npm fallback"
-    raise RuntimeError(f"锁定 Node parser 依赖安装失败（{mode}）。")
+    prefix.mkdir(parents=True, exist_ok=True)
+    specs = [f"{name}@{version}" for name, version in sorted(packages.items())]
+    command = [
+        npm,
+        "install",
+        "--prefix",
+        str(prefix),
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--no-save",
+        "--fetch-retries=2",
+        "--fetch-timeout=15000",
+        *specs,
+    ]
+    installed = _run(
+        command,
+        environment=settings.environment,
+        timeout=_NETWORK_INSTALL_TIMEOUT_SECONDS,
+    )
+    if installed and _node_probe(node_modules, lock, settings):
+        _log("在线 Node parser 依赖安装完成。")
+        return node_modules
+    raise RuntimeError(
+        "锁定 Node parser 依赖在线安装失败。请根据上方 npm 诊断处理；若需要再次联网，请先请求用户授权，或让用户提供完整 skill.zip / 重新安装以恢复本地依赖介质。"
+    )
+
+
+def _install_node(
+    bundle: Path, lock: dict[str, object], settings: BootstrapSettings
+) -> Path | None:
+    """优先复用缓存/离线 payload；仅在允许时执行有界 npm 安装。"""
+    if shutil.which("node") is None:
+        raise RuntimeError("缺少 Node.js 运行环境；请安装 Node.js 后重新执行安装器。")
+    existing = _existing_node_modules(lock, settings)
+    if existing is not None:
+        _log(f"Node 锁定依赖已就绪: {existing}")
+        return existing
+    packages = _node_packages(lock)
+    identity = "-".join(f"{name}-{packages[name]}" for name in sorted(packages))
+    node_modules = _cache_root(settings) / "node" / identity / "node_modules"
+    if _node_probe(node_modules, lock, settings):
+        _log(f"Node 锁定依赖缓存已就绪: {node_modules}")
+        return node_modules
+    offline = _install_node_offline(bundle, node_modules, lock, settings)
+    if offline is not None:
+        return offline
+    if settings.offline_only:
+        raise RuntimeError("缺少可用的锁定 Node parser 依赖；离线模式禁止联网。")
+    return _install_node_online(node_modules, packages, lock, settings)
 
 
 def _prune_managed_node_cache(
-    keep_root: Path | None, environment: Mapping[str, str]
+    keep_root: Path | None, settings: BootstrapSettings
 ) -> None:
     """删除 QG 自己管理的旧 Node 依赖版本；宿主 npm/pip cache 不归 Guard 管理。"""
-    node_root = _cache_root(environment) / "node"
+    node_root = _cache_root(settings) / "node"
     if not node_root.is_dir():
         return
     keep = keep_root.resolve() if keep_root is not None else None
@@ -325,61 +560,67 @@ def _system_install_command() -> list[str] | None:
     return None
 
 
-def _maybe_install_system(environment: Mapping[str, str]) -> None:
+def _maybe_install_system(settings: BootstrapSettings) -> None:
     """仅在显式 opt-in 时尝试补齐 Node/Clang 系统可执行文件。"""
-    if environment.get(_SYSTEM_ENV, "") != "1":
+    if not settings.install_system_dependencies:
         return
     if shutil.which("node") and (shutil.which("clang++") or shutil.which("clang")):
         return
     command = _system_install_command()
     if command is None:
         raise RuntimeError("未发现支持的系统包管理器，无法自动安装 Node/Clang。")
-    if os.name != "nt" and hasattr(os, "geteuid") and os.geteuid() != 0:
+    if os.name != "nt" and os.geteuid() != 0:
         sudo = shutil.which("sudo")
         if sudo is None:
             raise RuntimeError("系统依赖缺失且当前非 root；请安装 Node.js/npm/Clang。")
         command = [sudo, "-n", *command]
-    if not _run(command, environment=environment):
+    if not _run(command, environment=settings.environment):
         raise RuntimeError("系统 Node/Clang 自动安装失败。")
 
 
 def prepare_runtime_dependencies(
     bundle: Path,
-    environment: Mapping[str, str] | None = None,
-    *,
+    settings: BootstrapSettings | None = None,
     prune_managed: bool = False,
 ) -> Path | None:
-    """安装/验证锁定依赖并返回仓库外 node_modules 路径。
+    """Install or verify locked runtime dependencies from normalized settings.
 
     Args:
-        bundle: 当前 Skill/runtime bundle。
-        environment: 可选显式环境。
-        prune_managed: 部署写锁内为 True 时，只保留当前 QG 管理的 Node 依赖组。
+        bundle: Current Skill/runtime bundle.
+        settings: Optional already-normalized bootstrap settings.
+        prune_managed: Keep only the active QG-managed Node dependency generation.
 
     Returns:
-        可用的 node_modules 根目录；仓库无 Node 时为 None。
+        Usable node_modules root, or None when the lock has no Node payload.
     """
     bundle = bundle.resolve()
-    source = dict(os.environ if environment is None else environment)
-    _maybe_install_system(source)
-    lock = _read_lock(bundle)
-    _install_python(bundle, lock, source)
-    node_modules = _install_node(bundle, lock, source)
-    if prune_managed:
-        managed = None
-        if node_modules is not None:
-            candidate = node_modules.parent
-            managed_root = (_cache_root(source) / "node").resolve()
-            if candidate.parent.resolve() == managed_root:
-                managed = candidate
-        _prune_managed_node_cache(managed, source)
-    if environment is None and node_modules is not None:
-        os.environ[_NODE_ENV] = str(node_modules)
+    _log(f"runtime bootstrap: {bundle}")
+    resolved = load_bootstrap_settings() if settings is None else settings
+    with _bootstrap_single_flight(resolved):
+        _maybe_install_system(resolved)
+        lock = _read_lock(bundle)
+        _install_python(bundle, lock, resolved)
+        node_modules = _install_node(bundle, lock, resolved)
+        if prune_managed:
+            managed = None
+            if node_modules is not None:
+                candidate = node_modules.parent
+                managed_root = (_cache_root(resolved) / "node").resolve()
+                if candidate.parent.resolve() == managed_root:
+                    managed = candidate
+            _prune_managed_node_cache(managed, resolved)
+    if settings is None and node_modules is not None:
+        os.environ["RQG_NODE_MODULES"] = str(node_modules)
     return node_modules
 
 
 def main() -> int:
-    """提供可独立执行的依赖安装入口。"""
+    """Install or verify the locked runtime dependencies for one RQG bundle.
+
+    Returns:
+        Process exit code: ``0`` on success and ``2`` when dependency
+        preparation fails with an actionable bootstrap error.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "bundle",
@@ -390,7 +631,7 @@ def main() -> int:
     parser.add_argument(
         "--offline",
         action="store_true",
-        help="禁止联网；优先复用精确环境，否则只使用 `.skill.zip` 内离线 wheel/node payload。",
+        help="禁止联网；优先复用精确环境，否则只使用 canonical ZIP 内离线 wheel/node payload。",
     )
     parser.add_argument(
         "--install-system",
@@ -398,17 +639,32 @@ def main() -> int:
         help="显式允许通过系统包管理器安装 Node.js/npm/Clang。",
     )
     args = parser.parse_args()
-    environment = dict(os.environ)
-    if args.offline:
-        environment[_OFFLINE_ENV] = "1"
-    if args.install_system:
-        environment[_SYSTEM_ENV] = "1"
-    node_modules = prepare_runtime_dependencies(Path(args.bundle), environment)
-    print("Repository Quality Guard runtime dependencies: PASS")
+    settings = load_bootstrap_settings(
+        force_offline=args.offline, force_system_install=args.install_system
+    )
+    try:
+        node_modules = prepare_runtime_dependencies(Path(args.bundle), settings)
+    except (OSError, RuntimeError, ValueError) as error:
+        _log(f"环境准备失败：{error}")
+        return 2
+    sys.stdout.write("Repository Quality Guard runtime dependencies: PASS\n")
     if node_modules is not None:
-        print(f"RQG_NODE_MODULES={node_modules}")
+        sys.stdout.write(f"RQG_NODE_MODULES={node_modules}\n")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if str(Path(__file__).resolve().parents[1]) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from runtime.src.process_lifecycle import install_parent_death_guard
+
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+    install_parent_death_guard()
+    try:
+        exit_code = main()
+    except KeyboardInterrupt:
+        _log("环境准备被终止；安装子进程树已请求清理。")
+        exit_code = 143
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(int(exit_code))

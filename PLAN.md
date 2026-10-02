@@ -1,16 +1,16 @@
-# Repository Quality Guard v0.21.3 PLAN
+# Repository Quality Guard v0.21.4 PLAN
 
 ## 1. Planning Authority
 
-This document is the authoritative plan for the v0.21.3 structure-quality refactor. `TODOLIST.md` tracks execution, `CHECKLIST.md` defines acceptance gates, and `ARCH.md` defines the target architecture. Existing tests and current implementation are evidence; they do not override this plan when they encode superseded behavior.
+This document is the authoritative plan for the v0.21.4 structure-quality refactor. `TODOLIST.md` tracks execution, `CHECKLIST.md` defines acceptance gates, and `ARCH.md` defines the target architecture. Existing tests and current implementation are evidence; they do not override this plan when they encode superseded behavior.
 
 When two quality rules push the implementation in incompatible directions and the conflict cannot be resolved by ownership/reuse evidence, stop the conflicting refactor and request an explicit user decision. Do not weaken one rule merely to satisfy another.
 
 ## 2. Release objective
 
-v0.21.3 upgrades RQG from predominantly size/count heuristics to **ownership and reuse topology**, while preserving the v0.21.2 runtime-reliability work: automatic Agent-first dependency bootstrap, bounded network/process timeouts, worker heartbeat/kill-tree cleanup, single-flight snapshot reuse, parent-death protection, slim `.agents` deployment and deterministic full skill packaging.
+v0.21.4 upgrades RQG from predominantly size/count heuristics to **ownership and reuse topology**, while preserving the v0.21.2 runtime-reliability work: automatic Agent-first dependency bootstrap, bounded network/process timeouts, worker heartbeat/kill-tree cleanup, single-flight snapshot reuse, parent-death protection, slim `.agents` deployment and deterministic full skill packaging.
 
-The release may contain multiple implementation commits. Intermediate checkpoints are recoverability commits, not release identities. Before the final v0.21.3 release, history may be cleaned/squashed so the deliverable is understandable and reproducible.
+The release may contain multiple implementation commits. Intermediate checkpoints are recoverability commits, not release identities. Before the final v0.21.4 release, history may be cleaned/squashed so the deliverable is understandable and reproducible.
 
 ## 3. Empirical calibration corpus
 
@@ -53,7 +53,7 @@ The 21–50 review must ask whether the methods remain around one state/lifecycl
 - `1001..2000`: `SEMANTIC` review: verify the file is still one owner and that splitting would create a real independent boundary.
 - `> 2000`: `CRITICAL`.
 
-### Unchanged hard/diagnostic thresholds for v0.21.3
+### Unchanged hard/diagnostic thresholds for v0.21.4
 
 - QG014 function length: `> 500` remains Critical.
 - QG015 parameter count: `> 8` remains Warning.
@@ -61,7 +61,7 @@ The 21–50 review must ask whether the methods remain around one state/lifecycl
 - QG017 branch count: existing threshold remains.
 - QG168 minimum helper-chain length remains 3, but eligible edges become topology-aware.
 
-Do not add an arbitrary numeric cohesion score threshold in v0.21.3.
+Do not add an arbitrary numeric cohesion score threshold in v0.21.4.
 
 ## 6. Algorithm changes
 
@@ -114,7 +114,7 @@ Preserve strict findings for runtime guessing of `internal_formal` contracts. Fo
 
 ### 6.6 Owner cohesion evidence
 
-Compute owner evidence without introducing a new hard QG number in v0.21.3:
+Compute owner evidence without introducing a new hard QG number in v0.21.4:
 
 - method/function -> field/state edges;
 - public operation -> shared private primitive edges;
@@ -127,7 +127,7 @@ Use this evidence in QG008/QG019 semantic review. A large cohesive resource/cont
 
 ### Python first
 
-Python is the primary implementation target for v0.21.3 because current user projects are Python-heavy. Use stdlib `ast` plus static source/stub metadata. Implement module-owner and class-owner topology, callable references, nested closures, decorators, explicit protocols, inheritance and `self.field` access.
+Python is the primary implementation target for v0.21.4 because current user projects are Python-heavy. Use stdlib `ast` plus static source/stub metadata. Implement module-owner and class-owner topology, callable references, nested closures, decorators, explicit protocols, inheritance and `self.field` access.
 
 Dependency-aware resolution may inspect installed/source `.py`/`.pyi` or package metadata **without importing the dependency**. Resolve only requested symbols/signatures/protocol relationships; do not recursively audit TensorFlow/Keras or other third-party packages.
 
@@ -164,11 +164,11 @@ At minimum:
 
 ### Real modern regression
 
-Select at least three real project histories/mbox/replay sets, including Council of Harnesses, geek-ai-rag and geek-ai-agent. Compare v0.21.2 vs v0.21.3 findings and manually review intentional deltas. The exact timeout reproducer remains part of lifecycle acceptance.
+Select at least three real project histories/mbox/replay sets, including Council of Harnesses, geek-ai-rag and geek-ai-agent. Compare v0.21.2 vs v0.21.4 findings and manually review intentional deltas. The exact timeout reproducer remains part of lifecycle acceptance.
 
 ### Self-audit
 
-Every behavior-changing commit must run focused tests and a current-diff self-audit. Major milestones run the full suite. Before release, RQG must audit its own v0.21.3 diff under the current policy. Historical pre-existing debt is recorded but is not a mandatory zero target unless explicitly re-authorized.
+Every behavior-changing commit must run focused tests and a current-diff self-audit. Major milestones run the full suite. Before release, RQG must audit its own v0.21.4 diff under the current policy. Historical pre-existing debt is recorded but is not a mandatory zero target unless explicitly re-authorized.
 
 ## 9. Checkpoint policy
 
@@ -183,7 +183,7 @@ A checkpoint should be lightweight:
 - SHA256 and Library path references for already-persisted large inputs;
 - no duplicate copy of large repository ZIPs or benchmark archives already in Library.
 
-Prefer a recoverability commit plus manifest over repackaging the repository. Only produce a large full repository artifact for a release or when no reconstructable source exists. Intermediate checkpoint commits may be squashed/rewritten before v0.21.3 final release.
+Prefer a recoverability commit plus manifest over repackaging the repository. Only produce a large full repository artifact for a release or when no reconstructable source exists. Intermediate checkpoint commits may be squashed/rewritten before v0.21.4 final release.
 
 ## 10. Explicit non-goals
 

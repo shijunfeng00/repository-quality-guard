@@ -1,4 +1,4 @@
-# Repository Quality Guard v0.21.3 Architecture
+# Repository Quality Guard v0.21.4 Architecture
 
 ## 1. Architectural intent
 
@@ -64,7 +64,7 @@ Unknown never silently becomes internal or external.
 
 ### PythonFactProvider
 
-Primary v0.21.3 provider. Uses Python `ast` and static files/metadata only.
+Primary v0.21.4 provider. Uses Python `ast` and static files/metadata only.
 
 Responsibilities:
 
@@ -129,7 +129,7 @@ Use ContractFact to distinguish internal contract guessing from legitimate exter
 
 ## 5. Cohesion evidence
 
-v0.21.3 intentionally avoids a magic numeric cohesion hard gate. Instead the semantic evidence bundle includes:
+v0.21.4 intentionally avoids a magic numeric cohesion hard gate. Instead the semantic evidence bundle includes:
 
 - owner method/function count;
 - field/state connected components;

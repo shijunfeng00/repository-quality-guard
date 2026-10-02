@@ -1,4 +1,4 @@
-# v0.21.3 TODO LIST
+# v0.21.4 TODO LIST
 
 Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/user decision required.
 
@@ -76,13 +76,13 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 - [ ] geek-ai-agent selected mbox/replay regression, including timeout fixture.
 - [ ] Direct source and installed `.agents` lifecycle checks remain timeout-free.
 
-## Phase 8 — Final release v0.21.3
+## Phase 8 — Final release v0.21.4
 
 - [ ] Full unit suite, Ruff, format, compileall, diff-check.
-- [ ] Final self-audit of v0.21.3 diff.
+- [ ] Final self-audit of v0.21.4 diff.
 - [ ] Resolve all new ordinary C/E/W delta and blockers; historical debt is recorded, not forced to zero.
 - [ ] Finish documentation and migration notes.
 - [ ] Clean/squash intermediate history as appropriate.
-- [ ] Build deterministic `repository-quality-guard-v0.21.3.skill.zip`.
+- [ ] Build deterministic `repository-quality-guard-v0.21.4.skill.zip`.
 - [ ] Create final mbox and prove apply-check from v0.21.2 produces the release tree.
-- [ ] Tag `v0.21.3`.
+- [ ] Tag `v0.21.4`.

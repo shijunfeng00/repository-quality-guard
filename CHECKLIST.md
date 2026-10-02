@@ -1,4 +1,4 @@
-# v0.21.3 Acceptance Checklist
+# v0.21.4 Acceptance Checklist
 
 ## A. Planning and authority
 
@@ -64,7 +64,7 @@
 
 - [ ] Every behavior-changing commit had focused tests and current-diff self-audit.
 - [ ] Major milestones had full suite execution.
-- [ ] Final v0.21.3 self-audit has no new ordinary C/E/W delta or absolute blocker.
+- [ ] Final v0.21.4 self-audit has no new ordinary C/E/W delta or absolute blocker.
 - [ ] Historical self debt is reported but not used as a hidden release blocker.
 - [ ] Final skill ZIP contains valid `.git`, profiles and offline payload and extracts to a valid clean release worktree.
 - [ ] Installed `.agents` payload remains slim.

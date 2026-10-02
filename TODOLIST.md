@@ -6,8 +6,8 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 - [x] Freeze `PLAN.md`, `TODOLIST.md`, `CHECKLIST.md`, `ARCH.md` as planning authority.
 - [x] Record SHA256 of v0.21.2 release and five historical calibration archives.
-- [ ] Snapshot v0.21.2 unit/self-audit outputs for comparison.
-- [ ] Record selected CoH / geek-ai-rag / geek-ai-agent regression inputs by SHA256/Library path.
+- [x] Snapshot v0.21.2 unit/self-audit outputs for comparison.
+- [x] Record selected CoH / geek-ai-rag / geek-ai-agent regression inputs by SHA256/Library path.
 
 ## Phase 1 — Normalized fact model, no policy change
 

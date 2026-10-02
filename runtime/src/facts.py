@@ -1304,6 +1304,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
                 base=base,
                 is_call=True,
                 owner_class=".".join(self.class_stack),
+                owner_qualname=".".join(self.class_stack + self.function_stack),
             )
         )
 
@@ -1597,6 +1598,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
                     base="",
                     is_call=False,
                     owner_class=".".join(self.class_stack),
+                    owner_qualname=".".join(self.class_stack + self.function_stack),
                 )
             )
 
@@ -1622,6 +1624,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
                     base=base,
                     is_call=False,
                     owner_class=".".join(self.class_stack),
+                    owner_qualname=".".join(self.class_stack + self.function_stack),
                 )
             )
         self.generic_visit(node)

@@ -206,6 +206,7 @@ class Usage:
     base: str
     is_call: bool
     owner_class: str = ""
+    owner_qualname: str = ""
 
 
 InterfaceKind = Literal[

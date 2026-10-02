@@ -54,3 +54,13 @@ Large repositories are not copied into checkpoints. The following Library paths 
 ## Historical calibration corpus
 
 The historical manual-code archives listed in `PLAN.md` remain read-only evidence. Findings are reviewed for precision; they are not waived automatically and the projects are not required to reach zero findings.
+
+## Phase 1 normalized-fact verification
+
+- development suite after topology integration: **93/93 PASS**
+- Ruff check / format / compileall / diff-check: PASS
+- current-diff self-audit against baseline commit `b14e33e`: ordinary C/E/W delta **0**; absolute blockers **0**
+- 端到端车牌 package finding payload remains exactly `6fefe43c8b4e0d636cd844ce6fdc36acb3fdc5708ee0ec602c6e978003c71f7e`
+- SI-FCN finding payload remains exactly `0af391090762bdfa22317267bb55e52d0f3511f3deaf80010eb9899b5bab7974`
+
+Phase 1 generates normalized topology facts but shared QG policy does not consume them yet.

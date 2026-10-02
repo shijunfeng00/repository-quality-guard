@@ -11,11 +11,11 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 ## Phase 1 — Normalized fact model, no policy change
 
-- [ ] Add language-neutral definition/owner/edge/contract fact types.
-- [ ] Adapt current Python facts into normalized topology facts.
-- [ ] Expose repository-level topology index without changing QG decisions.
-- [ ] Add unit tests proving v0.21.2 findings do not drift when normalized facts are enabled but unused.
-- [ ] Commit and self-audit current diff.
+- [x] Add language-neutral definition/owner/edge/contract fact types.
+- [x] Adapt current Python facts into normalized topology facts.
+- [x] Expose repository-level topology index without changing QG decisions.
+- [x] Add unit tests proving v0.21.2 findings do not drift when normalized facts are enabled but unused.
+- [x] Commit and self-audit current diff.
 
 ## Phase 2 — Python-first topology provider
 

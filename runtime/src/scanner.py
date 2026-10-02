@@ -14,6 +14,12 @@ from .config import GuardConfig, is_test_path
 from .facts import FactsCollector, ModuleFacts
 from .model import Definition, Finding, ScanReport, Usage
 from .rules import RuleEvaluator
+from .topology_facts import (
+    RepositoryTopology,
+    UsageEdge,
+    python_topology,
+    python_usage_edge,
+)
 
 
 def _repository_instruction_findings(root: Path) -> list[Finding]:
@@ -84,6 +90,7 @@ class RepositoryScanner:
         self.root = root.resolve()
         self.config = config
         self.analysis_snapshot = analysis_snapshot
+        self.topology: RepositoryTopology | None = None
 
     def scan(self, selected_files: set[Path] | None = None) -> ScanReport:
         """
@@ -102,7 +109,8 @@ class RepositoryScanner:
         facts = self._parse_files(files)
         definitions = [definition for item in facts for definition in item.definitions]
         usages = [usage for item in facts for usage in item.usages]
-        self._resolve_usage(definitions, usages, facts)
+        resolved_edges = self._resolve_usage(definitions, usages, facts)
+        self.topology = python_topology(definitions, resolved_edges)
         findings = [finding for item in facts for finding in item.findings]
         findings.extend(RuleEvaluator(self.config).evaluate(definitions, facts))
         findings.extend(AdvancedRuleEvaluator(self.config).evaluate(definitions, facts))
@@ -342,9 +350,9 @@ class RepositoryScanner:
         definitions: list[Definition],
         usages: list[Usage],
         facts: list[ModuleFacts],
-    ) -> None:
+    ) -> list[UsageEdge]:
         """
-        把静态引用解析到仓库内定义并累计次数。
+        把静态引用解析到仓库内定义、累计次数并返回归一化使用边。
 
         Args:
             definitions: 仓库内已收集的定义列表。
@@ -352,8 +360,9 @@ class RepositoryScanner:
             facts: 当前模块事实或模块事实列表。
 
         Returns:
-            None。
+            已解析且类型化的仓库内使用边。
         """
+        resolved_edges: list[UsageEdge] = []
         by_id = {definition.symbol_id: definition for definition in definitions}
         by_module_name: dict[tuple[str, str], list[Definition]] = defaultdict(list)
         by_simple_name: dict[str, list[Definition]] = defaultdict(list)
@@ -375,6 +384,8 @@ class RepositoryScanner:
                     definition.calls += 1
                 else:
                     definition.references += 1
+                resolved_edges.append(python_usage_edge(usage, definition))
+        return resolved_edges
 
     def _usage_candidates(
         self,

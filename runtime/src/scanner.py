@@ -537,11 +537,15 @@ class RepositoryScanner:
         imports = imports_by_module[usage.module]
         if usage.target in imports and imports[usage.target] in by_id:
             return [by_id[imports[usage.target]]]
-        local = by_module_name[(usage.module, usage.target)]
-        if local:
-            return local
-        return (
-            by_simple_name[usage.target]
-            if len(by_simple_name[usage.target]) == 1
-            else []
-        )
+
+        scope = usage.owner_qualname
+        while scope and scope != usage.owner_class:
+            lexical_id = f"{usage.module}.{scope}.{usage.target}"
+            if lexical_id in by_id:
+                return [by_id[lexical_id]]
+            scope = scope.rpartition(".")[0]
+
+        module_id = f"{usage.module}.{usage.target}"
+        if module_id in by_id:
+            return [by_id[module_id]]
+        return []

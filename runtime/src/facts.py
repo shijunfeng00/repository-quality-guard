@@ -1036,6 +1036,7 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
                 max_nesting=complexity.max_nesting,
                 wrapper_target=is_trivial_wrapper(node),
                 body_fingerprint=normalized_function_body(node),
+                nested=bool(self.function_stack),
                 docstring_text=docstring.text,
                 docstring_line_count=docstring.content_lines,
                 docstring_sections=docstring.sections,

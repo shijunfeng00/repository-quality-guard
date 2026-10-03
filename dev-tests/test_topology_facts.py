@@ -88,6 +88,33 @@ class TestNormalizedTopologyFacts(unittest.TestCase):
             [("sample.main", "sample.callback")],
         )
 
+    def test_bare_name_resolution_never_guesses_unique_cross_module_symbol(
+        self,
+    ) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / "a.py").write_text(
+            "def outer(value):\n"
+            "    def is_valid(item):\n"
+            "        return bool(item)\n"
+            "    return is_valid(value)\n",
+            encoding="utf-8",
+        )
+        (root / "b.py").write_text(
+            "def other(flag):\n    is_valid = flag\n    return is_valid\n",
+            encoding="utf-8",
+        )
+
+        scanner = RepositoryScanner(root, self._config())
+        scanner.scan()
+        assert scanner.topology is not None
+        incoming = scanner.topology.incoming("a.outer.is_valid")
+        self.assertEqual(
+            [(edge.source_id, edge.kind) for edge in incoming],
+            [("a.outer", UsageKind.DIRECT_CALL)],
+        )
+
     def test_relation_graph_preserves_repeated_direct_call_sites(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

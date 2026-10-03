@@ -259,6 +259,7 @@ class RuleEvaluator:
                 if definition.kind == "method"
                 else definition.module
             )
+            nested = definition.nested
         else:
             symbol = self._symbols[definition.symbol_id]
             direct = self.topology.incoming(
@@ -279,6 +280,7 @@ class RuleEvaluator:
             exported = symbol.exported
             resolution = "normalized"
             owner_id = symbol.owner_id
+            nested = symbol.nested
         return {
             "direct_callers": direct_callers,
             "direct_call_sites": direct_call_sites,
@@ -287,6 +289,7 @@ class RuleEvaluator:
             "visibility": visibility,
             "exported": exported,
             "owner_id": owner_id,
+            "nested": nested,
             "topology_resolution": resolution,
         }
 
@@ -354,6 +357,7 @@ class RuleEvaluator:
                 visibility=str(topology_evidence["visibility"]),
                 exported=bool(topology_evidence["exported"]),
                 owner_id=str(topology_evidence["owner_id"]),
+                nested=bool(topology_evidence["nested"]),
                 topology_resolution=str(topology_evidence["topology_resolution"]),
             ),
             self.config,
@@ -486,7 +490,7 @@ class RuleEvaluator:
             if definition.kind not in {"function", "method"}:
                 continue
             evidence = self._usage_topology(definition)
-            if evidence["visibility"] not in {
+            if not evidence["nested"] and evidence["visibility"] not in {
                 Visibility.INTERNAL.value,
                 Visibility.PRIVATE.value,
             }:
@@ -510,6 +514,7 @@ class RuleEvaluator:
                         visibility=str(evidence["visibility"]),
                         exported=bool(evidence["exported"]),
                         owner_id=str(evidence["owner_id"]),
+                        nested=bool(evidence["nested"]),
                         topology_resolution=str(evidence["topology_resolution"]),
                     ),
                     self.config,

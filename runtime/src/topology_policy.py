@@ -36,6 +36,7 @@ class HelperUsageEvidence:
     visibility: str
     exported: bool
     owner_id: str
+    nested: bool = False
     topology_resolution: str = "normalized"
 
     def as_dict(self) -> dict[str, object]:
@@ -52,6 +53,7 @@ class HelperUsageEvidence:
             "visibility": self.visibility,
             "exported": self.exported,
             "owner_id": self.owner_id,
+            "nested": self.nested,
             "topology_resolution": self.topology_resolution,
         }
 
@@ -84,6 +86,7 @@ def symbol_usage_evidence(
         visibility=symbol.visibility.value,
         exported=symbol.exported,
         owner_id=symbol.owner_id,
+        nested=symbol.nested,
     )
 
 
@@ -130,7 +133,7 @@ def ephemeral_helper_candidate(
     Returns:
         True only when the callable is internal, short and lacks real reuse evidence.
     """
-    internal = evidence.visibility in {
+    internal = evidence.nested or evidence.visibility in {
         Visibility.INTERNAL.value,
         Visibility.PRIVATE.value,
     }

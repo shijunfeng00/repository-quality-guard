@@ -72,6 +72,31 @@ class TestHelperTopologyPolicy(unittest.TestCase):
             {item.symbol for item in findings if item.code == "QG001"},
         )
 
+    def test_nested_one_shot_helper_is_internal_candidate(self) -> None:
+        findings = self._scan(
+            "def outer(value):\n"
+            "    def transform(item):\n"
+            "        return item + 1\n"
+            "    return transform(value)\n"
+        )
+        qg001 = [item for item in findings if item.code == "QG001"]
+        self.assertEqual([item.symbol for item in qg001], ["sample.outer.transform"])
+        self.assertTrue(qg001[0].evidence["nested"])
+
+    def test_nested_callback_reference_is_not_qg001_candidate(self) -> None:
+        findings = self._scan(
+            "def consume(fn):\n"
+            "    return fn\n\n"
+            "def outer(value):\n"
+            "    def callback(item):\n"
+            "        return item + 1\n"
+            "    return consume(callback)\n"
+        )
+        self.assertNotIn(
+            "sample.outer.callback",
+            {item.symbol for item in findings if item.code == "QG001"},
+        )
+
     def test_public_short_function_is_not_described_as_ephemeral_helper(self) -> None:
         findings = self._scan("def public(value):\n    return value + 1\n")
         self.assertNotIn(

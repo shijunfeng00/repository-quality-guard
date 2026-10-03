@@ -380,6 +380,7 @@ def python_topology(
                 end_line=definition.end_line,
                 lines=definition.lines,
                 parameter_count=definition.parameter_count,
+                nested=definition.nested,
             )
         )
     symbols = tuple(sorted(symbol_facts, key=lambda item: item.symbol_id))

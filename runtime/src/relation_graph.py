@@ -718,7 +718,6 @@ class RepositoryRelationGraph:
         self._resolved_references: list[_ResolvedReference] = []
         self._resolved_field_accesses: list[_ResolvedFieldAccess] = []
         self._external_bases: list[_ExternalBase] = []
-        self._simple_names: dict[str, set[str]] = defaultdict(set)
         self._module_nodes = {
             _module_name(path): f"module:{path}" for path in self.snapshot.paths
         }
@@ -776,11 +775,10 @@ class RepositoryRelationGraph:
             self._pending_closure_captures.extend(collector.closure_captures)
 
     def _index_definitions(self) -> None:
-        """建立简单名称、测试节点以及 owner→definition 关系。"""
+        """建立测试节点以及 owner→definition 关系。"""
         for node_id, node in self.nodes.items():
             if node.kind == "module":
                 continue
-            self._simple_names[node.name].add(node_id)
             if node.test and node.kind == "test":
                 self._module_test_nodes[node.module].add(node_id)
             owner_id = (
@@ -876,7 +874,7 @@ class RepositoryRelationGraph:
                     self._add_edge(node_id, target, "OVERRIDES")
 
     def _resolve_name(self, module: str, caller: str, name: str) -> str | None:
-        """解析简单名称或 import 别名到唯一仓库节点。"""
+        """按显式 import、词法作用域和模块作用域解析静态名称。"""
         if name in {"self", "cls", "super"}:
             return None
         imports = self._imports[module] if module in self._imports else {}
@@ -885,19 +883,26 @@ class RepositoryRelationGraph:
             candidate = imports[root] + (f".{suffix}" if dot else "")
             if candidate in self.nodes:
                 return candidate
+        caller_node = self.nodes[caller] if caller in self.nodes else None
+        if caller_node is not None and not dot:
+            qualname = caller_node.qualname
+            while qualname:
+                candidate = (
+                    f"{module}.{qualname}.{name}" if module else f"{qualname}.{name}"
+                )
+                if candidate in self.nodes:
+                    return candidate
+                parent = qualname.rpartition(".")[0]
+                if not parent:
+                    break
+                parent_id = f"{module}.{parent}" if module else parent
+                if parent_id in self.nodes and self.nodes[parent_id].kind == "class":
+                    break
+                qualname = parent
         local = f"{module}.{name}" if module else name
         if local in self.nodes:
             return local
-        caller_node = self.nodes[caller] if caller in self.nodes else None
-        if caller_node is not None and caller_node.owner:
-            class_prefix = (
-                f"{module}.{caller_node.owner}" if module else caller_node.owner
-            )
-            candidate = f"{class_prefix}.{name}"
-            if candidate in self.nodes:
-                return candidate
-        matches = self._simple_names[name] if name in self._simple_names else set()
-        return next(iter(matches)) if len(matches) == 1 else None
+        return None
 
     def _resolve_class_method(self, class_id: str, method_name: str) -> str | None:
         """沿确定继承边查找类自身或父类方法。"""

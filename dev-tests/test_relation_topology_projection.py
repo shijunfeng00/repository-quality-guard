@@ -131,6 +131,45 @@ class TestRelationTopologyProjection(unittest.TestCase):
         self.assertIn("worker.Worker._helper", components[0])
         self.assertIn("worker.Worker.hook", components[0])
 
+    def test_bare_name_resolution_stays_inside_python_lexical_scope(self) -> None:
+        (self.root / "other.py").write_text(
+            "def unrelated():\n    is_valid = True\n    return is_valid\n",
+            encoding="utf-8",
+        )
+        (self.root / "lexical.py").write_text(
+            "def outer(value):\n"
+            "    def is_valid(item):\n"
+            "        return bool(item)\n"
+            "    def inner(item):\n"
+            "        return is_valid(item)\n"
+            "    return inner(value)\n",
+            encoding="utf-8",
+        )
+        (self.root / "class_scope.py").write_text(
+            "class Worker:\n"
+            "    def helper(self):\n"
+            "        return 1\n"
+            "    def run(self):\n"
+            "        return helper()\n",
+            encoding="utf-8",
+        )
+        snapshot = directory_analysis_snapshot(self.root, GuardConfig())
+        topology = normalized_topology(RepositoryRelationGraph(snapshot))
+
+        incoming = topology.incoming(
+            "lexical.outer.is_valid",
+            (UsageKind.DIRECT_CALL, UsageKind.CALLABLE_REFERENCE),
+        )
+        self.assertEqual(
+            [(edge.source_id, edge.kind) for edge in incoming],
+            [("lexical.outer.inner", UsageKind.DIRECT_CALL)],
+        )
+        class_incoming = topology.incoming(
+            "class_scope.Worker.helper",
+            (UsageKind.DIRECT_CALL, UsageKind.CALLABLE_REFERENCE),
+        )
+        self.assertEqual(class_incoming, ())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -95,6 +95,7 @@ class Definition:
     documented_parameters: tuple[str, ...] = ()
     calls: int = 0
     references: int = 0
+    nested: bool = False
 
     @property
     def lines(self) -> int:

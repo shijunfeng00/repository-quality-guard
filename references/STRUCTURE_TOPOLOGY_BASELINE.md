@@ -95,3 +95,20 @@ The frozen MMR and 0025 snapshots were replayed from the recorded baseline and s
 - Two early current-version runs exceeded the outer harness timeout, but controlled repeats completed naturally in approximately 20–23 seconds and left zero residual worker processes. This was not reproducible as a stable performance/lifecycle regression, so no performance code was changed on that evidence. The exact lifecycle acceptance remains assigned to the frozen geek-ai-agent timeout reproducer.
 
 Conclusion: the geek-ai-rag real regression is reviewed. All persistent rule-count changes are explained by the frozen v0.21.3 policy or by concrete resolver precision fixes; no unexplained QG002 drift remains.
+
+## Phase 7 real regression — geek-ai-agent
+
+The frozen `0021-normal`, `0021-cut`, and exact timeout snapshots were replayed from the recorded `73fc0df` baseline. The normal/cut scans use one compatibility-equivalent `geek-ai-agent` Profile under v0.21.2 and current v0.21.3. Project source was not modified.
+
+- normal total findings: `2430 -> 2138` (`-292`).
+- cut total findings: `2437 -> 2145` (`-292`).
+- The rule-count deltas are identical on normal and cut: QG001 `435 -> 140` (`-295`), QG003 `325 -> 149` (`-176`), QG004 `79 -> 40` (`-39`), QG026 `0 -> 215`, QG019 `2 -> 12` (`+10`), and QG013 `8 -> 1` (`-7`). Every other rule count is unchanged.
+- Contract ownership is count-preserving for the affected families: QG003 `-176` plus QG004 `-39` equals QG026 `+215`. The remaining deltas are exactly the authorized helper-density and owner-size semantics. No unexplained rule family appears or disappears.
+
+The exact historical timeout snapshot was then exercised with the current implementation in both runtime modes. The report return code remains `3` because the historical project has a static REJECT report with intentionally unfilled human audit fields; lifecycle acceptance concerns natural process termination and cleanup, not making the historical project green.
+
+- direct-source mode: three consecutive runs completed naturally in approximately `20–22s`; each log reaches `scan worker completed` and `runtime cleanup complete`; zero residual RQG worker processes remained after each run.
+- installed `.agents` mode: the current source tree was deployed through `runtime/deploy.py` into an isolated timeout-snapshot copy with the same Profile frozen as immutable installed policy. The cold run completed naturally after the worker finished in `32.9s`; subsequent installed runs used the sealed scan snapshot cache and completed naturally, including a measured `1.90s` third run. Installed integrity passed (`79` protected files), the sealed `geek-ai-agent` Profile was selected without a runtime `--profile`, and zero residual worker processes remained.
+- The snapshot's pre-existing `.agents` payload was v0.21.1 and was not used as the current installed acceptance target; current installed mode was produced by the current deploy path.
+
+Conclusion: the geek-ai-agent normal/cut finding deltas are fully explained by the frozen v0.21.3 policy, and the exact historical lifecycle reproducer exits naturally with zero residual processes in both direct-source and formally deployed installed `.agents` modes. Phase 7 / Step 5 real regression is complete.

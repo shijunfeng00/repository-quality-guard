@@ -45,9 +45,9 @@
 - [x] v0.21.2 baseline behavior captured.
 - [x] CoH real history/mbox regression reviewed.
 - [x] geek-ai-rag real history/mbox regression reviewed.
-- [ ] geek-ai-agent real history/mbox regression reviewed.
-- [ ] Intentional finding changes are documented by rule/reason.
-- [ ] No unexplained finding disappearance/addition.
+- [x] geek-ai-agent real history/mbox regression reviewed.
+- [x] Intentional finding changes are documented by rule/reason.
+- [x] No unexplained finding disappearance/addition.
 
 ## G. Runtime reliability (must not regress from v0.21.2)
 
@@ -57,8 +57,8 @@
 - [ ] Scan worker heartbeat timeout kills the worker tree.
 - [ ] Parent-death guard works.
 - [ ] Same-snapshot single-flight works.
-- [ ] Exact historical timeout reproducer exits naturally with zero residual processes.
-- [ ] Direct source and installed `.agents` modes both pass lifecycle acceptance.
+- [x] Exact historical timeout reproducer exits naturally with zero residual processes.
+- [x] Direct source and installed `.agents` modes both pass lifecycle acceptance.
 
 ## H. Self-audit and release
 

@@ -73,8 +73,8 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 - [x] Compare false positives/intentional findings; do not force zero.
 - [x] CoH selected mbox/replay regression.
 - [x] geek-ai-rag selected mbox/replay regression.
-- [ ] geek-ai-agent selected mbox/replay regression, including timeout fixture.
-- [ ] Direct source and installed `.agents` lifecycle checks remain timeout-free.
+- [x] geek-ai-agent selected mbox/replay regression, including timeout fixture.
+- [x] Direct source and installed `.agents` lifecycle checks remain timeout-free.
 
 ## Phase 8 — Final release v0.21.3
 

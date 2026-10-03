@@ -115,7 +115,9 @@ class RepositoryScanner:
         if self.topology is None:
             self.topology = python_topology(definitions, resolved_edges)
         findings = [finding for item in facts for finding in item.findings]
-        findings.extend(RuleEvaluator(self.config).evaluate(definitions, facts))
+        findings.extend(
+            RuleEvaluator(self.config, self.topology).evaluate(definitions, facts)
+        )
         findings.extend(AdvancedRuleEvaluator(self.config).evaluate(definitions, facts))
         if not self.config.include_tests:
             findings.extend(_repository_instruction_findings(self.root))

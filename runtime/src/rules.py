@@ -8,6 +8,7 @@ from .config import GuardConfig, is_test_path
 from .facts import ModuleFacts
 from .graph_utils import strongly_connected_components
 from .model import Definition, Finding
+from .topology_facts import RepositoryTopology, UsageKind, Visibility
 
 BOOLEAN_FLAG_THRESHOLD = 3
 CLASS_FRAGMENT_MIN_METHODS = 8
@@ -22,17 +23,26 @@ class RuleEvaluator:
     规则只使用静态事实，不直接修改定义或自动消除告警。
     """
 
-    def __init__(self, config: GuardConfig) -> None:
+    def __init__(
+        self, config: GuardConfig, topology: RepositoryTopology | None = None
+    ) -> None:
         """
         初始化规则评估器。
 
         Args:
             config: 质量检查配置。
+            topology: 可选的语言中立 owner/usage 拓扑；存在时优先用于复用判断。
 
         Returns:
             None。
         """
         self.config = config
+        self.topology = topology
+        self._symbols = (
+            {item.symbol_id: item for item in topology.symbols}
+            if topology is not None
+            else {}
+        )
 
     def evaluate(
         self, definitions: list[Definition], facts: list[ModuleFacts]
@@ -50,10 +60,11 @@ class RuleEvaluator:
         findings: list[Finding] = []
         for definition in definitions:
             findings.extend(self._docstring_findings(definition))
-            findings.extend(self._low_use_findings(definition))
             if definition.kind == "class":
+                findings.extend(self._small_class_findings(definition))
                 findings.extend(self._class_shape_findings(definition))
             elif definition.kind in {"function", "method"}:
+                findings.extend(self._low_use_findings(definition))
                 findings.extend(self._function_size_findings(definition))
                 findings.extend(self._function_interface_findings(definition))
         findings.extend(self._module_findings(facts))
@@ -218,56 +229,64 @@ class RuleEvaluator:
         )
         return findings
 
-    def _low_use_findings(self, definition: Definition) -> list[Finding]:
-        """
-        检查短小且低调用频次的定义。
+    def _usage_topology(self, definition: Definition) -> dict[str, object]:
+        """Return normalized usage evidence for one callable definition.
 
         Args:
-            definition: 待评估的代码定义。
+            definition: Callable definition being classified.
 
         Returns:
-            当前定义对应的低使用候选列表。
+            Stable direct-call, callback/reference, protocol and visibility evidence.
+        """
+        if self.topology is None or definition.symbol_id not in self._symbols:
+            return {
+                "direct_callers": definition.calls,
+                "direct_call_sites": definition.calls,
+                "callable_consumers": definition.references,
+                "protocol_edges": 1 if definition.externally_invoked else 0,
+                "visibility": "public"
+                if not definition.name.startswith("_")
+                else "internal",
+                "exported": False,
+                "topology_resolution": "legacy",
+            }
+        symbol = self._symbols[definition.symbol_id]
+        direct = self.topology.incoming(definition.symbol_id, (UsageKind.DIRECT_CALL,))
+        callable_consumers = self.topology.incoming(
+            definition.symbol_id,
+            (UsageKind.CALLABLE_REFERENCE, UsageKind.CALLBACK_REGISTRATION),
+        )
+        protocol_edges = self.topology.outgoing(
+            definition.symbol_id, (UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE)
+        )
+        return {
+            "direct_callers": len({edge.source_id for edge in direct}),
+            "direct_call_sites": definition.calls,
+            "callable_consumers": len({edge.source_id for edge in callable_consumers}),
+            "protocol_edges": len(protocol_edges),
+            "visibility": symbol.visibility.value,
+            "exported": symbol.exported,
+            "topology_resolution": "normalized",
+        }
+
+    def _small_class_findings(self, definition: Definition) -> list[Finding]:
+        """检查短小且低实例化频次的类定义。
+
+        Args:
+            definition: 待评估的类定义。
+
+        Returns:
+            短小低使用类对应的 QG002 信息提示。
         """
         eligible = (
             definition.name not in self.config.ignored_names
-            and not (
-                definition.name.startswith("__") and definition.name.endswith("__")
-            )
-            and definition.lines < self.config.short_max_lines
+            and definition.lines <= self.config.short_max_lines
             and definition.calls <= self.config.low_use_max_calls
         )
         if not eligible:
             return []
-        evidence = {
-            "lines": definition.lines,
-            "calls": definition.calls,
-            "references": definition.references,
-            "kind": definition.kind,
-        }
-        finding: Finding | None = None
-        if definition.kind in {"function", "method"}:
-            externally_invoked = definition.externally_invoked
-            finding = Finding(
-                code="QG001",
-                severity=(
-                    "info"
-                    if externally_invoked or not definition.name.startswith("_")
-                    else "warning"
-                ),
-                confidence="low" if externally_invoked else "medium",
-                path=str(definition.path),
-                line=definition.line,
-                column=definition.column,
-                message=(
-                    f"{definition.kind} `{definition.qualname}` 仅 {definition.lines} 行，"
-                    f"静态直接调用 {definition.calls} 次、引用 {definition.references} 次。"
-                ),
-                symbol=definition.symbol_id,
-                suggestion="确认它是否表达稳定契约；若只是单次转发或局部步骤，优先内联到调用处。",
-                evidence=evidence,
-            )
-        elif definition.kind == "class":
-            finding = Finding(
+        return [
+            Finding(
                 code="QG002",
                 severity="info",
                 confidence="medium",
@@ -279,10 +298,86 @@ class RuleEvaluator:
                     f"静态实例化/调用 {definition.calls} 次。"
                 ),
                 symbol=definition.symbol_id,
-                suggestion="确认该类是否拥有独立状态或协议；纯数据容器可考虑 dataclass，单次包装可考虑合并。",
+                suggestion=(
+                    "确认该类是否拥有独立状态或协议；纯数据容器可考虑 dataclass，"
+                    "单次包装可考虑合并。"
+                ),
+                evidence={
+                    "lines": definition.lines,
+                    "calls": definition.calls,
+                    "references": definition.references,
+                    "kind": definition.kind,
+                },
+            )
+        ]
+
+    def _low_use_findings(self, definition: Definition) -> list[Finding]:
+        """检查短小、低复用且没有协议/回调消费者的内部 helper。
+
+        Args:
+            definition: 待评估的函数或方法定义。
+
+        Returns:
+            仅真正 ephemeral helper 候选对应的 QG001。
+        """
+        topology_evidence = self._usage_topology(definition)
+        internal = topology_evidence["visibility"] in {
+            Visibility.INTERNAL.value,
+            Visibility.PRIVATE.value,
+        }
+        eligible = (
+            definition.kind in {"function", "method"}
+            and definition.name not in self.config.ignored_names
+            and not (
+                definition.name.startswith("__") and definition.name.endswith("__")
+            )
+            and definition.lines <= self.config.short_max_lines
+            and internal
+            and not bool(topology_evidence["exported"])
+            and int(topology_evidence["direct_callers"])
+            <= self.config.low_use_max_calls
+            and int(topology_evidence["direct_call_sites"])
+            <= self.config.low_use_max_calls
+            and int(topology_evidence["callable_consumers"]) == 0
+            and int(topology_evidence["protocol_edges"]) == 0
+            and not definition.externally_invoked
+        )
+        if not eligible:
+            return []
+        evidence = {
+            "lines": definition.lines,
+            "calls": definition.calls,
+            "references": definition.references,
+            "kind": definition.kind,
+            "ephemeral_helper_candidate": True,
+            **topology_evidence,
+        }
+        return [
+            Finding(
+                code="QG001",
+                severity="warning",
+                confidence=(
+                    "high"
+                    if topology_evidence["topology_resolution"] == "normalized"
+                    else "medium"
+                ),
+                path=str(definition.path),
+                line=definition.line,
+                column=definition.column,
+                message=(
+                    f"{definition.kind} `{definition.qualname}` 仅 {definition.lines} 行，"
+                    f"普通静态调用方 {topology_evidence['direct_callers']} 个 / "
+                    f"call sites {topology_evidence['direct_call_sites']} 个，"
+                    "且没有 callback/protocol/public API 消费证据。"
+                ),
+                symbol=definition.symbol_id,
+                suggestion=(
+                    "若它只是唯一调用方的一次性局部步骤，优先内联；若拥有独立事务、"
+                    "资源或生命周期边界，在语义审计中给出该边界证据。"
+                ),
                 evidence=evidence,
             )
-        return [] if finding is None else [finding]
+        ]
 
     def _class_shape_findings(self, definition: Definition) -> list[Finding]:
         """

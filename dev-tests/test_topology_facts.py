@@ -3,7 +3,6 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner
@@ -78,21 +77,29 @@ class TestNormalizedTopologyFacts(unittest.TestCase):
             [("sample.main", "sample.callback")],
         )
 
-    def test_topology_result_is_not_a_policy_input_in_phase_one(self) -> None:
+    def test_topology_is_a_helper_policy_input_after_phase_four(self) -> None:
         temporary, root = self._repository()
         self.addCleanup(temporary.cleanup)
 
         baseline = RepositoryScanner(root, self._config()).scan()
-        with patch(
-            "runtime.src.scanner.python_topology",
-            return_value=RepositoryTopology(symbols=(), owners=(), edges=()),
-        ):
-            comparison = RepositoryScanner(root, self._config()).scan()
+        comparison = RepositoryScanner(
+            root,
+            self._config(),
+            topology=RepositoryTopology(symbols=(), owners=(), edges=()),
+        ).scan()
 
-        self.assertEqual(
-            [finding.to_dict() for finding in baseline.findings],
-            [finding.to_dict() for finding in comparison.findings],
+        baseline_helper = next(
+            item
+            for item in baseline.findings
+            if item.code == "QG001" and item.symbol == "sample.Worker._helper"
         )
+        comparison_helper = next(
+            item
+            for item in comparison.findings
+            if item.code == "QG001" and item.symbol == "sample.Worker._helper"
+        )
+        self.assertEqual(baseline_helper.evidence["topology_resolution"], "normalized")
+        self.assertEqual(comparison_helper.evidence["topology_resolution"], "legacy")
         self.assertEqual(baseline.definitions, comparison.definitions)
         self.assertEqual(
             baseline.complete_docstrings,

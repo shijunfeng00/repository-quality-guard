@@ -14,7 +14,7 @@ from .report_contract import ReportFacts, build_report_facts
 from .report_schema import escape, front_matter
 from .semantic_review import semantic_review_candidates, semantic_review_key
 
-REPORT_SCHEMA = "repository-quality-guard/audit-v17.0"
+REPORT_SCHEMA = "repository-quality-guard/audit-v18.0"
 REPORT_FILENAME = "修改说明.md"
 REPORT_TITLE = "# Repository Quality Guard 审计报告"
 REQUIRED_SECTIONS = (
@@ -50,8 +50,6 @@ _MANUAL_KEYS = (
     "可继续削减项",
     "已执行减法",
     "保留项证据",
-    "历史抽样结论",
-    "历史抽样处理",
     "Reduction结论",
 )
 
@@ -66,7 +64,7 @@ QUESTION_TITLES = (
     "Q6. 本轮 fallback、宽松契约、suppression、动态属性、静默截断和返回结构漂移是否全部完成语义裁决？",
     "Q7. docstring、注释与接口说明是否准确反映实现和可验证契约，没有删除或弱化必要说明？",
     "Q8. 是否破坏缓存、append-only、session/loop、事务、并发、锁或资源生命周期顺序；相关状态更新是否保持必要原子性，独立步骤是否被无意义串行编排并制造额外中间态？",
-    "Q9. Critical/Error/Warning 是否独立核算，并在写完报告后再次执行减法；concept/branch/mode/helper/layer/coupling 是真正减少还是仅重新排列，能安全消除的剩余问题是否已处理？",
+    "Q9. Critical/Error/Warning 是否独立核算；新增债务是否为零，diff 文件内存量是否已修复或给出具体延期闭环，非 diff 存量是否仅作为 inventory，Reduction 是否真正减少复杂度而非重排？",
     "Q10. 是否存在未经授权的正则、关键词、词表、阈值或硬编码启发式替代协议、领域算法或语义模型判断？",
     "Q11. Tests 是否继续充当稳定行为/契约回归护栏：接口返回值、字段/格式/序列化、异常、状态副作用与已修复 Bug 是否由自动化测试保护；本轮是否先原样运行受影响既有测试，并且没有为迎合实现而机械修改断言？",
 )
@@ -104,6 +102,11 @@ _TEST_CHANGE_ROW = re.compile(
     r"(?P<status>[A-Z_]+) \|$",
     re.MULTILINE,
 )
+_DEBT_ROW = re.compile(
+    r"^\| (?P<id>DEBT-[0-9a-f]{10}) \| (?P<decision>[A-Z_]+) \| "
+    r"(?P<reason>.*?) \| (?P<impact>.*?) \| (?P<closure>.*?) \|$",
+    re.MULTILINE,
+)
 VALID_TEST_CHANGE_KINDS = frozenset(
     {
         "REQUIREMENT_CHANGE",
@@ -121,7 +124,7 @@ _QUESTION_BLOCK = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 _MANUAL_LINE = re.compile(
-    r"^- (?P<key>行为需求|可验证场景|设计边界与唯一所有者|本轮非目标|检查范围|可继续削减项|已执行减法|保留项证据|历史抽样结论|历史抽样处理|Reduction结论)：(?P<value>.*)$",
+    r"^- (?P<key>行为需求|可验证场景|设计边界与唯一所有者|本轮非目标|检查范围|可继续削减项|已执行减法|保留项证据|Reduction结论)：(?P<value>.*)$",
     re.MULTILINE,
 )
 _COMMIT_BLOCK = re.compile(
@@ -186,11 +189,6 @@ def _counts(report: ScanReport) -> dict[str, int]:
     return result
 
 
-def _semantic_id(key: str, occurrence: int) -> str:
-    """由稳定语义身份键和同类 occurrence 生成 SEM ID。"""
-    return "SEM-" + hashlib.sha256(f"{key}:{occurrence}".encode()).hexdigest()[:10]
-
-
 def _semantic_items(report: ScanReport, facts: ReportFacts) -> tuple[SemanticItem, ...]:
     """基于同一份报告事实构造语义候选，避免重复 Git/测试事实计算。"""
     baseline = report.baseline
@@ -210,7 +208,8 @@ def _semantic_items(report: ScanReport, facts: ReportFacts) -> tuple[SemanticIte
             remaining[key] -= 1
         items.append(
             SemanticItem(
-                item_id=_semantic_id(key, occurrences[key]),
+                item_id="SEM-"
+                + hashlib.sha256(f"{key}:{occurrences[key]}".encode()).hexdigest()[:10],
                 finding=finding,
                 delta=not historical,
                 touched_historical=historical and finding.path in changed_paths,
@@ -232,33 +231,6 @@ def semantic_items(report: ScanReport) -> tuple[SemanticItem, ...]:
     revision = report.baseline.revision if report.baseline is not None else "HEAD"
     facts = build_report_facts(report, revision)
     return _semantic_items(report, facts)
-
-
-def _historical_sample(
-    items: tuple[SemanticItem, ...], limit: int = 8
-) -> tuple[SemanticItem, ...]:
-    """从 touched historical 中按严重度与规则多样性选择有限复核样本。"""
-    priority = {"critical": 0, "error": 1, "warning": 2, "info": 3}
-    candidates = sorted(
-        (item for item in items if item.touched_historical),
-        key=lambda item: (
-            priority[item.finding.severity],
-            item.finding.code,
-            item.finding.path,
-            item.finding.line,
-        ),
-    )
-    selected: list[SemanticItem] = []
-    seen_rules: set[str] = set()
-    for item in candidates:
-        if item.finding.code not in seen_rules:
-            selected.append(item)
-            seen_rules.add(item.finding.code)
-        if len(selected) >= limit:
-            return tuple(selected)
-    selected_ids = {item.item_id for item in selected}
-    selected.extend(item for item in candidates if item.item_id not in selected_ids)
-    return tuple(selected[:limit])
 
 
 def _manual_values(existing: str | None) -> dict[str, str]:
@@ -322,6 +294,23 @@ def _existing_test_change_rows(
     }
 
 
+def _existing_debt_rows(
+    existing: str | None,
+) -> dict[str, tuple[str, str, str, str]]:
+    """Read stable touched-debt deferrals from a previous report."""
+    if not existing:
+        return {}
+    return {
+        match.group("id"): (
+            match.group("decision"),
+            match.group("reason"),
+            match.group("impact"),
+            match.group("closure"),
+        )
+        for match in _DEBT_ROW.finditer(existing)
+    }
+
+
 def _test_change_items(facts: ReportFacts) -> tuple[object, ...]:
     """按稳定 ID 汇总需要语义说明的修改/删除测试和高风险新增测试。"""
     items = [change for audit in facts.test_audits for change in audit.case_changes]
@@ -340,19 +329,6 @@ def _existing_questions(existing: str | None) -> dict[str, tuple[str, str, str]]
             match.group("conclusion"),
         )
     return result
-
-
-def _existing_commit_command(existing: str | None, current_digest: str) -> str:
-    """仅在 patch digest 未变化时保留已经填写的完整 commit 命令。"""
-    if not existing:
-        return _PENDING_COMMIT_COMMAND
-    metadata = front_matter(existing)
-    if "change_digest" not in metadata or metadata["change_digest"] != current_digest:
-        return _PENDING_COMMIT_COMMAND
-    matches = list(_COMMIT_BLOCK.finditer(existing))
-    if len(matches) != 1:
-        return _PENDING_COMMIT_COMMAND
-    return matches[0].group("command").rstrip("\n")
 
 
 def _report_digest(
@@ -693,6 +669,114 @@ def _append_static_and_additions(
     lines.append("")
 
 
+def _append_debt_accountability(
+    lines: list[str], existing: str | None, facts: ReportFacts
+) -> None:
+    """Render debt responsibility while keeping untouched history machine-authored only."""
+    touched = tuple(item for item in facts.historical_debt if item.scope == "TOUCHED")
+    untouched = tuple(
+        item for item in facts.historical_debt if item.scope == "UNTOUCHED"
+    )
+    selected = tuple(
+        item for item in facts.historical_debt if item.scope == "SELECTED_SCOPE"
+    )
+    cleanup_required = (
+        facts.historical_debt if facts.debt_mode == "cleanup" or selected else ()
+    )
+    summary = [
+        f"- 债务模式：`{facts.debt_mode}`",
+        f"- Git 基线可用：{'NO' if selected else 'YES'}",
+        f"- 基线普通存量债务：{facts.legacy_debt_total}",
+        f"- 当前普通 C/E/W 总数：{facts.current_ordinary_debt_total}",
+        f"- 新增/恶化普通债务：{len(facts.quality_deltas)}",
+        f"- 已删除/降级存量债务：{facts.legacy_debt_reduced}",
+        f"- touched historical remaining：{len(touched)}",
+        f"- untouched historical remaining：{len(untouched)}",
+        f"- no-baseline selected-scope remaining：{len(selected)}",
+        f"- cleanup-required remaining：{len(cleanup_required)}",
+    ]
+    lines.extend(["### 存量债务责任", "", *_auto("debt_summary", summary), ""])
+
+    touched_rows = [
+        "| DEBT | Rule | Severity | Location | Message |",
+        "|---|---|---|---|---|",
+    ]
+    manual_items = touched if facts.debt_mode == "progressive" and not selected else ()
+    touched_rows.extend(
+        f"| {item.item_id} | `{item.finding.code}` | `{item.finding.severity.upper()}` | "
+        f"`{escape(item.finding.path)}:{item.finding.line}` | {escape(item.finding.message)} |"
+        for item in manual_items
+    )
+    if len(touched_rows) == _TABLE_HEADER_ROWS:
+        touched_rows.append(
+            "| — | — | — | — | 无需人工延期的 touched historical debt |"
+        )
+    lines.extend([*_auto("touched_historical_debt", touched_rows), ""])
+
+    previous = _existing_debt_rows(existing)
+    lines.extend(
+        [
+            "> Progressive 模式下，仍存在于 diff 文件中的历史普通 C/E/W 必须逐项说明为什么本轮不能安全消除；"
+            "已经修复的 finding 会自然从 DEBT 表消失。仅写‘历史债务/超出范围’不是充分理由。",
+            "",
+            "| DEBT | Decision | Concrete reason | Scope impact | Closure condition |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for item in manual_items:
+        row = previous.get(item.item_id, ("PENDING", "PENDING", "PENDING", "PENDING"))
+        lines.append(f"| {item.item_id} | {row[0]} | {row[1]} | {row[2]} | {row[3]} |")
+    if not manual_items:
+        lines.append(
+            "| — | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |"
+        )
+    lines.append("")
+
+    inventory = [
+        "| Rule | Severity | Location | Message |",
+        "|---|---|---|---|",
+    ]
+    inventory_items = (
+        untouched if facts.debt_mode == "progressive" and not selected else ()
+    )
+    inventory.extend(
+        f"| `{item.finding.code}` | `{item.finding.severity.upper()}` | "
+        f"`{escape(item.finding.path)}:{item.finding.line}` | {escape(item.finding.message)} |"
+        for item in inventory_items
+    )
+    if len(inventory) == _TABLE_HEADER_ROWS:
+        inventory.append("| — | — | — | 无非责任范围存量债务 |")
+    lines.extend(
+        [
+            "### 非 diff 存量债务 inventory",
+            "",
+            *_auto("untouched_historical_debt", inventory),
+            "",
+        ]
+    )
+
+    if cleanup_required:
+        cleanup_rows = [
+            "| DEBT | Rule | Severity | Location | Message |",
+            "|---|---|---|---|---|",
+            *(
+                f"| {item.item_id} | `{item.finding.code}` | `{item.finding.severity.upper()}` | "
+                f"`{escape(item.finding.path)}:{item.finding.line}` | {escape(item.finding.message)} |"
+                for item in cleanup_required
+            ),
+        ]
+        lines.extend(
+            [
+                "### Cleanup 阻断债务",
+                "",
+                *_auto("cleanup_required_debt", cleanup_rows),
+                "",
+                "> cleanup 模式（以及无 Git baseline 的选定 scope）不接受延期说明；表中仍有项目就必须继续修复后重跑。",
+                "",
+            ]
+        )
+
+
 def _append_semantic_and_questions(
     lines: list[str],
     report: ScanReport,
@@ -701,9 +785,8 @@ def _append_semantic_and_questions(
     facts: ReportFacts,
     items: tuple[SemanticItem, ...],
 ) -> None:
-    """追加 Delta 语义账本、历史风险抽样与十一问。"""
+    """Append semantic deltas, debt responsibility, test changes and architecture questions."""
     delta_items = [item for item in items if item.delta]
-    touched = [item for item in items if item.touched_historical]
     delta_rows = [
         "| SEM | Rule | Severity | Kind | Question | Location | Relation | Message |",
         "|---|---|---|---|---|---|---|---|",
@@ -729,37 +812,11 @@ def _append_semantic_and_questions(
         )
     if len(delta_rows) == _TABLE_HEADER_ROWS:
         delta_rows.append("| — | — | — | — | — | — | — | 无本轮语义 Delta |")
-    historical_counts = Counter(
-        (item.finding.code, str(item.finding.evidence["semantic_review_kind"]))
-        for item in items
-        if not item.delta
-    )
-    baseline_instances = (
-        sum(report.baseline.semantic_review_fingerprints.values())
-        if report.baseline
-        else 0
-    )
     summary = [
         f"- 当前语义候选：{len(items)}",
         f"- 本轮 Delta：{len(delta_items)}",
-        f"- 本轮触及的历史候选：{len(touched)}",
-        f"- Git 基线语义候选实例：{baseline_instances}",
-        *(
-            f"- 历史 `{code}` / `{kind}`：{count}"
-            for (code, kind), count in sorted(historical_counts.items())
-        ),
+        "- 历史语义候选不要求抽样解释；普通 C/E/W 存量责任由 DEBT 账本单独管理。",
     ]
-    sample = _historical_sample(items)
-    sample_rows = [
-        "| SEM | Rule | Severity | Location | Message |",
-        "|---|---|---|---|---|",
-    ]
-    sample_rows.extend(
-        f"| {item.item_id} | `{item.finding.code}` | `{item.finding.severity.upper()}` | `{escape(item.finding.path)}:{item.finding.line}` | {escape(item.finding.message)} |"
-        for item in sample
-    )
-    if len(sample_rows) == _TABLE_HEADER_ROWS:
-        sample_rows.append("| — | — | — | — | 无 touched historical 抽样 |")
     lines.extend(
         [
             "## 5. 语义审计账本",
@@ -816,22 +873,12 @@ def _append_semantic_and_questions(
         lines.append(
             "| — | TEST_REFACTOR | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | JUSTIFIED |"
         )
+    lines.append("")
+
+    _append_debt_accountability(lines, existing, facts)
+
     lines.extend(
         [
-            "",
-            "### Historical 风险抽样",
-            "",
-            *_auto("semantic_history_sample", sample_rows),
-            "",
-        ]
-    )
-    lines.extend(
-        [
-            f"- 历史抽样结论：{manual['历史抽样结论'] if sample else 'NOT_APPLICABLE'}",
-            f"- 历史抽样处理：{manual['历史抽样处理'] if sample else 'NOT_APPLICABLE'}",
-            "",
-            "> 本轮 Delta 必须逐项裁决；历史候选只做聚合 + 有限风险抽样。抽样发现 INVALID 时先修代码并重新 audit，不要求为了凑数量修改本来合理的历史代码。",
-            "",
             "| SEM | Verdict | Reason | Action | Evidence |",
             "|---|---|---|---|---|",
         ]
@@ -880,6 +927,8 @@ def _append_reduction_and_final(
         f"- 当前新增接口：{len(facts.additions)}",
         f"- 当前 TEST-CHANGE：{len(_test_change_items(facts))}",
         f"- 存量三档债务已减少：{facts.legacy_debt_reduced}",
+        f"- touched historical remaining：{sum(item.scope == 'TOUCHED' for item in facts.historical_debt)}",
+        f"- untouched historical remaining：{sum(item.scope == 'UNTOUCHED' for item in facts.historical_debt)}",
     ]
     lines.extend(["## 7. Reduction Pass", "", *_auto("reduction_facts", reduction), ""])
     lines.extend(
@@ -923,7 +972,12 @@ def _append_commit(
     removed = sum(item.removed for item in full_patch_files)
     semantic_delta = sum(item.delta for item in items)
     current_digest = _report_digest(report, facts, items)
-    command = _existing_commit_command(existing, current_digest)
+    command = _PENDING_COMMIT_COMMAND
+    if existing:
+        metadata = front_matter(existing)
+        matches = list(_COMMIT_BLOCK.finditer(existing))
+        if metadata.get("change_digest") == current_digest and len(matches) == 1:
+            command = matches[0].group("command").rstrip("\n")
     scope = [
         f"- 完整 patch：`{revision} → {report.comparison_target}`",
         f"- 文件变化：{len(full_patch_files)} 个（+{added} / -{removed}）",
@@ -978,7 +1032,10 @@ def _render_compact_report(
 
 
 def render_compact_report(
-    report: ScanReport, *, revision: str, existing: str | None = None
+    report: ScanReport,
+    revision: str,
+    existing: str | None = None,
+    debt_mode: str = "progressive",
 ) -> str:
     """
     生成固定九段紧凑报告，并保留仍存在对象的人工裁决与有效 commit。
@@ -987,11 +1044,12 @@ def render_compact_report(
         report: 当前完整生产扫描报告。
         revision: 绑定报告的 Git baseline revision。
         existing: 可选旧报告，用于保留仍有效的人工字段。
+        debt_mode: 存量债务责任策略。
 
     Returns:
         固定九段 schema 的 Markdown 审计报告。
     """
-    facts = build_report_facts(report, revision)
+    facts = build_report_facts(report, revision, debt_mode=debt_mode)
     items = _semantic_items(report, facts)
     return _render_compact_report(report, revision, existing, facts, items)
 
@@ -1011,13 +1069,6 @@ def _has_placeholder(value: str) -> bool:
         for marker in PLACEHOLDERS
         if marker not in {"PENDING", "TODO", "TBD"}
     )
-
-
-def _auto_blocks(text: str) -> dict[str, str]:
-    """提取全部机器自动事实块。"""
-    return {
-        match.group("name"): match.group("body") for match in AUTO_BLOCK.finditer(text)
-    }
 
 
 def _semantic_verdict_issues(item: SemanticItem, verdict: str) -> list[str]:
@@ -1068,7 +1119,14 @@ def _header_and_auto_issues(
         if key not in metadata or metadata[key] != value:
             issues.append(labels[key])
     regenerated = _render_compact_report(report, revision, text, facts, items)
-    if _auto_blocks(text) != _auto_blocks(regenerated):
+    current_auto = {
+        match.group("name"): match.group("body") for match in AUTO_BLOCK.finditer(text)
+    }
+    regenerated_auto = {
+        match.group("name"): match.group("body")
+        for match in AUTO_BLOCK.finditer(regenerated)
+    }
+    if current_auto != regenerated_auto:
         issues.append("机器自动事实区块被修改或已过期，必须重新 audit。")
     manual = _manual_values(text)
     for key in ("行为需求", "可验证场景", "设计边界与唯一所有者", "本轮非目标"):
@@ -1105,7 +1163,7 @@ def _addition_issues(text: str, facts: ReportFacts) -> list[str]:
 def _semantic_issues(
     text: str, items: tuple[SemanticItem, ...]
 ) -> tuple[list[str], bool]:
-    """返回本轮 Delta 语义候选、历史抽样问题与阻断状态。"""
+    """Validate only semantic deltas; historical ordinary debt has its own ledger."""
     issues: list[str] = []
     rows = _existing_sem_rows(text)
     blocking = False
@@ -1122,12 +1180,60 @@ def _semantic_issues(
             for label, value in values
             if _has_placeholder(value)
         )
-    if _historical_sample(items):
-        manual = _manual_values(text)
-        for key in ("历史抽样结论", "历史抽样处理"):
-            if _has_placeholder(manual[key]):
-                issues.append(f"Historical 风险抽样未完成：{key}")
     return issues, blocking
+
+
+def _debt_issues(text: str, facts: ReportFacts) -> list[str]:
+    """Validate touched-history deferrals and strict cleanup responsibility."""
+    rows = _existing_debt_rows(text)
+    selected = any(item.scope == "SELECTED_SCOPE" for item in facts.historical_debt)
+    touched = tuple(item for item in facts.historical_debt if item.scope == "TOUCHED")
+    expected = (
+        {item.item_id for item in touched}
+        if facts.debt_mode == "progressive" and not selected
+        else set()
+    )
+    issues: list[str] = []
+    if set(rows) != expected or len(rows) != len(expected):
+        issues.append(
+            "DEBT 延期表必须逐项且唯一覆盖全部 touched historical 普通 C/E/W。"
+        )
+    generic = {
+        "历史债务",
+        "历史问题",
+        "超出范围",
+        "不在本次范围",
+        "out of scope",
+        "historical debt",
+    }
+    for item_id in sorted(expected):
+        row = rows.get(item_id)
+        if row is None:
+            continue
+        decision, reason, impact, closure = row
+        if decision != "DEFERRED":
+            issues.append(
+                f"{item_id} 仍存在于当前代码，只能标记 DEFERRED；修复后应从报告中消失。"
+            )
+        for label, value, minimum in (
+            ("Concrete reason", reason, 16),
+            ("Scope impact", impact, 16),
+            ("Closure condition", closure, 12),
+        ):
+            normalized = value.strip()
+            if _has_placeholder(normalized) or len(normalized) < minimum:
+                issues.append(f"{item_id} {label} 必须给出具体、可验证的延期事实。")
+        if reason.strip().lower().strip("。.!！ ") in generic:
+            issues.append(f"{item_id} 不能仅用‘历史债务/超出范围’作为延期理由。")
+    cleanup_required = (
+        facts.historical_debt if facts.debt_mode == "cleanup" or selected else ()
+    )
+    if cleanup_required:
+        mode = "无 Git baseline 的选定 scope" if selected else "cleanup 模式"
+        issues.append(
+            f"{mode} 仍有 {len(cleanup_required)} 项历史普通 C/E/W；必须清零后才能通过。"
+        )
+    return issues
 
 
 def _test_contract_issues(text: str, facts: ReportFacts) -> tuple[list[str], bool]:
@@ -1244,18 +1350,6 @@ def _question_issues(
     return issues, blocking
 
 
-def _reduction_issues(text: str) -> list[str]:
-    """返回报告后减法审查未完成的问题。"""
-    issues: list[str] = []
-    manual = _manual_values(text)
-    for key in ("检查范围", "可继续削减项", "已执行减法", "保留项证据"):
-        if _has_placeholder(manual[key]):
-            issues.append(f"Reduction Pass 未完成：{key}")
-    if not manual["Reduction结论"].startswith("COMPLETE"):
-        issues.append("Reduction Pass 结论必须以 COMPLETE 开头；报告填写不是流程终点。")
-    return issues
-
-
 def _commit_issues(text: str) -> list[str]:
     """验证提交章节包含整包 commit，且不通过命令覆盖贡献者 Git identity。"""
     commit_section = text.partition("## 9. 提交 Commit")[2]
@@ -1302,7 +1396,10 @@ def _commit_issues(text: str) -> list[str]:
 
 
 def validate_compact_report(
-    text: str, report: ScanReport, *, revision: str
+    text: str,
+    report: ScanReport,
+    revision: str,
+    debt_mode: str = "progressive",
 ) -> ReportValidation:
     """
     验证机器事实、ADD/SEM/十一问和 Reduction Pass 均与最新源码一致。
@@ -1311,21 +1408,28 @@ def validate_compact_report(
         text: 待验证的完整 Markdown 报告。
         report: 当前最新生产扫描报告。
         revision: 当前报告必须绑定的 Git baseline revision。
+        debt_mode: `progressive` 或 `cleanup` 存量债务责任策略。
 
     Returns:
         报告契约问题与语义 PASS/REJECT 状态。
     """
-    facts = build_report_facts(report, revision)
+    facts = build_report_facts(report, revision, debt_mode=debt_mode)
     items = _semantic_items(report, facts)
     issues = _header_and_auto_issues(text, report, revision, facts, items)
     issues.extend(_addition_issues(text, facts))
     semantic_issues, semantic_blocking = _semantic_issues(text, items)
     issues.extend(semantic_issues)
+    issues.extend(_debt_issues(text, facts))
     test_issues, test_blocking = _test_contract_issues(text, facts)
     issues.extend(test_issues)
     question_issues, question_blocking = _question_issues(text, facts, items)
     issues.extend(question_issues)
-    issues.extend(_reduction_issues(text))
+    manual = _manual_values(text)
+    for key in ("检查范围", "可继续削减项", "已执行减法", "保留项证据"):
+        if _has_placeholder(manual[key]):
+            issues.append(f"Reduction Pass 未完成：{key}")
+    if not manual["Reduction结论"].startswith("COMPLETE"):
+        issues.append("Reduction Pass 结论必须以 COMPLETE 开头；报告填写不是流程终点。")
     issues.extend(_commit_issues(text))
     status = (
         "REJECT" if semantic_blocking or test_blocking or question_blocking else "PASS"

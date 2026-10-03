@@ -24,7 +24,7 @@ REPORT_GATE_EXIT_CODE = 3
 REVIEW_REQUIRED_EXIT_CODE = 5
 
 
-def _write_cli_line(message: str, *, error: bool = False) -> None:
+def _write_cli_line(message: str, error: bool = False) -> None:
     """向 CLI 协议流写一行文本；stderr 只承载错误信息。"""
     stream = sys.stderr if error else sys.stdout
     stream.write(message + "\n")
@@ -75,11 +75,23 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument(
         "--report-output", default=None, help="报告路径；默认仓库根 修改说明.md。"
     )
+    audit.add_argument(
+        "--debt-mode",
+        choices=("progressive", "cleanup"),
+        default="progressive",
+        help="存量债务责任策略；默认 progressive，cleanup 要求选定 scope 存量清零。",
+    )
 
     verify = subparsers.add_parser("verify", help="最终只读重扫并验证报告。")
     _common_target_options(verify)
     verify.add_argument(
         "--report-output", default=None, help="报告路径；默认仓库根 修改说明.md。"
+    )
+    verify.add_argument(
+        "--debt-mode",
+        choices=("progressive", "cleanup"),
+        default="progressive",
+        help="必须与 audit 使用同一存量债务责任策略。",
     )
     return parser
 
@@ -107,7 +119,7 @@ def _scoped_file_arguments(options: argparse.Namespace) -> str:
 
 
 def _legacy_args(
-    options: argparse.Namespace, *, include_files: bool = True
+    options: argparse.Namespace, include_files: bool = True
 ) -> argparse.Namespace:
     """把四命令公共参数转换为现有扫描内核的 ``argparse.Namespace``。"""
     argv: list[str] = []
@@ -287,10 +299,14 @@ def _run_audit(options: argparse.Namespace) -> int:
     existing = (
         report_path.read_text(encoding="utf-8") if report_path.is_file() else None
     )
-    text = render_compact_report(report, revision=revision, existing=existing)
+    text = render_compact_report(
+        report, revision=revision, existing=existing, debt_mode=options.debt_mode
+    )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(text, encoding="utf-8")
-    validation = validate_compact_report(text, report, revision=revision)
+    validation = validate_compact_report(
+        text, report, revision=revision, debt_mode=options.debt_mode
+    )
     counts = dict.fromkeys(("critical", "error", "warning", "info"), 0)
     for finding in report.findings:
         if not finding.code.startswith("QG98"):
@@ -303,7 +319,7 @@ def _run_audit(options: argparse.Namespace) -> int:
         f"static={code_status(report)} "
         f"C/E/W/I={counts['critical']}/{counts['error']}/{counts['warning']}/{counts['info']} "
         f"semantic_delta={delta_sem} touched_historical={touched_historical} "
-        f"report_issues={len(validation.issues)}"
+        f"debt_mode={options.debt_mode} report_issues={len(validation.issues)}"
     )
     _write_cli_line(str(report_path))
     if validation.issues:
@@ -333,7 +349,9 @@ def _run_verify(options: argparse.Namespace) -> int:
         _write_cli_line(f"verify REJECT：缺少报告 {report_path}", error=True)
         return REPORT_GATE_EXIT_CODE
     text = report_path.read_text(encoding="utf-8")
-    validation = validate_compact_report(text, report, revision=revision)
+    validation = validate_compact_report(
+        text, report, revision=revision, debt_mode=options.debt_mode
+    )
     static_status = code_status(report)
     if validation.issues:
         _write_cli_line("verify REJECT：报告契约未通过", error=True)

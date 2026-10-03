@@ -70,6 +70,22 @@ class QualityDelta:
 
 
 @dataclass(slots=True, frozen=True)
+class HistoricalDebt:
+    """
+    表示一项仍存在的普通 C/E/W 存量债务及其本轮责任范围。
+
+    Attributes:
+        item_id: 由 finding 稳定指纹派生的 DEBT 标识。
+        finding: 当前仍存在的质量问题。
+        scope: `TOUCHED`、`UNTOUCHED` 或 `SELECTED_SCOPE` 责任分类。
+    """
+
+    item_id: str
+    finding: Finding
+    scope: str
+
+
+@dataclass(slots=True, frozen=True)
 class ReportFacts:
     """
     保存严格报告自动生成并通过摘要锁定的事实。
@@ -80,8 +96,11 @@ class ReportFacts:
         additions: 全部新增接口。
         architecture: 父类、子类和公共所有者差分。
         quality_deltas: 相对基线新增或升级的三档问题。
+        debt_mode: 存量债务责任模式。
+        historical_debt: 当前仍存在的存量普通 C/E/W。
         legacy_debt_total: Git 基线中的三档问题数量。
         legacy_debt_reduced: 已删除或降级的存量问题数量。
+        current_ordinary_debt_total: 当前普通 C/E/W 总数。
         digest: 自动事实的稳定摘要。
     """
 
@@ -104,8 +123,11 @@ class ReportFacts:
     quality_deltas: tuple[QualityDelta, ...]
     test_quality_deltas: tuple[QualityDelta, ...]
     test_audits: tuple[TestChangeAudit, ...]
+    debt_mode: str
+    historical_debt: tuple[HistoricalDebt, ...]
     legacy_debt_total: int
     legacy_debt_reduced: int
+    current_ordinary_debt_total: int
     digest: str
 
 
@@ -266,7 +288,7 @@ def _current_test_quality_findings(report: ScanReport) -> dict[str, Finding]:
 
 
 def _quality_delta_items(
-    report: ScanReport, *, tests: bool = False
+    report: ScanReport, tests: bool = False
 ) -> tuple[QualityDelta, ...]:
     """生成生产或测试范围相对 Git 基线新增、升级的问题清单。"""
     baseline_report = report.test_baseline if tests else report.baseline
@@ -309,6 +331,54 @@ def _quality_delta_items(
     )
 
 
+def _historical_debt_items(
+    report: ScanReport, changed_paths: frozenset[str]
+) -> tuple[HistoricalDebt, ...]:
+    """Classify still-present ordinary debt without treating new/worsened debt as history."""
+    current = _current_quality_findings(report)
+    if report.baseline is None:
+        rows = [
+            HistoricalDebt(
+                item_id="DEBT-" + hashlib.sha256(fingerprint.encode()).hexdigest()[:10],
+                finding=finding,
+                scope="SELECTED_SCOPE",
+            )
+            for fingerprint, finding in current.items()
+        ]
+    else:
+        baseline = report.baseline.finding_severities
+        rows = []
+        for fingerprint, finding in current.items():
+            previous = baseline.get(fingerprint)
+            if previous is None:
+                continue
+            if (
+                report_schema.SEVERITY_RANK[finding.severity]
+                > report_schema.SEVERITY_RANK[previous]
+            ):
+                continue
+            rows.append(
+                HistoricalDebt(
+                    item_id="DEBT-"
+                    + hashlib.sha256(fingerprint.encode()).hexdigest()[:10],
+                    finding=finding,
+                    scope=("TOUCHED" if finding.path in changed_paths else "UNTOUCHED"),
+                )
+            )
+    return tuple(
+        sorted(
+            rows,
+            key=lambda item: (
+                -report_schema.SEVERITY_RANK[item.finding.severity],
+                item.finding.path,
+                item.finding.line,
+                item.finding.code,
+                item.item_id,
+            ),
+        )
+    )
+
+
 def _legacy_debt_reduced_count(report: ScanReport) -> int:
     """统计相对基线已经删除或降级的存量三档问题。"""
     if report.baseline is None:
@@ -326,16 +396,21 @@ def _legacy_debt_reduced_count(report: ScanReport) -> int:
     return reduced
 
 
-def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFacts:
+def build_report_facts(
+    report: ScanReport, revision: str = "HEAD", debt_mode: str = "progressive"
+) -> ReportFacts:
     """根据生产扫描、测试扫描和 Git 差分生成严格报告事实。
 
     Args:
         report: 包含生产、测试、接口和基线结果的完整扫描报告。
         revision: 用于比较工作区变化的 Git 基线。
+        debt_mode: `progressive` 或 `cleanup` 存量债务责任策略。
 
     Returns:
         已分离生产与测试事实并计算稳定摘要的报告事实。
     """
+    if debt_mode not in {"progressive", "cleanup"}:
+        raise ValueError(f"unsupported debt mode: {debt_mode!r}")
     architecture_codes = {"QG162", "QG163", "QG164", "QG165", "QG166", "QG167", "QG168"}
     architecture = tuple(
         sorted(
@@ -448,6 +523,8 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
     )
     quality_deltas = _quality_delta_items(report)
     test_quality_deltas = _quality_delta_items(report, tests=True)
+    changed_paths = frozenset(item.path for item in changed_files)
+    historical_debt = _historical_debt_items(report, changed_paths)
     test_audits = build_test_change_audits(
         report.root,
         test_changed_files,
@@ -458,6 +535,7 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
         len(report.baseline.finding_severities) if report.baseline is not None else 0
     )
     legacy_debt_reduced = _legacy_debt_reduced_count(report)
+    current_ordinary_debt_total = len(_current_quality_findings(report))
     payload = {
         "revision": revision,
         "changed_files": [asdict(item) for item in changed_files],
@@ -525,8 +603,18 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
             }
             for item in test_audits
         ],
+        "debt_mode": debt_mode,
+        "historical_debt": [
+            {
+                "id": item.item_id,
+                "scope": item.scope,
+                "finding": item.finding.to_dict(),
+            }
+            for item in historical_debt
+        ],
         "legacy_debt_total": legacy_debt_total,
         "legacy_debt_reduced": legacy_debt_reduced,
+        "current_ordinary_debt_total": current_ordinary_debt_total,
     }
     digest = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -551,21 +639,13 @@ def build_report_facts(report: ScanReport, revision: str = "HEAD") -> ReportFact
         quality_deltas=quality_deltas,
         test_quality_deltas=test_quality_deltas,
         test_audits=test_audits,
+        debt_mode=debt_mode,
+        historical_debt=historical_debt,
         legacy_debt_total=legacy_debt_total,
         legacy_debt_reduced=legacy_debt_reduced,
+        current_ordinary_debt_total=current_ordinary_debt_total,
         digest=digest,
     )
-
-
-def _counts(report: ScanReport) -> dict[str, int]:
-    """统计生产代码扫描中的 Critical、Error 和 Warning。"""
-    result = {"critical": 0, "error": 0, "warning": 0}
-    for item in report.findings:
-        if item.code.startswith("QG98"):
-            continue
-        if item.severity in result:
-            result[item.severity] += 1
-    return result
 
 
 def _test_counts(report: ScanReport) -> dict[str, int]:
@@ -1250,9 +1330,7 @@ def _quality_lines(
         [
             "",
             f"- 自动存量债务事实：基线生产三档共 {facts.legacy_debt_total} 项；本轮已删除或降级 {facts.legacy_debt_reduced} 项。",
-            "- 每一档的修复、阻塞或暂缓事实及剩余数量：待填写",
-            "- 存量债务削减结论：待填写",
-            "- 存量债务未削减说明：待填写",
+            "- Legacy 十节报告仅保留自动统计；Agent-facing progressive/cleanup 责任账本由紧凑报告的 DEBT-* 契约负责。",
             "",
         ]
     )
@@ -1322,7 +1400,10 @@ def _closing_lines() -> list[str]:
 def _fresh_template(report: ScanReport, revision: str) -> str:
     """生成首次使用的固定十节修改说明模板。"""
     facts = build_report_facts(report, revision)
-    counts = _counts(report)
+    counts = {"critical": 0, "error": 0, "warning": 0}
+    for finding in report.findings:
+        if not finding.code.startswith("QG98") and finding.severity in counts:
+            counts[finding.severity] += 1
     lines = [
         *_metadata_lines(report, facts, counts),
         *_inventory_lines(facts),
@@ -1975,48 +2056,6 @@ def _quality_delta_row_findings(
     return findings
 
 
-def _debt_summary_findings(text: str, facts: ReportFacts) -> list[Finding]:
-    """验证存量债务已削减，或在零削减时给出范围级事实。"""
-    findings: list[Finding] = []
-    lines = text.splitlines()
-    summary_marker = "存量债务削减结论："
-    reason_marker = "存量债务未削减说明："
-    summary_line = next((line for line in lines if summary_marker in line), "")
-    reason_line = next((line for line in lines if reason_marker in line), "")
-    summary = summary_line.split(summary_marker, 1)[-1].strip() if summary_line else ""
-    reason = reason_line.split(reason_marker, 1)[-1].strip() if reason_line else ""
-    if (
-        not summary
-        or report_schema.contains_placeholder(summary)
-        or len(summary) < report_schema.MIN_SUMMARY_TEXT
-    ):
-        findings.append(_report_finding("QG982", "必须填写存量债务削减结论。"))
-    requires_reason = facts.legacy_debt_total > 0 and facts.legacy_debt_reduced == 0
-    if requires_reason:
-        if (
-            report_schema.contains_placeholder(reason)
-            or len(reason) < report_schema.MIN_DEBT_REASON_TEXT
-            or any(
-                marker not in reason
-                for marker in report_schema.REQUIRED_DEBT_REASON_MARKERS
-            )
-        ):
-            findings.append(
-                _report_finding(
-                    "QG982",
-                    "本轮未删除或降级任何存量三档问题，必须填写 `原因=`、`范围=`、`最小方案=` 与 `关闭条件=`。",
-                )
-            )
-    elif reason != "NOT_APPLICABLE":
-        findings.append(
-            _report_finding(
-                "QG982",
-                "不存在存量债务或本轮已实际削减时，`存量债务未削减说明` 应填写 NOT_APPLICABLE。",
-            )
-        )
-    return findings
-
-
 def _protocol_row_findings(
     matches: list[re.Match[str]],
     expected: dict[str, Finding],
@@ -2139,7 +2178,6 @@ def _manual_row_findings(
         *_architecture_row_findings(architecture_matches, expected_architecture),
         *_quality_delta_row_findings(delta_matches, expected_deltas),
         *_test_risk_row_findings(test_risk_matches, expected_test_risks),
-        *_debt_summary_findings(text, facts),
     ]
     findings.extend(
         _coverage_finding(

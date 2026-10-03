@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import shutil
 import subprocess
 import tempfile
 from collections import Counter, defaultdict
 from html.parser import HTMLParser
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
@@ -868,6 +869,134 @@ def clang_line_range(
     return end_file or file_path, start, end
 
 
+def clang_error_detail(stderr: str, limit: int = 1600) -> str:
+    """Keep the actionable tail of a long Clang diagnostic without losing context.
+
+    Args:
+        stderr: Complete Clang diagnostic text.
+        limit: Maximum number of characters retained in the rendered detail.
+
+    Returns:
+        The complete diagnostic when short enough, otherwise a stable head/tail view.
+    """
+    detail = stderr.strip()
+    if len(detail) <= limit:
+        return detail
+    head = max(200, limit // 4)
+    tail = limit - head - len("\n...\n")
+    return f"{detail[:head]}\n...\n{detail[-tail:]}"
+
+
+def _cpp_include_directive(source_line: str) -> tuple[str, str] | None:
+    """Parse one literal C/C++ include directive without inferring macro semantics.
+
+    Args:
+        source_line: One repository-authored source line.
+
+    Returns:
+        ``(opener, token)`` for literal quote/angle includes, otherwise ``None``.
+    """
+    stripped = source_line.lstrip()
+    if not stripped.startswith("#"):
+        return None
+    directive = stripped[1:].lstrip()
+    if not directive.startswith("include"):
+        return None
+    remainder = directive[len("include") :].lstrip()
+    if len(remainder) < 3 or remainder[0] not in {'"', "<"}:
+        return None
+    opener = remainder[0]
+    closing = '"' if opener == '"' else ">"
+    end = remainder.find(closing, 1)
+    if end <= 1:
+        return None
+    return opener, remainder[1:end].replace("\\", "/")
+
+
+def clang_include_args(
+    snapshot: RepositoryAnalysisSnapshot,
+    root: Path,
+    relative_paths: list[str],
+) -> dict[str, tuple[str, ...]]:
+    """Build deterministic per-translation-unit local include arguments.
+
+    Only repository-authored literal includes participate. Quote includes may
+    resolve to one unique local header root; angle includes without a path
+    component remain compiler/system owned. Resolution follows only headers
+    reachable from the requested translation unit, so an unrelated vendored
+    ``include/`` tree cannot shadow system headers for every C++ file.
+
+    Args:
+        snapshot: Shared repository source snapshot.
+        root: Materialized repository root passed to Clang.
+        relative_paths: Translation units that will be parsed.
+
+    Returns:
+        Mapping from each requested path to flattened ``-I <dir>`` arguments.
+    """
+    cpp_units = {
+        PurePosixPath(path).as_posix(): unit
+        for path, unit in snapshot.language_units.items()
+        if unit.language == "cpp"
+    }
+    roots_by_token: defaultdict[str, set[str]] = defaultdict(set)
+    for relative in cpp_units:
+        parts = PurePosixPath(relative).parts
+        for start in range(len(parts)):
+            token = "/".join(parts[start:])
+            prefix = "/".join(parts[:start])
+            roots_by_token[token].add(prefix if prefix else ".")
+
+    arguments: dict[str, tuple[str, ...]] = {}
+    for requested in relative_paths:
+        requested_path = PurePosixPath(requested).as_posix()
+        include_directories: set[Path] = set()
+        pending = [requested_path] if requested_path in cpp_units else []
+        visited: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            source_parent = PurePosixPath(current).parent.as_posix()
+            for source_line in cpp_units[current].source.splitlines():
+                directive = _cpp_include_directive(source_line)
+                if directive is None:
+                    continue
+                opener, raw_token = directive
+                token = posixpath.normpath(raw_token)
+                relative_candidate = posixpath.normpath(
+                    posixpath.join(source_parent, token)
+                )
+                if relative_candidate in cpp_units:
+                    pending.append(relative_candidate)
+                    continue
+                if token in cpp_units:
+                    include_directories.add(root.resolve())
+                    pending.append(token)
+                    continue
+                candidates = roots_by_token[token]
+                is_bare_angle = (opener, "/" in token) == ("<", False)
+                if is_bare_angle:
+                    continue
+                if len(candidates) != 1:
+                    continue
+                include_root = next(iter(candidates))
+                resolved = posixpath.normpath(posixpath.join(include_root, token))
+                if resolved not in cpp_units:
+                    continue
+                include_directories.add((root / include_root).resolve())
+                pending.append(resolved)
+
+        flattened = [
+            argument
+            for include_dir in sorted(include_directories)
+            for argument in ("-I", str(include_dir))
+        ]
+        arguments[requested] = tuple(flattened)
+    return arguments
+
+
 def _ast_node_column(text: str, kinds: tuple[str, ...] | set[str]) -> int:
     """返回 Clang 文本 AST 行中最左侧目标节点列。"""
     positions = [text.find(kind) for kind in kinds]
@@ -890,14 +1019,7 @@ def _cpp_metrics(
             destination = root / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(unit.source, encoding="utf-8")
-        include_directories = sorted(
-            str(path) for path in root.rglob("include") if path.is_dir()
-        )
-        include_args = [
-            argument
-            for include_dir in include_directories
-            for argument in ("-I", include_dir)
-        ]
+        include_args_by_path = clang_include_args(snapshot, root, paths)
 
         for relative_path in paths:
             source = root / relative_path
@@ -909,7 +1031,7 @@ def _cpp_metrics(
                 "-fsyntax-only",
                 "-Xclang",
                 "-ast-dump",
-                *include_args,
+                *include_args_by_path[relative_path],
                 str(source),
             ]
             with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as error_stream:
@@ -1003,7 +1125,7 @@ def _cpp_metrics(
                 error_stream.seek(0)
                 stderr = error_stream.read()
                 if return_code != 0:
-                    detail = stderr.strip()[:800]
+                    detail = clang_error_detail(stderr)
                     raise RuntimeError(f"C++ AST 解析失败 `{relative_path}`：{detail}")
     return metrics
 

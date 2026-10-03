@@ -216,6 +216,19 @@ void run() {
             (run.symbol_id, inline.symbol_id, UsageKind.CALLBACK_REGISTRATION), triples
         )
 
+    def test_clang_counts_parameters_on_authored_lambda(self) -> None:
+        topology = self._topology(
+            """void run() {
+    auto transform = [](int value) { return value + 1; };
+    (void)transform(1);
+}
+"""
+        )
+        nested = next(
+            item for item in topology.symbols if item.name.startswith("<lambda@")
+        )
+        self.assertEqual(nested.parameter_count, 1)
+
     def test_clang_maps_named_concept_as_protocol_evidence(self) -> None:
         topology = self._topology(
             """namespace app {
@@ -243,6 +256,60 @@ void bump(T& value) {
                 for edge in topology.edges
             )
         )
+
+    def test_clang_discovers_unique_local_include_root_without_guessing_semantics(
+        self,
+    ) -> None:
+        snapshot = RepositoryAnalysisSnapshot(
+            root=Path("/repo"),
+            label="DIRECTORY",
+            units={},
+            language_units={
+                "src/sample.cpp": LanguageUnit(
+                    "src/sample.cpp",
+                    "cpp",
+                    '#include "api.hpp"\nint run() { return project::api(); }\n',
+                ),
+                "vendor/api.hpp": LanguageUnit(
+                    "vendor/api.hpp",
+                    "cpp",
+                    "#pragma once\nnamespace project { inline int api() { return 1; } }\n",
+                ),
+            },
+        )
+        topology = normalized_multilang_topology(
+            snapshot,
+            script_facts=[],
+            cpp_paths=["src/sample.cpp"],
+        )
+        run = next(item for item in topology.symbols if item.name == "run")
+        self.assertEqual(run.path, Path("src/sample.cpp"))
+
+    def test_clang_does_not_add_unrelated_include_roots_globally(self) -> None:
+        snapshot = RepositoryAnalysisSnapshot(
+            root=Path("/repo"),
+            label="DIRECTORY",
+            units={},
+            language_units={
+                "src/sample.cpp": LanguageUnit(
+                    "src/sample.cpp",
+                    "cpp",
+                    "#include <iostream>\nint run() { return 0; }\n",
+                ),
+                "vendor/include/wchar.h": LanguageUnit(
+                    "vendor/include/wchar.h",
+                    "cpp",
+                    "#error unrelated vendored header must not shadow libc\n",
+                ),
+            },
+        )
+        topology = normalized_multilang_topology(
+            snapshot,
+            script_facts=[],
+            cpp_paths=["src/sample.cpp"],
+        )
+        run = next(item for item in topology.symbols if item.name == "run")
+        self.assertEqual(run.path, Path("src/sample.cpp"))
 
     def test_missing_clang_keeps_cpp_semantics_na_instead_of_guessing(self) -> None:
         snapshot = RepositoryAnalysisSnapshot(

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
-from .multilang import clang_line_range
+from .multilang import clang_error_detail, clang_include_args, clang_line_range
 from .topology_facts import (
     OwnerFact,
     OwnerKind,
@@ -530,7 +530,13 @@ def _consume_cpp_lambda_expression(
         or not outer["symbol_id"]
     ):
         cursor.stack.append(
-            {"kind": "function", "column": column, "symbol_id": "", "line": start or 1}
+            {
+                "kind": "function",
+                "column": column,
+                "symbol_id": "",
+                "line": start or 1,
+                "parameter_count": 0,
+            }
         )
         return True
 
@@ -571,7 +577,13 @@ def _consume_cpp_lambda_expression(
         )
     )
     cursor.stack.append(
-        {"kind": "function", "column": column, "symbol_id": symbol_id, "line": start}
+        {
+            "kind": "function",
+            "column": column,
+            "symbol_id": symbol_id,
+            "line": start,
+            "parameter_count": 0,
+        }
     )
     return True
 
@@ -936,7 +948,7 @@ def _consume_cpp_translation_unit(
         error_stream.seek(0)
         stderr = error_stream.read()
     if return_code != 0:
-        detail = stderr.strip()[:800]
+        detail = clang_error_detail(stderr)
         raise RuntimeError(f"C++ AST 解析失败 `{relative_path}`：{detail}")
 
 
@@ -991,18 +1003,15 @@ def cpp_topology(
     with tempfile.TemporaryDirectory(prefix="rqg-cpp-topology-") as directory:
         root = Path(directory).resolve()
         _populate_cpp_sources(facts, snapshot, root)
-        include_directories = {root}
-        include_directories.update(
-            path for path in root.rglob("include") if path.is_dir()
-        )
-        include_args = [
-            argument
-            for include_dir in sorted(include_directories)
-            for argument in ("-I", str(include_dir))
-        ]
-        for relative_path in sorted(dict.fromkeys(paths)):
+        requested_paths = sorted(dict.fromkeys(paths))
+        include_args_by_path = clang_include_args(snapshot, root, requested_paths)
+        for relative_path in requested_paths:
             _consume_cpp_translation_unit(
-                facts, root, relative_path, clang, include_args
+                facts,
+                root,
+                relative_path,
+                clang,
+                list(include_args_by_path[relative_path]),
             )
     _consume_cpp_pending_relations(facts)
     return RepositoryTopology(

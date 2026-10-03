@@ -11,9 +11,40 @@ from .model import Definition, Finding
 from .topology_facts import RepositoryTopology, UsageKind, Visibility
 
 BOOLEAN_FLAG_THRESHOLD = 3
-CLASS_FRAGMENT_MIN_METHODS = 8
 DUPLICATE_BODY_MIN_COUNT = 2
 DUPLICATE_BODY_MIN_LINES = 6
+
+
+def _ephemeral_helper_candidate(
+    definition: Definition, evidence: dict[str, object], config: GuardConfig
+) -> bool:
+    """Return whether normalized usage evidence describes a one-shot helper.
+
+    Args:
+        definition: Function or method being classified.
+        evidence: Normalized usage/visibility facts for the definition.
+        config: Helper length and low-use thresholds.
+
+    Returns:
+        True only for short internal/private callables without reuse or protocol edges.
+    """
+    internal = evidence["visibility"] in {
+        Visibility.INTERNAL.value,
+        Visibility.PRIVATE.value,
+    }
+    return (
+        definition.kind in {"function", "method"}
+        and definition.name not in config.ignored_names
+        and not (definition.name.startswith("__") and definition.name.endswith("__"))
+        and definition.lines <= config.short_max_lines
+        and internal
+        and not bool(evidence["exported"])
+        and int(evidence["direct_callers"]) <= config.low_use_max_calls
+        and int(evidence["direct_call_sites"]) <= config.low_use_max_calls
+        and int(evidence["callable_consumers"]) == 0
+        and int(evidence["protocol_edges"]) == 0
+        and not definition.externally_invoked
+    )
 
 
 class RuleEvaluator:
@@ -67,6 +98,7 @@ class RuleEvaluator:
                 findings.extend(self._low_use_findings(definition))
                 findings.extend(self._function_size_findings(definition))
                 findings.extend(self._function_interface_findings(definition))
+        findings.extend(self._fragmented_owner_findings(definitions))
         findings.extend(self._module_findings(facts))
         findings.extend(self._duplicate_body_findings(definitions))
         findings.extend(self._unused_private_findings(definitions))
@@ -239,34 +271,49 @@ class RuleEvaluator:
             Stable direct-call, callback/reference, protocol and visibility evidence.
         """
         if self.topology is None or definition.symbol_id not in self._symbols:
-            return {
-                "direct_callers": definition.calls,
-                "direct_call_sites": definition.calls,
-                "callable_consumers": definition.references,
-                "protocol_edges": 1 if definition.externally_invoked else 0,
-                "visibility": "public"
+            direct_callers = definition.calls
+            callable_consumers = definition.references
+            protocol_edges = 1 if definition.externally_invoked else 0
+            visibility = (
+                Visibility.PUBLIC.value
                 if not definition.name.startswith("_")
-                else "internal",
-                "exported": False,
-                "topology_resolution": "legacy",
-            }
-        symbol = self._symbols[definition.symbol_id]
-        direct = self.topology.incoming(definition.symbol_id, (UsageKind.DIRECT_CALL,))
-        callable_consumers = self.topology.incoming(
-            definition.symbol_id,
-            (UsageKind.CALLABLE_REFERENCE, UsageKind.CALLBACK_REGISTRATION),
-        )
-        protocol_edges = self.topology.outgoing(
-            definition.symbol_id, (UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE)
-        )
+                else Visibility.INTERNAL.value
+            )
+            exported = False
+            resolution = "legacy"
+            owner_id = (
+                definition.qualname.rpartition(".")[0]
+                if definition.kind == "method"
+                else definition.module
+            )
+        else:
+            symbol = self._symbols[definition.symbol_id]
+            direct = self.topology.incoming(
+                definition.symbol_id, (UsageKind.DIRECT_CALL,)
+            )
+            callable_edges = self.topology.incoming(
+                definition.symbol_id,
+                (UsageKind.CALLABLE_REFERENCE, UsageKind.CALLBACK_REGISTRATION),
+            )
+            protocol = self.topology.outgoing(
+                definition.symbol_id, (UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE)
+            )
+            direct_callers = len({edge.source_id for edge in direct})
+            callable_consumers = len({edge.source_id for edge in callable_edges})
+            protocol_edges = len(protocol)
+            visibility = symbol.visibility.value
+            exported = symbol.exported
+            resolution = "normalized"
+            owner_id = symbol.owner_id
         return {
-            "direct_callers": len({edge.source_id for edge in direct}),
+            "direct_callers": direct_callers,
             "direct_call_sites": definition.calls,
-            "callable_consumers": len({edge.source_id for edge in callable_consumers}),
-            "protocol_edges": len(protocol_edges),
-            "visibility": symbol.visibility.value,
-            "exported": symbol.exported,
-            "topology_resolution": "normalized",
+            "callable_consumers": callable_consumers,
+            "protocol_edges": protocol_edges,
+            "visibility": visibility,
+            "exported": exported,
+            "owner_id": owner_id,
+            "topology_resolution": resolution,
         }
 
     def _small_class_findings(self, definition: Definition) -> list[Finding]:
@@ -321,28 +368,7 @@ class RuleEvaluator:
             仅真正 ephemeral helper 候选对应的 QG001。
         """
         topology_evidence = self._usage_topology(definition)
-        internal = topology_evidence["visibility"] in {
-            Visibility.INTERNAL.value,
-            Visibility.PRIVATE.value,
-        }
-        eligible = (
-            definition.kind in {"function", "method"}
-            and definition.name not in self.config.ignored_names
-            and not (
-                definition.name.startswith("__") and definition.name.endswith("__")
-            )
-            and definition.lines <= self.config.short_max_lines
-            and internal
-            and not bool(topology_evidence["exported"])
-            and int(topology_evidence["direct_callers"])
-            <= self.config.low_use_max_calls
-            and int(topology_evidence["direct_call_sites"])
-            <= self.config.low_use_max_calls
-            and int(topology_evidence["callable_consumers"]) == 0
-            and int(topology_evidence["protocol_edges"]) == 0
-            and not definition.externally_invoked
-        )
-        if not eligible:
+        if not _ephemeral_helper_candidate(definition, topology_evidence, self.config):
             return []
         evidence = {
             "lines": definition.lines,
@@ -448,29 +474,78 @@ class RuleEvaluator:
                     },
                 )
             )
-        fragmented = (
-            definition.direct_method_count >= CLASS_FRAGMENT_MIN_METHODS
-            and definition.tiny_method_count * 2 > definition.direct_method_count
-            and not any(base.endswith("NodeVisitor") for base in definition.bases)
+        return findings
+
+    def _fragmented_owner_findings(
+        self, definitions: list[Definition]
+    ) -> list[Finding]:
+        """Detect owners dominated by one-shot internal helpers.
+
+        Args:
+            definitions: Current repository definitions after usage resolution.
+
+        Returns:
+            QG013 semantic candidates for owners with dense ephemeral-helper swarms.
+        """
+        if self.topology is None:
+            return []
+        by_owner: defaultdict[str, list[tuple[Definition, dict[str, object]]]] = (
+            defaultdict(list)
         )
-        if fragmented:
+        for definition in definitions:
+            if definition.kind not in {"function", "method"}:
+                continue
+            evidence = self._usage_topology(definition)
+            if evidence["visibility"] not in {
+                Visibility.INTERNAL.value,
+                Visibility.PRIVATE.value,
+            }:
+                continue
+            by_owner[str(evidence["owner_id"])].append((definition, evidence))
+
+        findings: list[Finding] = []
+        for owner_id, owned in sorted(by_owner.items()):
+            helpers = [
+                definition
+                for definition, evidence in owned
+                if _ephemeral_helper_candidate(definition, evidence, self.config)
+            ]
+            helper_count = len(helpers)
+            internal_count = len(owned)
+            if helper_count < self.config.fragmented_owner_min_helpers:
+                continue
+            ratio = helper_count / internal_count
+            if ratio < self.config.fragmented_owner_ratio:
+                continue
+            first = min(helpers, key=lambda item: (str(item.path), item.line))
             findings.append(
                 Finding(
                     code="QG013",
-                    severity="critical",
+                    severity="info",
                     confidence="medium",
-                    path=str(definition.path),
-                    line=definition.line,
-                    column=definition.column,
+                    path=str(first.path),
+                    line=first.line,
+                    column=first.column,
                     message=(
-                        f"class `{definition.qualname}` 的 {definition.direct_method_count} 个方法中，"
-                        f"有 {definition.tiny_method_count} 个不超过 5 行，疑似过度碎片化。"
+                        f"owner `{owner_id}` 的 {internal_count} 个内部实现函数/方法中，"
+                        f"有 {helper_count} 个属于低复用 ephemeral helper 候选。"
                     ),
-                    symbol=definition.symbol_id,
-                    suggestion="检查这些方法是否只是字段转发、别名或单次流程步骤；保留真正可复用的领域操作。",
+                    symbol=owner_id,
+                    suggestion=(
+                        "检查这些 helper 是否只是唯一调用方的流程切片；保留共享 primitive、"
+                        "callback/protocol hook 与真实事务/资源/生命周期边界。"
+                    ),
                     evidence={
-                        "methods": definition.direct_method_count,
-                        "tiny_methods": definition.tiny_method_count,
+                        "owner": owner_id,
+                        "internal_functions": internal_count,
+                        "ephemeral_helpers": helper_count,
+                        "ephemeral_ratio": round(ratio, 4),
+                        "min_helpers": self.config.fragmented_owner_min_helpers,
+                        "ratio_threshold": self.config.fragmented_owner_ratio,
+                        "helpers": [item.symbol_id for item in helpers],
+                        "semantic_review_required": True,
+                        "semantic_review_question": "Q4,Q9",
+                        "semantic_review_kind": "ephemeral-helper-swarm",
                     },
                 )
             )

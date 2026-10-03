@@ -23,20 +23,16 @@ _DIR_EXCLUDES = {
     "equivalence-fixtures",
     "__pycache__",
 }
-_FILE_EXCLUDES = {"修改说明.md", "index.lock"}
+_FILE_EXCLUDES = {"修改说明.md"}
 
 
 def _ignore_source(directory: str, names: list[str]) -> set[str]:
     """Exclude only regenerable/session-local artifacts from the full snapshot."""
-    base = Path(directory).name
-    ignored: set[str] = set()
-    for name in names:
-        if name in _DIR_EXCLUDES:
-            ignored.add(name)
-        elif name in _FILE_EXCLUDES and (name != "index.lock" or base == ".git"):
-            ignored.add(name)
-        elif name.endswith((".pyc", ".pyo")):
-            ignored.add(name)
+    ignored = _DIR_EXCLUDES.intersection(names)
+    ignored.update(_FILE_EXCLUDES.intersection(names))
+    ignored.update(name for name in names if name.endswith((".pyc", ".pyo")))
+    if Path(directory).name == ".git":
+        ignored.update({"COMMIT_EDITMSG", "index.lock"}.intersection(names))
     return ignored
 
 

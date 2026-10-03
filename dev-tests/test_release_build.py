@@ -243,6 +243,34 @@ class TestReleaseBuild(unittest.TestCase):
             self.assertEqual(_sha(a), _sha(b))
             self.assertEqual(a.read_bytes(), b.read_bytes())
 
+    def test_canonical_zip_ignores_git_commit_message_session_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"
+                ),
+            )
+            self._seed_release_media(source)
+            commit_message = source / ".git" / "COMMIT_EDITMSG"
+            first = root / "first.zip"
+            second = root / "second.zip"
+
+            commit_message.write_text("first session message\n", encoding="utf-8")
+            self._build(first, source=source)
+            commit_message.write_text("different session message\n", encoding="utf-8")
+            self._build(second, source=source)
+
+            self.assertEqual(_sha(first), _sha(second))
+            with zipfile.ZipFile(first) as archive:
+                self.assertNotIn(
+                    "repository-quality-guard/.git/COMMIT_EDITMSG",
+                    set(archive.namelist()),
+                )
+
     def test_canonical_zip_keeps_git_profiles_and_authoring_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "canonical.zip"

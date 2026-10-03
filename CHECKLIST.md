@@ -43,7 +43,7 @@
 ## F. Regression
 
 - [x] v0.21.2 baseline behavior captured.
-- [ ] CoH real history/mbox regression reviewed.
+- [x] CoH real history/mbox regression reviewed.
 - [ ] geek-ai-rag real history/mbox regression reviewed.
 - [ ] geek-ai-agent real history/mbox regression reviewed.
 - [ ] Intentional finding changes are documented by rule/reason.

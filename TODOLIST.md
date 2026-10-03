@@ -71,7 +71,7 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 - [x] 端到端车牌识别模型 read-only analysis + RQG run.
 - [x] SI-FCN read-only analysis + RQG run.
 - [x] Compare false positives/intentional findings; do not force zero.
-- [ ] CoH selected mbox/replay regression.
+- [x] CoH selected mbox/replay regression.
 - [ ] geek-ai-rag selected mbox/replay regression.
 - [ ] geek-ai-agent selected mbox/replay regression, including timeout fixture.
 - [ ] Direct source and installed `.agents` lifecycle checks remain timeout-free.

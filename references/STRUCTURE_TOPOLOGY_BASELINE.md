@@ -64,3 +64,16 @@ The historical manual-code archives listed in `PLAN.md` remain read-only evidenc
 - SI-FCN finding payload remains exactly `0af391090762bdfa22317267bb55e52d0f3511f3deaf80010eb9899b5bab7974`
 
 Phase 1 generates normalized topology facts but shared QG policy does not consume them yet.
+## Phase 7 real regression — Council of Harnesses
+
+The frozen `v2.8-rc2` and `v2.8-rc3` snapshots were scanned with the same `council-of-harnesses` Profile under v0.21.2 and current v0.21.3. Historical project source was not modified.
+
+- rc2 total findings: `6229 -> 5973` (`-256`).
+- rc3 total findings: `5758 -> 5479` (`-279`).
+- QG001 ephemeral-helper findings: rc2 `286 -> 34`; rc3 `311 -> 33`. The reductions are expected from normalized reuse/callback/protocol evidence.
+- QG003/QG004 candidates largely reclassify to QG026 when mapping ownership cannot be proven: QG003 `705 -> 149`, QG004 `65 -> 18`, QG026 `0 -> 603` on both snapshots. This is the intended `unknown` contract-ownership behavior, not silent waiver.
+- QG013 `9 -> 0` on both snapshots under ephemeral-helper density semantics. QG019 gains only the expected two-tier owner-size review candidates (`+1` rc2, `+2` rc3).
+- Real regression exposed one v0.21.3 defect before the final comparison: a function-local class (`SpyBinder`) produced a field-access `class_id` that did not match any relation node and crashed normalized topology projection. Commit `4a5cd4d` fixes lexical owner ordering at the collector and adds a regression fixture; both CoH snapshots then scan to completion.
+- Final v0.21.3 payload SHA256: rc2 `358b84ae3c9fc47daa6b14955e57a154446dece9afb0c086b40a9d7b78e30ce6`; rc3 `7a5fbf9f0d24b8ec11abf114a337065c857ef99ebd4ee5ba9f3bd36d0af47436`.
+
+Conclusion: the CoH regression is reviewed. The finding changes are explained by the authorized helper/contract/owner-size policy changes, and the only scanner crash discovered by the corpus is now covered by an automated regression test.

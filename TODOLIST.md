@@ -43,17 +43,17 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 - [x] QG001 consumes normalized usage topology; distinguish direct call, callable reference and protocol hook.
 - [x] QG013 uses ephemeral-helper density rather than all tiny methods.
 - [x] QG168 only follows eligible ordinary one-shot helper edges.
-- [ ] Ensure QG008/QG019 fixes cannot be satisfied by helper/class fragmentation laundering.
+- [x] Ensure QG008/QG019 fixes cannot be satisfied by helper/class fragmentation laundering.
 - [ ] Run historical calibration corpus and inspect deltas manually.
-- [ ] Commit and self-audit current diff.
+- [x] Commit and self-audit current diff.
 
 ## Phase 5 — Contract ownership
 
-- [ ] Add `internal_formal / external_optional / dynamic_boundary / unknown` facts.
-- [ ] Refine QG003–QG006 without weakening internal formal-object protection.
-- [ ] Add internal `hasattr/getattr/.get(default)` strict fixtures.
-- [ ] Add external optional framework mapping fixtures.
-- [ ] Commit and self-audit current diff.
+- [x] Add `internal_formal / external_optional / dynamic_boundary / unknown` facts.
+- [x] Refine QG003–QG006 without weakening internal formal-object protection.
+- [x] Add internal `hasattr/getattr/.get(default)` strict fixtures.
+- [x] Add external optional framework mapping fixtures.
+- [x] Commit and self-audit current diff.
 
 ## Phase 6 — Cross-language adapters
 

@@ -4,6 +4,7 @@ import ast
 import os
 import subprocess
 from collections import defaultdict
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatch
 from pathlib import Path
@@ -114,6 +115,23 @@ class RepositoryScanner:
         resolved_edges = self._resolve_usage(definitions, usages, facts)
         if self.topology is None:
             self.topology = python_topology(definitions, resolved_edges)
+        contract_facts = {contract for item in facts for contract in item.contracts}
+        if contract_facts:
+            self.topology = replace(
+                self.topology,
+                contracts=tuple(
+                    sorted(
+                        {*self.topology.contracts, *contract_facts},
+                        key=lambda item: (
+                            item.path.as_posix(),
+                            item.line,
+                            item.receiver,
+                            item.operation,
+                            item.selector,
+                        ),
+                    )
+                ),
+            )
         findings = [finding for item in facts for finding in item.findings]
         findings.extend(
             RuleEvaluator(self.config, self.topology).evaluate(definitions, facts)
@@ -346,7 +364,7 @@ class RepositoryScanner:
                 )
                 return facts
         facts.tree = tree
-        collector = FactsCollector(facts, self.config)
+        collector = FactsCollector(facts, self.config, self.topology)
         collector.visit(tree)
         return facts
 

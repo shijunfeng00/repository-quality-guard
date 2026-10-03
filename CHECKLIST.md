@@ -14,16 +14,16 @@
 - [x] QG001 does not call a callback/protocol/public API an ephemeral helper merely because direct-call count is zero.
 - [x] QG013 does not punish cohesive resource/container/value classes simply because many methods are tiny.
 - [x] QG168 still rejects >=3-layer one-shot helper chains and cannot be bypassed by renaming/wrapping.
-- [ ] QG003–QG006 stay strict for internal formal contracts.
-- [ ] External optional contracts do not become hard findings solely because `.get()` or equivalent optional access is used according to that contract.
+- [x] QG003–QG006 stay strict for internal formal contracts.
+- [x] External optional contracts do not become hard findings solely because `.get()` or equivalent optional access is used according to that contract.
 
 ## C. Architecture
 
 - [ ] Semantic QG rules consume normalized facts rather than language names/regex branches wherever feasible.
-- [ ] Python facts cover module/class owners, call edges, callable references, closures, protocol hooks and field/state access.
-- [ ] Dependency-aware Python analysis performs no runtime imports.
+- [x] Python facts cover module/class owners, call edges, callable references, closures, protocol hooks and field/state access.
+- [x] Dependency-aware Python analysis performs no runtime imports.
 - [ ] C++ semantic facts use Clang when compiler-level evidence is required.
-- [ ] Unknown/unavailable evidence remains unknown/N/A rather than guessed.
+- [x] Unknown/unavailable evidence remains unknown/N/A rather than guessed.
 - [ ] New topology code has one authoritative owner; no duplicate graph implementations.
 
 ## D. Anti-fragmentation and conflict checks

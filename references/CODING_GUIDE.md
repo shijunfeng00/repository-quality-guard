@@ -4,7 +4,7 @@
 
 ### 静态契约禁止猜测
 
-内部上下游必须使用静态类型和固定字段契约。已确认的映射字段使用 `[]`，已确认的对象字段使用直接属性访问；生产代码不得用 `.get()`、`hasattr()`、`getattr()`、`setattr()`、`delattr()`、`vars()`、`__dict__`、`__getattribute__`、`inspect`/`operator` 反射、`setdefault()` 或成员存在性分支猜测正式契约。真正可选字段必须在 TypedDict、Pydantic、Protocol、Optional 或联合类型中显式表达，并只在唯一输入适配边界完成解析。
+内部上下游必须使用静态类型和固定字段契约。已确认的映射字段使用 `[]`，已确认的对象字段使用直接属性访问；生产代码不得用 `.get()`、`hasattr()`、`getattr()`、`setattr()`、`delattr()`、`vars()`、`__dict__`、`__getattribute__`、`inspect`/`operator` 反射、`setdefault()` 或成员存在性分支猜测正式契约。真正可选字段必须在 TypedDict、Pydantic、Protocol、Optional 或联合类型中显式表达，并只在唯一输入适配边界完成解析。外部 framework/plugin 的 optional contract 可以保留动态读取，但必须有静态依赖/stub/继承或唯一 adapter 证据；仅出现一个 import 名、变量名或缺少依赖都不能自动把内部契约降级为 external optional。
 
 
 ## 1. 总体原则

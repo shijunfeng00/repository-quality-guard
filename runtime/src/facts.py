@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import re
+from itertools import chain
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,6 +21,12 @@ from .ast_utils import (
 from .config import GuardConfig, is_test_path
 from .docstrings import definition_code_lines, function_parameter_names, parse_docstring
 from .model import Confidence, Definition, Finding, Severity, Usage
+from .topology_facts import (
+    ContractFact,
+    ContractOwnership,
+    RepositoryTopology,
+    UsageKind,
+)
 
 DICT_DEFAULT_ARG_COUNT = 2
 GETATTR_DEFAULT_ARG_COUNT = 3
@@ -423,11 +430,12 @@ class ModuleFacts:
     findings: list[Finding] = field(default_factory=list)
     imports: dict[str, str] = field(default_factory=dict)
     mapping_names: set[str] = field(default_factory=set)
+    contracts: list[ContractFact] = field(default_factory=list)
 
 
 @dataclass(slots=True, frozen=True)
 class _MappingCallContext:
-    """封装单次映射方法调用的静态接收者与边界事实。"""
+    """封装单次映射方法调用的静态接收者与契约所有权事实。"""
 
     receiver_name: str
     receiver_tail: str
@@ -436,28 +444,41 @@ class _MappingCallContext:
     lookup_mapping: bool
     boundary_module: bool
     test_context: bool
+    ownership: ContractOwnership
+    ownership_confidence: Confidence
+    ownership_evidence: tuple[str, ...]
 
 
 class _FactsCollectorNodeVisitor(ast.NodeVisitor):
     """保存 AST 收集所需状态，并提供统一 finding 写入边界。"""
 
-    def __init__(self, facts: ModuleFacts, config: GuardConfig) -> None:
+    def __init__(
+        self,
+        facts: ModuleFacts,
+        config: GuardConfig,
+        topology: RepositoryTopology | None = None,
+    ) -> None:
         """
         初始化模块事实收集器。
 
         Args:
             facts: 当前模块事实或模块事实列表。
             config: 质量检查配置。
+            topology: 可选的仓库级归一化拓扑，用于静态证明外部协议所有权。
 
         Returns:
             None。
         """
         self.facts = facts
         self.config = config
+        self.topology = topology
         self.class_stack: list[str] = []
         self.function_stack: list[str] = []
         self.mapping_scope_stack: list[set[str]] = [set()]
         self.typed_scope_stack: list[set[str]] = [set()]
+        self.annotation_scope_stack: list[dict[str, str]] = [{}]
+        self.external_class_bases: list[tuple[str, ...]] = []
+        self.class_local_fields: list[set[str]] = []
         self.call_nodes: set[int] = set()
         self.diagnostic_string_nodes: set[int] = set()
         self.aggregation_setdefault_calls = (
@@ -499,6 +520,157 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         for scope_names in self.typed_scope_stack:
             names.update(scope_names)
         return names
+
+    @property
+    def annotations(self) -> dict[str, str]:
+        """返回当前词法作用域可见的显式类型标注。"""
+        result: dict[str, str] = {}
+        for scope_annotations in self.annotation_scope_stack:
+            result.update(scope_annotations)
+        return result
+
+    def _resolve_imported_name(self, name: str) -> str:
+        """把当前模块中的 import alias 展开为静态限定名。"""
+        if not name:
+            return ""
+        root, dot, tail = name.partition(".")
+        imported = self.facts.imports[root] if root in self.facts.imports else root
+        return f"{imported}.{tail}" if dot else imported
+
+    def _is_external_symbol(self, name: str) -> bool:
+        """判断限定名是否由显式 import 指向当前项目包之外的依赖。"""
+        if not name:
+            return False
+        local_root = name.split(".", 1)[0]
+        if local_root not in self.facts.imports:
+            return False
+        resolved = self._resolve_imported_name(name)
+        root = resolved.split(".", 1)[0]
+        project_root = self.facts.module.split(".", 1)[0] if self.facts.module else ""
+        if root in {"builtins", "collections", "typing"}:
+            return False
+        return bool(root and root != project_root)
+
+    @staticmethod
+    def _assigned_instance_fields(node: ast.ClassDef) -> set[str]:
+        """返回类体方法中明确写入的 self/cls 属性名称。"""
+        methods = (
+            method
+            for method in node.body
+            if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        fields: set[str] = set()
+        for child in chain.from_iterable(ast.walk(method) for method in methods):
+            targets = (
+                child.targets
+                if isinstance(child, ast.Assign)
+                else (child.target,)
+                if isinstance(child, (ast.AnnAssign, ast.AugAssign))
+                else ()
+            )
+            for target in targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id in {"self", "cls"}
+                ):
+                    fields.add(target.attr)
+        return fields
+
+    def _external_contract_candidate(
+        self, receiver_name: str, selector: str
+    ) -> tuple[str, ...]:
+        """返回可能属于外部契约但尚未获得依赖解析证明的线索。"""
+        receiver_root = receiver_name.split(".", 1)[0] if receiver_name else ""
+        annotation = self.annotations.get(receiver_root, "")
+        if annotation and self._is_external_symbol(annotation):
+            return (
+                f"external_annotation_candidate:{self._resolve_imported_name(annotation)}",
+            )
+        if receiver_root not in {"self", "cls"} or not self.external_class_bases:
+            return ()
+        if not self.external_class_bases[-1]:
+            return ()
+        field = selector
+        if receiver_name.startswith(("self.", "cls.")):
+            field = receiver_name.split(".", 1)[1].split(".", 1)[0]
+        if self.class_local_fields and field in self.class_local_fields[-1]:
+            return ()
+        return tuple(
+            f"external_base_candidate:{base}" for base in self.external_class_bases[-1]
+        )
+
+    def _resolved_external_contract_evidence(self) -> tuple[str, ...]:
+        """从 normalized topology 返回当前类已解析的外部继承契约。"""
+        if self.topology is None or not self.class_stack:
+            return ()
+        class_qualname = ".".join(self.class_stack)
+        class_id = (
+            f"{self.facts.module}.{class_qualname}"
+            if self.facts.module
+            else class_qualname
+        )
+        return tuple(
+            f"resolved_external_base:{edge.target_id.removeprefix('external:')}"
+            for edge in self.topology.outgoing(class_id, (UsageKind.INHERITANCE,))
+            if edge.target_id.startswith("external:")
+        )
+
+    def _contract_ownership(
+        self,
+        receiver_name: str,
+        selector: str = "",
+        confirmed_mapping: bool = False,
+        statically_typed: bool = False,
+    ) -> tuple[ContractOwnership, Confidence, tuple[str, ...]]:
+        """按静态 owner 证据分类一次运行时契约访问。"""
+        if self._is_contract_boundary_module():
+            return ContractOwnership.DYNAMIC_BOUNDARY, "high", ("boundary_module",)
+        external_candidate = self._external_contract_candidate(receiver_name, selector)
+        if external_candidate:
+            resolved_external = self._resolved_external_contract_evidence()
+            if resolved_external:
+                return (
+                    ContractOwnership.EXTERNAL_OPTIONAL,
+                    "high",
+                    (*external_candidate, *resolved_external),
+                )
+            return ContractOwnership.UNKNOWN, "low", external_candidate
+        if confirmed_mapping or statically_typed:
+            evidence = (
+                ("confirmed_mapping",) if confirmed_mapping else ("statically_typed",)
+            )
+            return ContractOwnership.INTERNAL_FORMAL, "high", evidence
+        return ContractOwnership.UNKNOWN, "low", ()
+
+    def _record_contract(
+        self,
+        node: ast.AST,
+        receiver: str,
+        operation: str,
+        selector: str,
+        ownership: ContractOwnership,
+        confidence: Confidence,
+        evidence: tuple[str, ...],
+    ) -> None:
+        """记录统一 ContractFact，供后续语言中立策略与报告使用。"""
+        self.facts.contracts.append(
+            ContractFact(
+                path=self.facts.path,
+                line=node.lineno,
+                receiver=receiver,
+                ownership=ownership,
+                confidence=confidence,
+                operation=operation,
+                selector=selector,
+                owner_id=(
+                    f"{self.facts.module}.{self.scope}"
+                    if self.facts.module and self.scope
+                    else self.scope or self.facts.module
+                ),
+                evidence=evidence,
+            )
+        )
 
     @property
     def scope(self) -> str:
@@ -689,6 +861,10 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         if annotation_is_mapping(node.annotation):
             self.mapping_scope_stack[-1].update(target_names)
         self.typed_scope_stack[-1].update(target_names)
+        annotation_name = dotted_name(node.annotation)
+        if annotation_name:
+            for target_name in target_names:
+                self.annotation_scope_stack[-1][target_name] = annotation_name
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -749,9 +925,18 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
                 documented_parameters=docstring.documented_parameters,
             )
         )
+        external_bases = tuple(
+            self._resolve_imported_name(base_name)
+            for base in node.bases
+            if (base_name := dotted_name(base)) and self._is_external_symbol(base_name)
+        )
         self.class_stack.append(node.name)
+        self.external_class_bases.append(external_bases)
+        self.class_local_fields.append(self._assigned_instance_fields(node))
         for child in node.body:
             self.visit(child)
+        self.class_local_fields.pop()
+        self.external_class_bases.pop()
         self.class_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -867,20 +1052,29 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
             for argument in arguments
             if annotation_is_mapping(argument.annotation)
         }
-        typed_parameters = {
-            argument.arg for argument in arguments if argument.annotation is not None
+        parameter_annotations = {
+            argument.arg: annotation_name
+            for argument in arguments
+            if argument.annotation is not None
+            and (annotation_name := dotted_name(argument.annotation))
         }
+        typed_parameters = set(parameter_annotations)
         if self.class_stack:
             typed_parameters.update({"self", "cls"})
         if node.args.kwarg is not None:
             parameter_mappings.add(node.args.kwarg.arg)
             if node.args.kwarg.annotation is not None:
                 typed_parameters.add(node.args.kwarg.arg)
+                annotation_name = dotted_name(node.args.kwarg.annotation)
+                if annotation_name:
+                    parameter_annotations[node.args.kwarg.arg] = annotation_name
         self.function_stack.append(node.name)
         self.mapping_scope_stack.append(parameter_mappings)
         self.typed_scope_stack.append(typed_parameters)
+        self.annotation_scope_stack.append(parameter_annotations)
         for child in node.body:
             self.visit(child)
+        self.annotation_scope_stack.pop()
         self.typed_scope_stack.pop()
         self.mapping_scope_stack.pop()
         self.function_stack.pop()
@@ -1331,58 +1525,96 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             )
 
     def _check_dynamic_attribute_probe(self, node: ast.Call) -> None:
-        """检查 hasattr/getattr(default) 对静态对象契约的运行时猜测。"""
+        """检查 hasattr/getattr(default) 的契约所有权与运行时形状猜测。"""
         if not isinstance(node.func, ast.Name) or node.func.id not in {
             "hasattr",
             "getattr",
         }:
             return
+        if node.func.id == "getattr" and len(node.args) < GETATTR_DEFAULT_ARG_COUNT:
+            return
         test_context = is_test_path(self.facts.path)
         receiver_name = dotted_name(node.args[0]) if node.args else ""
         receiver_tail = receiver_name.rsplit(".", 1)[-1] if receiver_name else ""
+        selector = (
+            node.args[1].value
+            if len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+            else ""
+        )
         statically_typed = (
             receiver_tail in self.typed_names
             or receiver_name.startswith(("self", "cls"))
         )
-        boundary_module = self._is_contract_boundary_module()
-        severity: Severity = (
-            "warning" if test_context else "error" if statically_typed else "info"
+        ownership, confidence, ownership_evidence = self._contract_ownership(
+            receiver_name, selector=selector, statically_typed=statically_typed
         )
+        self._record_contract(
+            node,
+            receiver_name,
+            node.func.id,
+            selector,
+            ownership,
+            confidence,
+            ownership_evidence,
+        )
+        if test_context:
+            severity: Severity = "warning"
+        elif ownership is ContractOwnership.INTERNAL_FORMAL:
+            severity = "error"
+        else:
+            severity = "info"
+        semantic_unknown = ownership is ContractOwnership.UNKNOWN
+        common_evidence: dict[str, object] = {
+            "receiver": receiver_name,
+            "selector": selector,
+            "statically_typed": statically_typed,
+            "test_context": test_context,
+            "contract_ownership": ownership.value,
+            "ownership_evidence": list(ownership_evidence),
+        }
+        if semantic_unknown:
+            common_evidence.update(
+                {
+                    "semantic_review_required": True,
+                    "semantic_review_question": "Q4,Q6",
+                    "semantic_review_kind": "contract-ownership",
+                }
+            )
         if node.func.id == "hasattr":
             self.add_finding(
                 node,
                 "QG005",
-                "使用 hasattr() 探测对象字段，把明确类型契约降级为运行时猜测。",
-                severity=severity,
-                confidence="high" if statically_typed else "medium",
-                suggestion=(
-                    "静态类型对象应直接访问正式属性；真正可选的能力应使用 Protocol、联合类型、"
-                    "显式 Optional 字段或独立适配器表达，不得在消费方 hasattr 猜测。"
+                (
+                    "使用 hasattr() 探测内部正式对象字段，把明确类型契约降级为运行时猜测。"
+                    if ownership is ContractOwnership.INTERNAL_FORMAL
+                    else "hasattr() 探测位于外部/动态/未解析契约边界，保留所有权证据供复核。"
                 ),
-                evidence={
-                    "receiver": receiver_name,
-                    "statically_typed": statically_typed,
-                    "test_context": test_context,
-                    "boundary_module": boundary_module,
-                },
+                severity=severity,
+                confidence=confidence,
+                suggestion=(
+                    "内部正式对象应直接访问声明属性；多态使用 Protocol/ABC/联合类型或显式 adapter。"
+                    "外部可选能力只有在依赖契约静态可证明时才可保留，unknown 不得反推为内部错误。"
+                ),
+                evidence=common_evidence,
             )
-        elif len(node.args) >= GETATTR_DEFAULT_ARG_COUNT:
+        else:
             self.add_finding(
                 node,
                 "QG006",
-                "getattr(..., default) 在对象契约缺失时静默兜底。",
-                severity=severity,
-                confidence="high" if statically_typed else "medium",
-                suggestion=(
-                    "静态类型对象应直接访问正式字段并让契约错误暴露；真正可选字段必须在"
-                    "Protocol、联合类型或显式 Optional 中表达。未知动态对象只保留审计信息。"
+                (
+                    "getattr(..., default) 在内部正式对象契约缺失时静默兜底。"
+                    if ownership is ContractOwnership.INTERNAL_FORMAL
+                    else "getattr(..., default) 位于外部/动态/未解析契约边界，保留所有权证据供复核。"
                 ),
-                evidence={
-                    "receiver": receiver_name,
-                    "statically_typed": statically_typed,
-                    "test_context": test_context,
-                    "boundary_module": boundary_module,
-                },
+                severity=severity,
+                confidence=confidence,
+                suggestion=(
+                    "内部正式对象应直接访问声明字段并让契约错误暴露；真正可选的外部字段必须由"
+                    "静态依赖契约、Protocol/联合类型或唯一 adapter 明确表达。"
+                ),
+                evidence=common_evidence,
             )
 
     def _check_attribute_call(self, node: ast.Call) -> None:
@@ -1422,6 +1654,22 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
     ) -> None:
         """检查映射读取、聚合初始化与删除时的隐式兜底契约。"""
         receiver_tail = receiver_name.rsplit(".", 1)[-1]
+        selector = (
+            node.args[0].value
+            if node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            else ""
+        )
+        ownership, ownership_confidence, ownership_evidence = self._contract_ownership(
+            receiver_name,
+            selector=selector,
+            confirmed_mapping=confirmed_mapping,
+            statically_typed=(
+                receiver_tail in self.typed_names
+                or receiver_name.startswith(("self.", "cls."))
+            ),
+        )
         context = _MappingCallContext(
             receiver_name=receiver_name,
             receiver_tail=receiver_tail,
@@ -1430,6 +1678,9 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             lookup_mapping=is_lookup_mapping_name(receiver_tail),
             boundary_module=self._is_contract_boundary_module(),
             test_context=is_test_path(self.facts.path),
+            ownership=ownership,
+            ownership_confidence=ownership_confidence,
+            ownership_evidence=ownership_evidence,
         )
         if attribute == "get" and context.confirmed_mapping and context.lookup_mapping:
             return
@@ -1441,49 +1692,78 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             self._check_mapping_pop(node, context)
 
     def _check_mapping_get(self, node: ast.Call, context: _MappingCallContext) -> None:
-        """检查 mapping.get 对必需字段契约的静默降级。"""
+        """检查 mapping.get 是否在错误的契约 owner 上承担缺字段兜底。"""
         explicit_default = len(node.args) >= DICT_DEFAULT_ARG_COUNT
-        if context.confirmed_mapping or self.config.strict_get:
+        selector = (
+            node.args[0].value
+            if node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+            else ""
+        )
+        self._record_contract(
+            node,
+            context.receiver_name,
+            "mapping_get_default" if explicit_default else "mapping_get",
+            selector,
+            context.ownership,
+            context.ownership_confidence,
+            context.ownership_evidence,
+        )
+        evidence: dict[str, object] = {
+            "receiver": context.receiver_name,
+            "selector": selector,
+            "explicit_default": explicit_default,
+            "confirmed_mapping": context.confirmed_mapping,
+            "lookup_mapping": context.lookup_mapping,
+            "boundary_module": context.boundary_module,
+            "contract_ownership": context.ownership.value,
+            "ownership_evidence": list(context.ownership_evidence),
+        }
+        if context.ownership is ContractOwnership.UNKNOWN:
+            evidence.update(
+                {
+                    "semantic_review_required": True,
+                    "semantic_review_question": "Q4,Q6",
+                    "semantic_review_kind": "contract-ownership",
+                }
+            )
             self.add_finding(
                 node,
-                "QG004" if explicit_default else "QG003",
-                "字典 .get() 使用显式默认值，可能把缺字段错误转成静默兼容。"
-                if explicit_default
-                else "字典 .get() 将缺字段转换为 None，可能掩盖结构契约错误。",
-                severity=(
-                    "warning"
-                    if context.test_context
-                    else "info"
-                    if context.boundary_module
-                    else "critical"
-                    if context.confirmed_mapping
-                    else "error"
-                ),
-                confidence="high" if context.confirmed_mapping else "medium",
+                "QG026",
+                "发现无法静态确认 owner 的 .get() 契约访问。",
+                severity="warning" if context.test_context else "info",
+                confidence=context.ownership_confidence,
                 suggestion=(
-                    "内部稳定映射的必需字段必须使用 [] 直接读取；真正可选字段应通过 "
-                    "TypedDict(total=False)、Pydantic Optional 或显式联合类型声明，并在输入边界集中处理。"
+                    "先确认 receiver 是内部正式 mapping、外部可选 API 还是动态边界；"
+                    "证据不足时保持 unknown，不得仅凭变量名或 strict_get 猜成内部 schema。"
                 ),
-                evidence={
-                    "receiver": context.receiver_name,
-                    "explicit_default": explicit_default,
-                    "confirmed_mapping": context.confirmed_mapping,
-                    "lookup_mapping": context.lookup_mapping,
-                    "boundary_module": context.boundary_module,
-                },
+                evidence=evidence,
             )
             return
+        code = "QG004" if explicit_default else "QG003"
+        if context.test_context:
+            severity: Severity = "warning"
+        elif context.ownership is ContractOwnership.INTERNAL_FORMAL:
+            severity = "critical"
+        else:
+            severity = "info"
+        internal = context.ownership is ContractOwnership.INTERNAL_FORMAL
         self.add_finding(
             node,
-            "QG026",
-            "发现无法静态确认接收者类型的 .get() 调用。",
-            severity="info",
-            confidence="medium" if context.mapping_name_hint else "low",
-            suggestion="确认它是客户端 API 还是映射兜底；若是内部字典契约，改为直接索引或补充类型标注。",
-            evidence={
-                "receiver": context.receiver_name,
-                "explicit_default": explicit_default,
-            },
+            code,
+            (
+                "内部正式映射使用 .get() 兜底必需字段，可能把契约错误转换成正常路径。"
+                if internal
+                else ".get() 位于显式外部可选/动态边界；记录 owner 证据而不按内部 schema 失败处理。"
+            ),
+            severity=severity,
+            confidence=context.ownership_confidence,
+            suggestion=(
+                "内部稳定映射的必需字段使用 [] 直接读取；真正可选字段在 TypedDict/Pydantic/"
+                "Protocol 或外部依赖契约中显式声明，并在唯一 adapter/ingestion 边界归一化。"
+            ),
+            evidence=evidence,
         )
 
     def _check_mapping_setdefault(

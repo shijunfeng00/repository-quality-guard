@@ -131,9 +131,11 @@ class UsageEdge:
 
 @dataclass(slots=True, frozen=True)
 class ContractFact:
-    """Represent static ownership evidence for a formal or dynamic contract access.
+    """Represent one normalized runtime-contract access and its static ownership.
 
-    Later contract rules consume this record without inventing ownership when unresolved.
+    Language providers record the access shape separately from the ownership verdict so
+    shared policy can distinguish formal internal contracts, declared external optional
+    contracts, explicit dynamic boundaries and unresolved cases without guessing.
     """
 
     path: Path
@@ -141,6 +143,9 @@ class ContractFact:
     receiver: str
     ownership: ContractOwnership
     confidence: Confidence
+    operation: str = ""
+    selector: str = ""
+    owner_id: str = ""
     evidence: tuple[str, ...] = ()
 
 
@@ -243,19 +248,6 @@ class RepositoryTopology:
         )
 
 
-def _python_owner(definition: Definition) -> tuple[str, OwnerKind]:
-    """Return the normalized owner for an existing Python definition."""
-    if definition.kind == "method":
-        owner_qualname, _, _ = definition.qualname.rpartition(".")
-        owner_id = (
-            f"{definition.module}.{owner_qualname}"
-            if definition.module and owner_qualname
-            else owner_qualname or definition.module
-        )
-        return owner_id, OwnerKind.CLASS
-    return definition.module, OwnerKind.MODULE
-
-
 def python_usage_edge(usage: Usage, target: Definition) -> UsageEdge:
     """Translate a resolved Python usage into a normalized typed edge.
 
@@ -294,7 +286,17 @@ def python_topology(
     """
     symbol_facts: list[SymbolFact] = []
     for definition in definitions:
-        owner_id, owner_kind = _python_owner(definition)
+        if definition.kind == "method":
+            owner_qualname, _, _ = definition.qualname.rpartition(".")
+            owner_id = (
+                f"{definition.module}.{owner_qualname}"
+                if definition.module and owner_qualname
+                else owner_qualname or definition.module
+            )
+            owner_kind = OwnerKind.CLASS
+        else:
+            owner_id = definition.module
+            owner_kind = OwnerKind.MODULE
         name = definition.name
         if name.startswith("__") and not name.endswith("__"):
             visibility = Visibility.PRIVATE

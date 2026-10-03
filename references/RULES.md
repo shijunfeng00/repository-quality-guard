@@ -50,19 +50,19 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | 规则 | 检查内容 |
 |---|---|
 | `QG000` | Python 语法解析失败；当前文件无法继续做可靠 AST 审查。 |
-| `QG001` | 短小且静态调用/引用很少的函数或方法，检查是否为一次性 helper。 |
+| `QG001` | 短小且低复用的内部函数/方法才进入 ephemeral-helper 审查；direct call、callable reference、callback/protocol hook、公开/导出接口都会作为正向复用证据。 |
 | `QG002` | 短小且静态实例化/引用很少的类，检查是否为低价值包装。 |
-| `QG003` | 内部稳定映射使用 `.get(key)` 猜测必需字段；静态确认且不是 lookup table/输入边界时按 Critical；类型不明时按 Error，测试代码独立审计。 |
-| `QG004` | 内部稳定映射使用 `.get(key, default)` 静默兜底；静态确认且不是 lookup table/输入边界时按 Critical；类型不明时按 Error。 |
-| `QG005` | 使用 `hasattr()` 探测静态对象字段，把类型契约降级成运行时猜测；静态类型对象按 Critical，类型不明时按 Error。 |
-| `QG006` | 使用 `getattr(..., default)` 静默兜底属性缺失；静态类型对象按 Critical，类型不明时按 Error。 |
+| `QG003` | `internal_formal` 稳定映射使用 `.get(key)` 猜必需字段时保持严格；`external_optional`/`dynamic_boundary` 只保留低严重度所有权证据；无法静态确认 owner 时保持 unknown 并转 QG026 语义复核，不因 `strict_get` 假装成内部契约。 |
+| `QG004` | `internal_formal` 映射使用 `.get(key, default)` 静默兜底仍按 Critical；静态解析到的外部可选契约或明确 ingestion/adapter 边界不按内部 schema 失败处理；unknown 保持低置信复核。 |
+| `QG005` | `hasattr()` 探测 `internal_formal` 对象仍属于运行时形状猜测；解析到的外部协议字段/动态边界降为所有权证据，unknown 不硬猜。显式 Protocol/ABC/联合类型/override 不属于本规则目标。 |
+| `QG006` | `getattr(..., default)` 对 `internal_formal` 对象继续严格；外部可选协议/动态边界只记录低严重度证据，unknown 进入语义复核。不得把内部 formal contract 伪装成外部 optional。 |
 | `QG007` | 捕获宽泛异常；吞错并返回默认结果时风险更高。 |
-| `QG008` | 单个类直接定义的方法数超过配置阈值，属于类职责臃肿；按 Critical。 |
+| `QG008` | 类直接 authored methods `<=20` 不因数量告警；`21..50` 进入 owner-cohesion Semantic Review；`>50` 才按 Critical。禁止为压方法数制造 wrapper/mixin/helper 碎片。 |
 | `QG009` | 通过 `ImportError/ModuleNotFoundError` 选择备用实现或兼容导入。 |
 | `QG010` | 函数只把参数转发给另一个调用；单次使用的 private 薄包装按 Critical，公开协议包装结合调用方审查。 |
 | `QG011` | 读取配置时提供默认值，可能掩盖部署缺项。 |
 | `QG012` | 稳定映射使用 `setdefault()` 同时读取、兜底和写入。不得机械展开为 `if key not in mapping: mapping[key] = default`；`setdefault(...).add/append/extend/update` 是明确的聚合原语，不命中本规则。其他合法缓存/聚合应保留简洁语义或收拢到唯一状态入口，必需字段则直接索引。 |
-| `QG013` | 类中短小方法比例过高，形成明显流程碎片化；按 Critical。 |
+| `QG013` | owner 内 `private/internal + tiny + low-reuse` ephemeral helper 达到数量/密度阈值时进入 Semantic Review；共享 primitive、callback/protocol hook、公开接口不计入碎片化。 |
 | `QG014` | 单个函数超过配置阈值，属于函数职责臃肿；按 Critical，且不得机械拆成碎片 helper。 |
 | `QG015` | 函数参数总数过多，可能混合多项职责。 |
 | `QG016` | 控制流嵌套层级过深。 |

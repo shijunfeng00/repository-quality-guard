@@ -19,16 +19,16 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 ## Phase 2 — Python-first topology provider
 
-- [ ] Module and class owner facts.
-- [ ] Direct-call edges.
-- [ ] Callable-reference/callback edges.
-- [ ] Nested closure and callable escape facts.
-- [ ] Public/private/export visibility facts.
-- [ ] Protocol/override/framework-hook evidence.
-- [ ] `self.field` access edges and owner state clusters.
-- [ ] Static dependency symbol resolver using source/stubs/metadata without runtime import.
-- [ ] Keras/TensorFlow-style callback/protocol fixtures.
-- [ ] Commit and self-audit current diff.
+- [x] Module and class owner facts.
+- [x] Direct-call edges.
+- [x] Callable-reference/callback edges.
+- [x] Nested closure and callable escape facts.
+- [x] Public/private/export visibility facts.
+- [x] Protocol/override/framework-hook evidence.
+- [x] `self.field` access edges and owner state clusters.
+- [x] Static dependency symbol resolver using source/stubs/metadata without runtime import.
+- [x] Keras/TensorFlow-style callback/protocol fixtures.
+- [x] Commit and self-audit current diff.
 
 ## Phase 3 — Threshold calibration
 

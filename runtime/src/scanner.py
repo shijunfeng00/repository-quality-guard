@@ -75,6 +75,7 @@ class RepositoryScanner:
         root: Path,
         config: GuardConfig,
         analysis_snapshot: RepositoryAnalysisSnapshot | None = None,
+        topology: RepositoryTopology | None = None,
     ) -> None:
         """
         初始化仓库扫描器。
@@ -83,6 +84,7 @@ class RepositoryScanner:
             root: 目标仓库根目录。
             config: 质量检查配置。
             analysis_snapshot: 可选的统一源码/AST 快照；存在时复用其解析结果。
+            topology: 可选的权威归一化关系事实；正式 CLI 由 RelationGraph 注入。
 
         Returns:
             None。
@@ -90,7 +92,7 @@ class RepositoryScanner:
         self.root = root.resolve()
         self.config = config
         self.analysis_snapshot = analysis_snapshot
-        self.topology: RepositoryTopology | None = None
+        self.topology = topology
 
     def scan(self, selected_files: set[Path] | None = None) -> ScanReport:
         """
@@ -110,7 +112,8 @@ class RepositoryScanner:
         definitions = [definition for item in facts for definition in item.definitions]
         usages = [usage for item in facts for usage in item.usages]
         resolved_edges = self._resolve_usage(definitions, usages, facts)
-        self.topology = python_topology(definitions, resolved_edges)
+        if self.topology is None:
+            self.topology = python_topology(definitions, resolved_edges)
         findings = [finding for item in facts for finding in item.findings]
         findings.extend(RuleEvaluator(self.config).evaluate(definitions, facts))
         findings.extend(AdvancedRuleEvaluator(self.config).evaluate(definitions, facts))
@@ -384,7 +387,8 @@ class RepositoryScanner:
                     definition.calls += 1
                 else:
                     definition.references += 1
-                resolved_edges.append(python_usage_edge(usage, definition))
+                if self.topology is None:
+                    resolved_edges.append(python_usage_edge(usage, definition))
         return resolved_edges
 
     def _usage_candidates(

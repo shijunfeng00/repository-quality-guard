@@ -6,12 +6,24 @@ import ast
 import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
+from .ast_utils import decorator_names
+from .docstrings import definition_code_lines, function_parameter_names
 from .config import is_test_path
 from .model import Finding, InterfaceChange, InterfaceDiffReport
+from .python_dependency_facts import StaticPythonDependencyResolver
+from .topology_facts import (
+    OwnerFact,
+    OwnerKind,
+    RepositoryTopology,
+    SymbolFact,
+    UsageEdge,
+    UsageKind,
+    Visibility,
+)
 
 _MAX_PATH_DEPTH = 24
 _MAX_RENDERED_ITEMS = 12
@@ -77,6 +89,162 @@ def _resolve_relative_module(path: str, module: str, level: int) -> str:
     return ".".join(base)
 
 
+class _ScopeNameCollector(ast.NodeVisitor):
+    """Collect immediate function-scope bindings and loads without descending scopes."""
+
+    def __init__(self) -> None:
+        """Initialize one immediate lexical-scope accumulator.
+
+        Returns:
+            None.
+        """
+        self.bound: set[str] = set()
+        self.loaded: set[str] = set()
+        self.loaded_lines: dict[str, int] = {}
+        self.global_names: set[str] = set()
+        self.nonlocal_names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        """Record one loaded or bound name in the current lexical scope.
+
+        Args:
+            node: Name expression owned by the current lexical scope.
+
+        Returns:
+            None.
+        """
+        if isinstance(node.ctx, ast.Load):
+            self.loaded.add(node.id)
+            self.loaded_lines[node.id] = node.lineno
+        else:
+            self.bound.add(node.id)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Treat a nested synchronous function name as a local binding.
+
+        Args:
+            node: Nested synchronous function declaration.
+
+        Returns:
+            None.
+        """
+        self.bound.add(node.name)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        """Treat a nested asynchronous function name as a local binding.
+
+        Args:
+            node: Nested asynchronous function declaration.
+
+        Returns:
+            None.
+        """
+        self.bound.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Treat a nested class name as a local binding without descending into it.
+
+        Args:
+            node: Nested class declaration.
+
+        Returns:
+            None.
+        """
+        self.bound.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        """Stop at lambda boundaries because they own a separate lexical scope.
+
+        Args:
+            node: Lambda expression that starts a nested lexical scope.
+
+        Returns:
+            None.
+        """
+        return
+
+    def visit_Import(self, node: ast.Import) -> None:
+        """Record names introduced by a normal import statement.
+
+        Args:
+            node: Import statement owned by the current lexical scope.
+
+        Returns:
+            None.
+        """
+        for alias in node.names:
+            self.bound.add(alias.asname or alias.name.split(".", 1)[0])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """Record explicit names introduced by a from-import statement.
+
+        Args:
+            node: From-import statement owned by the current lexical scope.
+
+        Returns:
+            None.
+        """
+        for alias in node.names:
+            if alias.name != "*":
+                self.bound.add(alias.asname or alias.name)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        """Mark names explicitly bound outside the current function scope.
+
+        Args:
+            node: Global declaration in the current lexical scope.
+
+        Returns:
+            None.
+        """
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        """Mark names explicitly captured from an enclosing function scope.
+
+        Args:
+            node: Nonlocal declaration in the current lexical scope.
+
+        Returns:
+            None.
+        """
+        self.nonlocal_names.update(node.names)
+        for name in node.names:
+            self.loaded_lines[name] = node.lineno
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        """Record exception aliases while continuing through the handler body.
+
+        Args:
+            node: Exception handler owned by the current lexical scope.
+
+        Returns:
+            None.
+        """
+        if node.name:
+            self.bound.add(node.name)
+        for statement in node.body:
+            self.visit(statement)
+
+
+def _function_scope_names(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[set[str], set[str], dict[str, int]]:
+    """Return immediate lexical bindings and loads for one authored function scope."""
+    collector = _ScopeNameCollector()
+    arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+    collector.bound.update(argument.arg for argument in arguments)
+    if node.args.vararg is not None:
+        collector.bound.add(node.args.vararg.arg)
+    if node.args.kwarg is not None:
+        collector.bound.add(node.args.kwarg.arg)
+    for statement in node.body:
+        collector.visit(statement)
+    collector.bound.difference_update(collector.global_names | collector.nonlocal_names)
+    collector.loaded.update(collector.nonlocal_names)
+    return collector.bound, collector.loaded, collector.loaded_lines
+
+
 @dataclass(slots=True, frozen=True)
 class _RelationNode:
     """保存一个可参与仓库关系分析的模块、类、函数、方法或测试节点。"""
@@ -88,8 +256,14 @@ class _RelationNode:
     qualname: str
     name: str
     line: int
+    end_line: int
+    lines: int
+    parameter_count: int
+    decorators: tuple[str, ...]
+    bases: tuple[str, ...]
     owner: str
     private: bool
+    nested: bool
     test: bool
     fingerprint: str
 
@@ -101,6 +275,46 @@ class _RelationEdge:
     source: str
     target: str
     kind: str
+
+
+@dataclass(slots=True, frozen=True)
+class _ResolvedReference:
+    """Store one repository-local callable consumption resolved by the graph owner."""
+
+    source: str
+    target: str
+    line: int
+    kind: UsageKind
+
+
+@dataclass(slots=True, frozen=True)
+class _ResolvedFieldAccess:
+    """Store one authored instance-field access after method-name disambiguation."""
+
+    source: str
+    class_id: str
+    field_name: str
+    line: int
+
+
+@dataclass(slots=True, frozen=True)
+class _ExternalBase:
+    """Store one unresolved project inheritance target as a qualified dependency name."""
+
+    class_id: str
+    qualified_name: str
+
+
+@dataclass(slots=True, frozen=True)
+class _TopologyProjectionSource:
+    """Immutable relation facts consumed by the language-neutral topology projector."""
+
+    module_nodes: tuple[tuple[str, str], ...]
+    explicit_exports: tuple[tuple[str, tuple[str, ...]], ...]
+    references: tuple[_ResolvedReference, ...]
+    field_accesses: tuple[_ResolvedFieldAccess, ...]
+    closure_captures: tuple[tuple[str, str, str, int], ...]
+    external_bases: tuple[_ExternalBase, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -161,10 +375,16 @@ class _Collector(ast.NodeVisitor):
         self.source_digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:20]
         self.class_stack: list[str] = []
         self.function_stack: list[str] = []
+        self.function_scopes: list[tuple[str, set[str]]] = []
         self.nodes: list[_RelationNode] = []
         self.imports: dict[str, str] = {}
         self.calls: list[tuple[str, ast.expr]] = []
+        self.references: list[tuple[str, ast.expr, UsageKind]] = []
+        self.reference_context: list[UsageKind] = []
+        self.field_accesses: list[tuple[str, str, str, int]] = []
+        self.closure_captures: list[tuple[str, str, str, int]] = []
         self.classes: dict[str, tuple[str, ...]] = {}
+        self.explicit_exports: set[str] = set()
 
     @property
     def caller(self) -> str:
@@ -194,8 +414,20 @@ class _Collector(ast.NodeVisitor):
                 qualname=self.module,
                 name=PurePosixPath(self.path).name,
                 line=1,
+                end_line=max(
+                    (item.end_lineno or 1 for item in tree.body),
+                    default=1,
+                ),
+                lines=max(
+                    (item.end_lineno or 1 for item in tree.body),
+                    default=1,
+                ),
+                parameter_count=0,
+                decorators=(),
+                bases=(),
                 owner="",
                 private=False,
+                nested=False,
                 test=_is_test_source(self.path),
                 fingerprint=self.source_digest,
             )
@@ -255,9 +487,15 @@ class _Collector(ast.NodeVisitor):
                 qualname=qualname,
                 name=node.name,
                 line=node.lineno,
+                end_line=node.end_lineno or node.lineno,
+                lines=(node.end_lineno or node.lineno) - node.lineno + 1,
+                parameter_count=0,
+                decorators=decorator_names(node.decorator_list),
+                bases=bases,
                 owner=owner,
                 private=node.name.startswith("_")
                 and not (node.name.startswith("__") and node.name.endswith("__")),
+                nested=bool(self.function_stack),
                 test=_is_test_source(self.path),
                 fingerprint=_class_digest(node),
             )
@@ -302,6 +540,17 @@ class _Collector(ast.NodeVisitor):
             if _is_test_source(self.path) and node.name.startswith("test")
             else "function"
         )
+        bound_names, loaded_names, loaded_lines = _function_scope_names(node)
+        if self.function_scopes:
+            free_names = loaded_names - bound_names
+            for name in sorted(free_names):
+                for outer_id, outer_bound in reversed(self.function_scopes):
+                    if name not in outer_bound:
+                        continue
+                    self.closure_captures.append(
+                        (node_id, outer_id, name, loaded_lines[name])
+                    )
+                    break
         self.nodes.append(
             _RelationNode(
                 node_id=node_id,
@@ -311,9 +560,15 @@ class _Collector(ast.NodeVisitor):
                 qualname=qualname,
                 name=node.name,
                 line=node.lineno,
+                end_line=node.end_lineno or node.lineno,
+                lines=definition_code_lines(node),
+                parameter_count=len(function_parameter_names(node)),
+                decorators=decorator_names(node.decorator_list),
+                bases=(),
                 owner=owner,
                 private=node.name.startswith("_")
                 and not (node.name.startswith("__") and node.name.endswith("__")),
+                nested=bool(self.function_stack),
                 test=_is_test_source(self.path),
                 fingerprint=hashlib.sha256(
                     ast.dump(
@@ -323,8 +578,10 @@ class _Collector(ast.NodeVisitor):
             )
         )
         self.function_stack.append(node.name)
+        self.function_scopes.append((node_id, bound_names))
         for child in node.body:
             self.visit(child)
+        self.function_scopes.pop()
         self.function_stack.pop()
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -338,10 +595,64 @@ class _Collector(ast.NodeVisitor):
         """
         self.calls.append((self.caller, node.func))
         for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+            self.reference_context.append(UsageKind.CALLBACK_REGISTRATION)
             self.visit(argument)
+            self.reference_context.pop()
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        """记录静态 ``__all__`` 导出并继续遍历赋值值。
+
+        Args:
+            node: 当前赋值 AST 节点。
+
+        Returns:
+            None.
+        """
+        export_assignment = any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in node.targets
+        )
+        if export_assignment and isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
+            for item in node.value.elts:
+                if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                    self.explicit_exports.add(item.value)
+        for target in node.targets:
+            self.visit(target)
+        self.visit(node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        """记录带类型注解赋值中的状态写入与引用。
+
+        Args:
+            node: 当前注解赋值 AST 节点。
+
+        Returns:
+            None.
+        """
+        self.visit(node.target)
+        self.visit(node.annotation)
+        if node.value is not None:
+            self.visit(node.value)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        """记录非调用位置的名称引用候选。
+
+        Args:
+            node: 当前名称 AST 节点。
+
+        Returns:
+            None.
+        """
+        if isinstance(node.ctx, ast.Load):
+            kind = (
+                self.reference_context[-1]
+                if self.reference_context
+                else UsageKind.CALLABLE_REFERENCE
+            )
+            self.references.append((self.caller, node, kind))
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        """继续遍历属性基表达式而不建立宽泛引用边。
+        """记录属性引用与 ``self/cls`` 状态访问候选。
 
         Args:
             node: 当前属性访问 AST 节点。
@@ -349,6 +660,28 @@ class _Collector(ast.NodeVisitor):
         Returns:
             None.
         """
+        if isinstance(node.ctx, ast.Load):
+            kind = (
+                self.reference_context[-1]
+                if self.reference_context
+                else UsageKind.CALLABLE_REFERENCE
+            )
+            self.references.append((self.caller, node, kind))
+        dotted = _dotted(node)
+        parts = dotted.split(".") if dotted else []
+        if (
+            len(parts) == 2
+            and parts[0] in {"self", "cls"}
+            and self.class_stack
+            and self.function_stack
+        ):
+            class_qualname = ".".join(self.class_stack)
+            class_id = (
+                f"{self.module}.{class_qualname}"
+                if self.module and class_qualname
+                else class_qualname
+            )
+            self.field_accesses.append((self.caller, class_id, parts[1], node.lineno))
         self.visit(node.value)
 
 
@@ -378,6 +711,13 @@ class RepositoryRelationGraph:
         self._imports: dict[str, dict[str, str]] = {}
         self._class_bases: dict[str, tuple[str, ...]] = {}
         self._pending_calls: list[tuple[str, str, ast.expr]] = []
+        self._pending_references: list[tuple[str, str, ast.expr, UsageKind]] = []
+        self._pending_field_accesses: list[tuple[str, str, str, int]] = []
+        self._pending_closure_captures: list[tuple[str, str, str, int]] = []
+        self._explicit_exports: dict[str, set[str]] = {}
+        self._resolved_references: list[_ResolvedReference] = []
+        self._resolved_field_accesses: list[_ResolvedFieldAccess] = []
+        self._external_bases: list[_ExternalBase] = []
         self._simple_names: dict[str, set[str]] = defaultdict(set)
         self._module_nodes = {
             _module_name(path): f"module:{path}" for path in self.snapshot.paths
@@ -389,6 +729,17 @@ class RepositoryRelationGraph:
         resolved_bases = self._link_inheritance()
         self._link_calls()
         self._link_overrides(resolved_bases)
+        self.topology_source = _TopologyProjectionSource(
+            module_nodes=tuple(sorted(self._module_nodes.items())),
+            explicit_exports=tuple(
+                (module, tuple(sorted(names)))
+                for module, names in sorted(self._explicit_exports.items())
+            ),
+            references=tuple(self._resolved_references),
+            field_accesses=tuple(self._resolved_field_accesses),
+            closure_captures=tuple(self._pending_closure_captures),
+            external_bases=tuple(self._external_bases),
+        )
 
     def _add_edge(self, source: str, target: str, kind: str) -> None:
         """加入一条两端均已解析的去重关系边。"""
@@ -410,12 +761,19 @@ class RepositoryRelationGraph:
             collector = _Collector(path, unit.source)
             collector.collect_module(unit.tree)
             self._imports[collector.module] = collector.imports
+            self._explicit_exports[collector.module] = collector.explicit_exports
             self._class_bases.update(collector.classes)
             for node in collector.nodes:
                 self.nodes[node.node_id] = node
             self._pending_calls.extend(
                 (collector.module, caller, expr) for caller, expr in collector.calls
             )
+            self._pending_references.extend(
+                (collector.module, caller, expr, kind)
+                for caller, expr, kind in collector.references
+            )
+            self._pending_field_accesses.extend(collector.field_accesses)
+            self._pending_closure_captures.extend(collector.closure_captures)
 
     def _index_definitions(self) -> None:
         """建立简单名称、测试节点以及 owner→definition 关系。"""
@@ -447,24 +805,33 @@ class RepositoryRelationGraph:
                     self._add_edge(source, self._module_nodes[target_module], "IMPORTS")
 
     def _link_inheritance(self) -> dict[str, tuple[str, ...]]:
-        """解析类继承声明并返回每个类的确定父类节点。"""
+        """解析内部继承，并记录无法解析到项目节点的外部父类名称。"""
         resolved_bases: dict[str, tuple[str, ...]] = {}
         for class_id, bases in self._class_bases.items():
             node = self.nodes[class_id]
-            targets = tuple(
-                target
-                for base in bases
-                if (target := self._resolve_name(node.module, class_id, base))
-                is not None
-                and self.nodes[target].kind == "class"
-            )
-            resolved_bases[class_id] = targets
+            targets: list[str] = []
+            for base in bases:
+                target = self._resolve_name(node.module, class_id, base)
+                if target is not None:
+                    if self.nodes[target].kind == "class":
+                        targets.append(target)
+                    continue
+                root, dot, suffix = base.partition(".")
+                imports = self._imports[node.module]
+                qualified = (
+                    imports[root] + (f".{suffix}" if dot else "")
+                    if root in imports
+                    else base
+                )
+                if qualified:
+                    self._external_bases.append(_ExternalBase(class_id, qualified))
+            resolved_bases[class_id] = tuple(targets)
             for target in targets:
                 self._add_edge(class_id, target, "INHERITS")
         return resolved_bases
 
     def _link_calls(self) -> None:
-        """把带 caller 上下文的调用表达式解析为静态 CALLS 边。"""
+        """解析普通调用，并同时归并 callable-reference 与 field-access 补充事实。"""
         for module, caller, expr in self._pending_calls:
             target = self._resolve_expr(module, caller, expr)
             if target is None:
@@ -474,6 +841,23 @@ class RepositoryRelationGraph:
             if target_node.kind == "class" and constructor in self.nodes:
                 target = constructor
             self._add_edge(caller, target, "CALLS")
+
+        for module, caller, expr, kind in self._pending_references:
+            target = self._resolve_expr(module, caller, expr)
+            if target is None or target == caller:
+                continue
+            if self.nodes[target].kind not in {"class", "function", "method", "test"}:
+                continue
+            self._resolved_references.append(
+                _ResolvedReference(caller, target, expr.lineno, kind)
+            )
+
+        for caller, class_id, field_name, line in self._pending_field_accesses:
+            if self._resolve_class_method(class_id, field_name) is not None:
+                continue
+            self._resolved_field_accesses.append(
+                _ResolvedFieldAccess(caller, class_id, field_name, line)
+            )
 
     def _link_overrides(self, resolved_bases: dict[str, tuple[str, ...]]) -> None:
         """根据已解析继承关系建立方法 override 边。"""
@@ -731,6 +1115,322 @@ class RepositoryRelationGraph:
         return result
 
 
+def _normalized_visibility(name: str, private: bool) -> Visibility:
+    """Map Python naming/access evidence onto shared visibility facts."""
+    if name.startswith("__") and not name.endswith("__"):
+        return Visibility.PRIVATE
+    if private:
+        return Visibility.INTERNAL
+    return Visibility.PUBLIC
+
+
+def _project_authored_topology(
+    graph: RepositoryRelationGraph, source: _TopologyProjectionSource
+) -> tuple[dict[str, OwnerFact], dict[str, SymbolFact]]:
+    """Project authored module/class/function facts without supplemental relations."""
+    module_nodes = dict(source.module_nodes)
+    explicit_exports = dict(source.explicit_exports)
+    owner_map: dict[str, OwnerFact] = {}
+    symbol_map: dict[str, SymbolFact] = {}
+    for node_id, node in graph.nodes.items():
+        if node.kind == "module":
+            owner_map[node_id] = OwnerFact(
+                owner_id=node_id,
+                language="python",
+                kind=OwnerKind.MODULE,
+                path=Path(node.path),
+                line=1,
+            )
+            continue
+
+        module_owner = module_nodes[node.module]
+        lexical_owner = (
+            f"{node.module}.{node.owner}" if node.module and node.owner else node.owner
+        )
+        if lexical_owner in graph.nodes and graph.nodes[lexical_owner].kind == "class":
+            owner_id = lexical_owner
+            owner_kind = OwnerKind.CLASS
+        elif node.nested and lexical_owner:
+            owner_id = lexical_owner
+            owner_kind = OwnerKind.UNKNOWN
+        else:
+            owner_id = module_owner
+            owner_kind = OwnerKind.MODULE
+
+        normalized_kind = (
+            "function" if node.nested and node.kind == "method" else node.kind
+        )
+        symbol_map[node_id] = SymbolFact(
+            symbol_id=node_id,
+            language="python",
+            kind=normalized_kind,
+            owner_id=owner_id,
+            owner_kind=owner_kind,
+            visibility=_normalized_visibility(node.name, node.private),
+            path=Path(node.path),
+            line=node.line,
+            end_line=node.end_line,
+            lines=node.lines,
+            parameter_count=node.parameter_count,
+            name=node.name,
+            module=node.module,
+            qualname=node.qualname,
+            decorators=node.decorators,
+            bases=node.bases,
+            exported=(not node.owner and node.name in explicit_exports[node.module]),
+            nested=node.nested,
+            test=node.test,
+            fingerprint=node.fingerprint,
+        )
+        if node.kind == "class":
+            owner_map[node_id] = OwnerFact(
+                owner_id=node_id,
+                language="python",
+                kind=OwnerKind.CLASS,
+                path=Path(node.path),
+                line=node.line,
+            )
+    return owner_map, symbol_map
+
+
+def _project_legacy_topology_edges(
+    graph: RepositoryRelationGraph,
+) -> set[UsageEdge]:
+    """Project established relation-graph edges into normalized usage kinds."""
+    legacy_kinds = {
+        "CALLS": UsageKind.DIRECT_CALL,
+        "IMPORTS": UsageKind.DEPENDENCY,
+        "INHERITS": UsageKind.INHERITANCE,
+        "OVERRIDES": UsageKind.OVERRIDE,
+    }
+    result: set[UsageEdge] = set()
+    for edge in graph.edges:
+        if edge.kind not in legacy_kinds:
+            continue
+        source = graph.nodes[edge.source]
+        result.add(
+            UsageEdge(
+                source_id=edge.source,
+                target_id=edge.target,
+                kind=legacy_kinds[edge.kind],
+                path=Path(source.path),
+                line=source.line,
+            )
+        )
+    return result
+
+
+def _populate_external_protocols(
+    graph: RepositoryRelationGraph,
+    source: _TopologyProjectionSource,
+    dependency_resolver: StaticPythonDependencyResolver,
+    owner_map: dict[str, OwnerFact],
+    symbol_map: dict[str, SymbolFact],
+    edges: set[UsageEdge],
+) -> None:
+    """Enrich topology with statically resolved external inheritance/protocol hooks."""
+    methods_by_owner: dict[str, list[_RelationNode]] = defaultdict(list)
+    for node in graph.nodes.values():
+        if node.kind == "method":
+            owner_id = f"{node.module}.{node.owner}" if node.module else node.owner
+            methods_by_owner[owner_id].append(node)
+
+    for external_base in source.external_bases:
+        external = dependency_resolver.resolve_class(external_base.qualified_name)
+        if external is None:
+            continue
+        class_node = graph.nodes[external_base.class_id]
+        external_class_id = f"external:{external.qualified_name}"
+        external_module = external.qualified_name.rpartition(".")[0]
+        external_owner_id = f"external-module:{external_module}"
+        owner_map[external_owner_id] = OwnerFact(
+            owner_id=external_owner_id,
+            language="python",
+            kind=OwnerKind.MODULE,
+            path=external.source,
+            line=1,
+        )
+        symbol_map[external_class_id] = SymbolFact(
+            symbol_id=external_class_id,
+            language="python",
+            kind="class",
+            owner_id=external_owner_id,
+            owner_kind=OwnerKind.MODULE,
+            visibility=Visibility.PUBLIC,
+            path=external.source,
+            line=external.line,
+            end_line=external.line,
+            lines=1,
+            name=external.qualified_name.rpartition(".")[2],
+            module=external_module,
+            qualname=external.qualified_name,
+            foreign=True,
+        )
+        edges.add(
+            UsageEdge(
+                source_id=external_base.class_id,
+                target_id=external_class_id,
+                kind=UsageKind.INHERITANCE,
+                path=Path(class_node.path),
+                line=class_node.line,
+                confidence=external.confidence,
+            )
+        )
+        external_methods = frozenset(external.methods)
+        for method in methods_by_owner[external_base.class_id]:
+            if method.name not in external_methods:
+                continue
+            external_method_id = f"external:{external.qualified_name}.{method.name}"
+            symbol_map[external_method_id] = SymbolFact(
+                symbol_id=external_method_id,
+                language="python",
+                kind="method",
+                owner_id=external_class_id,
+                owner_kind=OwnerKind.CLASS,
+                visibility=Visibility.PUBLIC,
+                path=external.source,
+                line=external.line,
+                end_line=external.line,
+                lines=1,
+                name=method.name,
+                module=external_module,
+                qualname=f"{external.qualified_name}.{method.name}",
+                foreign=True,
+            )
+            edges.add(
+                UsageEdge(
+                    source_id=method.node_id,
+                    target_id=external_method_id,
+                    kind=UsageKind.PROTOCOL_HOOK,
+                    path=Path(method.path),
+                    line=method.line,
+                    confidence=external.confidence,
+                )
+            )
+
+
+def _populate_local_reuse_facts(
+    graph: RepositoryRelationGraph,
+    source: _TopologyProjectionSource,
+    symbol_map: dict[str, SymbolFact],
+    edges: set[UsageEdge],
+) -> None:
+    """Project callable references, state access and lexical captures resolved by the graph."""
+    for reference in source.references:
+        caller = graph.nodes[reference.source]
+        edges.add(
+            UsageEdge(
+                source_id=reference.source,
+                target_id=reference.target,
+                kind=reference.kind,
+                path=Path(caller.path),
+                line=reference.line,
+            )
+        )
+
+    for access in source.field_accesses:
+        caller = graph.nodes[access.source]
+        owner = graph.nodes[access.class_id]
+        field_id = f"field:{access.class_id}.{access.field_name}"
+        symbol_map[field_id] = SymbolFact(
+            symbol_id=field_id,
+            language="python",
+            kind="field",
+            owner_id=access.class_id,
+            owner_kind=OwnerKind.CLASS,
+            visibility=_normalized_visibility(
+                access.field_name, access.field_name.startswith("_")
+            ),
+            path=Path(caller.path),
+            line=access.line,
+            end_line=access.line,
+            lines=1,
+            name=access.field_name,
+            module=owner.module,
+            qualname=f"{owner.qualname}.{access.field_name}",
+        )
+        edges.add(
+            UsageEdge(
+                source_id=access.source,
+                target_id=field_id,
+                kind=UsageKind.FIELD_ACCESS,
+                path=Path(caller.path),
+                line=access.line,
+            )
+        )
+
+    for source_id, outer_id, name, line in source.closure_captures:
+        nested = graph.nodes[source_id]
+        outer = graph.nodes[outer_id]
+        binding_id = f"binding:{outer_id}:{name}"
+        symbol_map[binding_id] = SymbolFact(
+            symbol_id=binding_id,
+            language="python",
+            kind="binding",
+            owner_id=outer_id,
+            owner_kind=OwnerKind.UNKNOWN,
+            visibility=Visibility.INTERNAL,
+            path=Path(outer.path),
+            line=outer.line,
+            end_line=outer.line,
+            lines=1,
+            name=name,
+            module=outer.module,
+            qualname=f"{outer.qualname}:{name}",
+        )
+        edges.add(
+            UsageEdge(
+                source_id=source_id,
+                target_id=binding_id,
+                kind=UsageKind.CLOSURE_CAPTURE,
+                path=Path(nested.path),
+                line=line,
+            )
+        )
+
+
+def normalized_topology(
+    graph: RepositoryRelationGraph,
+    dependency_resolver: StaticPythonDependencyResolver | None = None,
+) -> RepositoryTopology:
+    """Project authoritative Python relation facts into the language-neutral topology.
+
+    Supplemental facts exist only in normalized topology and are not inserted into the
+    legacy relation-edge set used by existing impact/reachability rules.
+
+    Args:
+        graph: Authoritative repository relation graph built from one analysis snapshot.
+        dependency_resolver: Optional static resolver for external protocol contracts.
+
+    Returns:
+        Normalized owners, symbols and typed usage edges for shared quality policy.
+    """
+    source = graph.topology_source
+    owner_map, symbol_map = _project_authored_topology(graph, source)
+    edges = _project_legacy_topology_edges(graph)
+    _populate_local_reuse_facts(graph, source, symbol_map, edges)
+    if dependency_resolver is not None:
+        _populate_external_protocols(
+            graph, source, dependency_resolver, owner_map, symbol_map, edges
+        )
+    return RepositoryTopology(
+        symbols=tuple(sorted(symbol_map.values(), key=lambda item: item.symbol_id)),
+        owners=tuple(sorted(owner_map.values(), key=lambda item: item.owner_id)),
+        edges=tuple(
+            sorted(
+                edges,
+                key=lambda item: (
+                    item.path.as_posix(),
+                    item.line,
+                    item.source_id,
+                    item.target_id,
+                    item.kind,
+                ),
+            )
+        ),
+    )
+
+
 def _changed_symbols(
     base: RepositoryRelationGraph,
     current: RepositoryRelationGraph,
@@ -828,6 +1528,8 @@ def build_relation_graph_summary(
     base_snapshot: RepositoryAnalysisSnapshot | None,
     current_snapshot: RepositoryAnalysisSnapshot,
     interface_diff: InterfaceDiffReport,
+    base_graph: RepositoryRelationGraph | None = None,
+    current_graph: RepositoryRelationGraph | None = None,
 ) -> tuple[
     RepositoryRelationGraph | None,
     RepositoryRelationGraph | None,
@@ -839,14 +1541,22 @@ def build_relation_graph_summary(
         base_snapshot: Git 基线快照；无可用 Git 基线时为 ``None``。
         current_snapshot: 当前比较目标的统一仓库快照。
         interface_diff: 已由现有接口审计生成的接口差分。
+        base_graph: 可选的已构建基线图；存在时直接复用。
+        current_graph: 可选的已构建目标图；存在时直接复用。
 
     Returns:
         BASE 图、TARGET 图与紧凑关系摘要；缺少 Git 基线时返回两个 ``None`` 和空摘要。
     """
     if base_snapshot is None:
         return None, None, {}
-    base = RepositoryRelationGraph(base_snapshot)
-    current = RepositoryRelationGraph(current_snapshot)
+    base = (
+        base_graph if base_graph is not None else RepositoryRelationGraph(base_snapshot)
+    )
+    current = (
+        current_graph
+        if current_graph is not None
+        else RepositoryRelationGraph(current_snapshot)
+    )
     added, removed, modified = _changed_symbols(base, current)
     changed_production = {
         node_id

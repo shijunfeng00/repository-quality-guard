@@ -54,6 +54,7 @@ class UsageKind(StrEnum):
     FIELD_ACCESS = "field_access"
     DEPENDENCY = "dependency"
     CLOSURE_CAPTURE = "closure_capture"
+    INHERITANCE = "inheritance"
 
 
 class ContractOwnership(StrEnum):
@@ -86,6 +87,15 @@ class SymbolFact:
     end_line: int
     lines: int
     parameter_count: int = 0
+    name: str = ""
+    module: str = ""
+    qualname: str = ""
+    decorators: tuple[str, ...] = ()
+    bases: tuple[str, ...] = ()
+    exported: bool = False
+    nested: bool = False
+    test: bool = False
+    fingerprint: str = ""
     generated: bool = False
     foreign: bool = False
 
@@ -164,6 +174,54 @@ class RepositoryTopology:
             for edge in self.edges
             if edge.target_id == target_id and (not accepted or edge.kind in accepted)
         )
+
+    def state_components(self, owner_id: str) -> tuple[tuple[str, ...], ...]:
+        """Return field-connected state components for one authored owner.
+
+        Methods/functions and fields participate only when a FIELD_ACCESS edge links
+        them. Isolated callables without state access are omitted rather than treated
+        as artificial singleton owner clusters.
+
+        Args:
+            owner_id: Normalized class/module owner identifier.
+
+        Returns:
+            Stable connected components containing at least one field and callable.
+        """
+        owned = {
+            symbol.symbol_id: symbol
+            for symbol in self.symbols
+            if symbol.owner_id == owner_id
+        }
+        adjacency: dict[str, set[str]] = {}
+        for edge in self.edges:
+            if edge.kind is not UsageKind.FIELD_ACCESS:
+                continue
+            if edge.source_id not in owned or edge.target_id not in owned:
+                continue
+            adjacency.setdefault(edge.source_id, set()).add(edge.target_id)
+            adjacency.setdefault(edge.target_id, set()).add(edge.source_id)
+
+        components: list[tuple[str, ...]] = []
+        pending = set(adjacency)
+        while pending:
+            start = min(pending)
+            stack = [start]
+            visited: set[str] = set()
+            while stack:
+                current = stack.pop()
+                if current in visited:
+                    continue
+                visited.add(current)
+                stack.extend(sorted(adjacency[current] - visited, reverse=True))
+            pending.difference_update(visited)
+            has_field = any(owned[item].kind == "field" for item in visited)
+            has_callable = any(
+                owned[item].kind in {"function", "method"} for item in visited
+            )
+            if has_field and has_callable:
+                components.append(tuple(sorted(visited)))
+        return tuple(sorted(components))
 
     def outgoing(
         self, source_id: str, kinds: tuple[UsageKind, ...] = ()

@@ -61,7 +61,13 @@ from .reporting import (
     merge_findings,
     render_audit_markdown,
 )
-from .relation_graph import apply_relation_finding_context, build_relation_graph_summary
+from .relation_graph import (
+    RepositoryRelationGraph,
+    apply_relation_finding_context,
+    build_relation_graph_summary,
+    normalized_topology,
+)
+from .python_dependency_facts import StaticPythonDependencyResolver
 from .ruff_runner import RuffRunner
 from .scanner import RepositoryScanner
 from .semantic_diff import semantic_repair_findings
@@ -1940,10 +1946,15 @@ def scan_target(
         profile=profile,
     )
 
+    current_relation_graph = RepositoryRelationGraph(current_analysis)
+    production_topology = normalized_topology(
+        current_relation_graph, StaticPythonDependencyResolver.from_environment()
+    )
     production_scanner = RepositoryScanner(
         target.root,
         production_config,
         current_analysis,
+        production_topology,
     )
     selected_files = (
         set(target.focus_files)
@@ -1955,11 +1966,21 @@ def scan_target(
     report.comparison_mode = comparison.mode
     report.comparison_target = comparison.target_label
 
+    base_relation_graph = (
+        RepositoryRelationGraph(base_analysis) if base_analysis is not None else None
+    )
+    comparison_relation_graph = (
+        current_relation_graph
+        if comparison_analysis is current_analysis
+        else RepositoryRelationGraph(comparison_analysis)
+    )
     base_relation_graph, relation_graph, relation_summary = (
         build_relation_graph_summary(
             base_analysis if target.git_enabled else None,
             comparison_analysis,
             interface_diff,
+            base_graph=base_relation_graph,
+            current_graph=comparison_relation_graph,
         )
     )
     report.relation_graph = relation_summary
@@ -1973,7 +1994,9 @@ def scan_target(
         ),
     )
 
-    test_scanner = RepositoryScanner(target.root, test_config, current_analysis)
+    test_scanner = RepositoryScanner(
+        target.root, test_config, current_analysis, production_topology
+    )
     test_files = {
         path
         for path in test_scanner.discover_python_files()

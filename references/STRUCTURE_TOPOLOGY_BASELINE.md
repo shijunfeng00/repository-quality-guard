@@ -77,3 +77,21 @@ The frozen `v2.8-rc2` and `v2.8-rc3` snapshots were scanned with the same `counc
 - Final v0.21.3 payload SHA256: rc2 `358b84ae3c9fc47daa6b14955e57a154446dece9afb0c086b40a9d7b78e30ce6`; rc3 `7a5fbf9f0d24b8ec11abf114a337065c857ef99ebd4ee5ba9f3bd36d0af47436`.
 
 Conclusion: the CoH regression is reviewed. The finding changes are explained by the authorized helper/contract/owner-size policy changes, and the only scanner crash discovered by the corpus is now covered by an automated regression test.
+
+## Phase 7 real regression — geek-ai-rag
+
+The frozen MMR and 0025 snapshots were replayed from the recorded baseline and scanned with the same compatibility-equivalent `geek-ai-rag` Profile under v0.21.2 and current v0.21.3. The project source was not modified.
+
+- MMR snapshot total findings: `1966 -> 1918` (`-48`).
+- 0025 final snapshot total findings: `2023 -> 1971` (`-52`).
+- QG001 topology-aware helper findings: MMR `154 -> 98` (`-56`); 0025 `157 -> 95` (`-62`).
+- Contract ownership is a count-preserving reclassification for the affected families: MMR QG003 `409 -> 258` (`-151`) plus QG004 `83 -> 66` (`-17`) exactly equals QG026 `0 -> 168`; 0025 QG003 `386 -> 242` (`-144`) plus QG004 `83 -> 66` (`-17`) exactly equals QG026 `0 -> 161`. No contract candidate disappears silently.
+- QG019 adds only the expected 1001–2000-line semantic-review band: MMR `3 -> 9`; 0025 `2 -> 10`. QG013 changes from one legacy critical density finding to two informational owner-review findings under the authorized topology semantics.
+- QG002 initially showed an unauthorized `+5/+6` drift. The cause was an off-by-one introduced during refactor (`<= short_max_lines` instead of the established strict `<`) plus one legitimate package re-export that the stricter resolver could not follow. The implementation restores the strict boundary and adds deterministic repository-local explicit re-export canonicalization shared by Scanner and RelationGraph. Final QG002 counts exactly match v0.21.2: MMR `78 -> 78`, 0025 `84 -> 84`.
+- The re-export fix does not restore the removed global unique-simple-name guess. It follows only authored import bindings, terminates cycles as unknown, performs no runtime imports, and leaves unsupported dynamic export behavior unresolved.
+- QG156 gains one finding on both snapshots (`15 -> 16`): `OpenAITransport._arguments_json_complete` has no real usage. The old simple-name resolver had incorrectly credited it with calls to a same-named module function; the stricter resolver correctly exposes the unused wrapper.
+- RQG self-audit during this regression also found that `annotation_names()` ignored the `None` constant inside PEP 604 annotations such as `str | None`, causing a false QG046 return-contract finding. The annotation fact now records `None`, while a non-nullable `str` contract still reports an implicit-None path.
+- Regression-derived implementation commit: `eac0361` (`fix(topology): 修正 Python 静态符号解析边界`). Its full development suite is `143/143 PASS`; Ruff, format, compileall and diff-check pass; fresh current-diff audit has zero ordinary C/E/W delta and zero absolute blockers; read-only verify returns `REVIEW_REQUIRED (rc=5)` only for the reviewed internal interface ledger, with no BLOCKING item.
+- Two early current-version runs exceeded the outer harness timeout, but controlled repeats completed naturally in approximately 20–23 seconds and left zero residual worker processes. This was not reproducible as a stable performance/lifecycle regression, so no performance code was changed on that evidence. The exact lifecycle acceptance remains assigned to the frozen geek-ai-agent timeout reproducer.
+
+Conclusion: the geek-ai-rag real regression is reviewed. All persistent rule-count changes are explained by the frozen v0.21.3 policy or by concrete resolver precision fixes; no unexplained QG002 drift remains.

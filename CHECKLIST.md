@@ -44,7 +44,7 @@
 
 - [x] v0.21.2 baseline behavior captured.
 - [x] CoH real history/mbox regression reviewed.
-- [ ] geek-ai-rag real history/mbox regression reviewed.
+- [x] geek-ai-rag real history/mbox regression reviewed.
 - [ ] geek-ai-agent real history/mbox regression reviewed.
 - [ ] Intentional finding changes are documented by rule/reason.
 - [ ] No unexplained finding disappearance/addition.

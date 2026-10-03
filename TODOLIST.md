@@ -9,16 +9,18 @@ Baseline: `v0.21.3` / `9b546b8530ce4e703e1d4498afd710cd6f1ba838`.
 
 ## Phase A — modification-report debt accountability
 
-- [ ] Add explicit `progressive` (default) / `cleanup` debt policy to CLI/report facts.
-- [ ] Classify current ordinary C/E/W into new/worsened, touched historical, untouched historical, reduced historical.
-- [ ] Replace touched-historical sampling with full touched historical `DEBT-*` inventory.
-- [ ] Require concrete DEFERRED justification only for still-present touched historical debt.
-- [ ] Keep untouched historical debt machine-visible without model-authored explanation requirements.
-- [ ] Make cleanup mode require selected-scope historical debt to reach zero.
-- [ ] Treat non-Git/no-baseline selected scope as fully debt-responsible.
-- [ ] Add regression tests for scope, deferral validation, cleanup mode, no-baseline behavior and report regeneration.
-- [ ] Run full gates and self-audit.
-- [ ] Commit Phase A and persist cumulative v0.21.4 checkpoint before Phase B.
+- [x] Add explicit `progressive` (default) / `cleanup` debt policy to CLI/report facts.
+- [x] Classify current ordinary C/E/W into new/worsened, touched historical, untouched historical, reduced historical.
+- [x] Replace touched-historical sampling with full touched historical `DEBT-*` inventory.
+- [x] Require concrete DEFERRED justification only for still-present touched historical debt.
+- [x] Keep untouched historical debt machine-visible without model-authored explanation requirements.
+- [x] Make cleanup mode require selected-scope historical debt to reach zero.
+- [x] Treat non-Git/no-baseline selected scope as fully debt-responsible.
+- [x] Add regression tests for scope, deferral validation, cleanup mode, no-baseline behavior and report regeneration.
+- [x] Run full gates and self-audit.
+- [x] Commit Phase A and persist cumulative v0.21.4 checkpoint before Phase B.
+
+Evidence: implementation `f3269ee`; 153/153 tests PASS; Ruff/format/compileall/diff-check PASS; self-audit ordinary C/E/W delta=0; touched historical debt reduced 15→7 before explicit DEFER ledger; verify REVIEW_REQUIRED rc=5 with no BLOCKING item.
 
 ## Phase B — C++ build truth / semantic provider
 

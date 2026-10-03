@@ -44,7 +44,7 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 - [x] QG013 uses ephemeral-helper density rather than all tiny methods.
 - [x] QG168 only follows eligible ordinary one-shot helper edges.
 - [x] Ensure QG008/QG019 fixes cannot be satisfied by helper/class fragmentation laundering.
-- [ ] Run historical calibration corpus and inspect deltas manually.
+- [x] Run historical calibration corpus and inspect deltas manually.
 - [x] Commit and self-audit current diff.
 
 ## Phase 5 — Contract ownership
@@ -65,12 +65,12 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 ## Phase 7 — Calibration and real regression
 
-- [ ] HY_Algorithm read-only analysis.
-- [ ] SlowJSON read-only analysis.
-- [ ] CrossCameraTracking read-only analysis.
-- [ ] 端到端车牌识别模型 read-only analysis + RQG run.
-- [ ] SI-FCN read-only analysis + RQG run.
-- [ ] Compare false positives/intentional findings; do not force zero.
+- [x] HY_Algorithm read-only analysis.
+- [x] SlowJSON read-only analysis.
+- [x] CrossCameraTracking read-only analysis.
+- [x] 端到端车牌识别模型 read-only analysis + RQG run.
+- [x] SI-FCN read-only analysis + RQG run.
+- [x] Compare false positives/intentional findings; do not force zero.
 - [ ] CoH selected mbox/replay regression.
 - [ ] geek-ai-rag selected mbox/replay regression.
 - [ ] geek-ai-agent selected mbox/replay regression, including timeout fixture.

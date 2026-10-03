@@ -35,14 +35,14 @@
 
 ## E. Historical calibration
 
-- [ ] HY, SlowJSON and CrossCameraTracking are scanned/read-only and reviewed for precision.
-- [ ] 端到端车牌识别模型 and SI-FCN are scanned/read-only and reviewed for Python-specific precision.
-- [ ] Findings in historical projects are not automatically waived.
-- [ ] Historical projects are not required to reach zero findings.
+- [x] HY, SlowJSON and CrossCameraTracking are scanned/read-only and reviewed for precision.
+- [x] 端到端车牌识别模型 and SI-FCN are scanned/read-only and reviewed for Python-specific precision.
+- [x] Findings in historical projects are not automatically waived.
+- [x] Historical projects are not required to reach zero findings.
 
 ## F. Regression
 
-- [ ] v0.21.2 baseline behavior captured.
+- [x] v0.21.2 baseline behavior captured.
 - [ ] CoH real history/mbox regression reviewed.
 - [ ] geek-ai-rag real history/mbox regression reviewed.
 - [ ] geek-ai-agent real history/mbox regression reviewed.

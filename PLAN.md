@@ -1,195 +1,126 @@
-# Repository Quality Guard v0.21.3 PLAN
+# Repository Quality Guard v0.21.4 PLAN
 
-## 1. Planning Authority
+## 0. Authority and baseline
 
-This document is the authoritative plan for the v0.21.3 structure-quality refactor. `TODOLIST.md` tracks execution, `CHECKLIST.md` defines acceptance gates, and `ARCH.md` defines the target architecture. Existing tests and current implementation are evidence; they do not override this plan when they encode superseded behavior.
+This document is the planning authority for v0.21.4. `TODOLIST.md` tracks execution, `CHECKLIST.md` defines acceptance gates, and `ARCH.md` defines target ownership. Tests and historical behavior are evidence, not planning authority when they conflict with this plan.
 
-When two quality rules push the implementation in incompatible directions and the conflict cannot be resolved by ownership/reuse evidence, stop the conflicting refactor and request an explicit user decision. Do not weaken one rule merely to satisfy another.
+Stable baseline: tag `v0.21.3`, commit `9b546b8530ce4e703e1d4498afd710cd6f1ba838`.
 
-## 2. Release objective
+v0.21.4 has exactly two product problems and they are implemented sequentially. **Phase A must be committed, fully verified, and checkpointed before Phase B changes production code.**
 
-v0.21.3 upgrades RQG from predominantly size/count heuristics to **ownership and reuse topology**, while preserving the v0.21.2 runtime-reliability work: automatic Agent-first dependency bootstrap, bounded network/process timeouts, worker heartbeat/kill-tree cleanup, single-flight snapshot reuse, parent-death protection, slim `.agents` deployment and deterministic full skill packaging.
+## 1. Phase A — progressive debt accountability and compact modification reports
 
-The release may contain multiple implementation commits. Intermediate checkpoints are recoverability commits, not release identities. Before the final v0.21.3 release, history may be cleaned/squashed so the deliverable is understandable and reproducible.
+### 1.1 Product intent
 
-## 3. Empirical calibration corpus
+The long-term policy is **zero new debt + progressive repayment of touched historical debt**, not mandatory whole-repository cleanup on every patch.
 
-The following historical code is **read-only calibration evidence, not authority and not a zero-finding target**. Old/manual code may contain genuine debt, local compromises, later AI-assisted fragments, or decisions no longer desirable.
+Repository-wide analysis may still be needed to build call/ownership topology. Analysis scope and responsibility scope are different concepts.
 
-- `HY_Algorithm.git.zip` — SHA256 `3b95f7b36bd3d75a69463ae534d18db56fe0a52e1d28d1aa6a09cfc59f68a62c`
-- `SlowJSON.git.zip` — SHA256 `60e9f7319a8ae3b7d0e6d4ac5cb3c26fd70557e36aca0f9727e3a18dfbcd36fb`
-- `CrossCameraTracking.7z` — SHA256 `f0a13aa3b52ee71fbab542c7ff3de3aa92fff9a336c29217424a6431459d84c8`
-- `端到端车牌识别模型.zip` — SHA256 `8389b2e0782fea70d7fa7d8e4d51b4553dbf20314aaa1eaac0efd555ce02a33c`
-- `SI-FCN-Soft-Thresholding-Inception-Network-for-Human-Activity-Recognition-main.zip` — SHA256 `8297729ccd48714bac3a8e29252d8987854a27fdb4caba167c087291151e6529`
+Default mode is `progressive`:
 
-The v0.21.2 release baseline is `repository-quality-guard-v0.21.2.skill.zip`, SHA256 `258f1247ad21dc4845c240bc66a29d6a69dfeed0a9ef3bf40fe826a2efabe5d3`.
+1. **New or worsened ordinary Critical/Error/Warning debt** relative to the Git baseline remains zero-tolerance. It must be fixed/reverted; prose cannot waive it.
+2. **Historical ordinary Critical/Error/Warning debt in production files touched by the current diff** is fully in-scope. It must not be sampled. Every still-present item must either:
+   - be fixed so it disappears from the current scan; or
+   - remain with an explicit `DEFERRED` explanation containing a concrete reason, scope impact and closure condition. “Historical debt”, “out of scope”, or equivalent generic wording is insufficient by itself.
+3. **Historical debt outside changed production files** remains visible as machine-generated inventory/statistics but creates no model-authored explanation burden and no default rejection requirement.
+4. **Historical debt actually removed or downgraded** is reported as debt paydown.
+5. A separate explicit cleanup mode promotes historical debt in the selected repository/path/file scope to mandatory cleanup. This mode is a responsibility policy, not a switch for whether the repository is scanned.
+6. If no usable Git/diff baseline exists, the explicitly selected audit scope is treated as fully responsible historical-debt scope; existing ordinary debt there must be cleared rather than silently treated as unrelated history.
 
-Calibration corpus findings must be reviewed as evidence. A rule is not changed merely because old code triggers it, and old code is never modified as part of this work.
+### 1.2 CLI contract
 
-## 4. Core design principles
+Use an explicit policy argument rather than ambiguous `--all` wording:
 
-1. **One semantic rule set, language-specific fact providers.** Python/C++/JS/TS/other languages must not fork into separately numbered quality policies. Language adapters translate syntax/type-system details into normalized facts. Unsupported facts become unknown/N/A, never guessed.
-2. **Explicit polymorphism is encouraged; runtime shape guessing of formal internal objects is not.** Python `Protocol`/ABC/typed unions/decorators/registries and C++ virtual interfaces/concepts/requires/CRTP/variants are legitimate explicit contracts. `hasattr/getattr/default` probing of internal formal objects remains suspicious.
-3. **Owner, not raw size, is the architectural unit.** A class, module, namespace, or explicit subsystem may be large if it remains one cohesive owner. Large size triggers evidence/review before hard rejection.
-4. **Short is not bad; ephemeral decomposition is.** A short helper reused by several operations, consumed as a callback/protocol hook, or owning a transaction/resource/lifecycle boundary is legitimate. One-shot forwarding/helper chains are the target.
-5. **Do not repair a size rule by creating fragmentation.** QG008/QG019 fixes must not create QG001/QG013/QG168/QG185 laundering. Reduction is accepted only when an independent owner/boundary exists.
-6. **Static analysis before semantic review.** The scanner should compute caller/reference/callback/protocol/field/owner evidence first. Semantic review receives these facts; it should not rediscover them from prose.
-7. **No runtime import for dependency analysis.** Dependency-aware Python resolution uses source/stubs/package metadata when available. Third-party packages are not recursively audited and are never imported merely for introspection.
-8. **Unknown is not evidence of guilt.** Missing compiler/stub/dependency information lowers confidence or makes a fact N/A. It must not be replaced with heuristic guessing that pretends certainty.
+- `--debt-mode progressive` — default.
+- `--debt-mode cleanup` — selected scope historical ordinary C/E/W must be zero before acceptance.
 
-## 5. Threshold decisions
+Do not add a second “scan everything” flag. Existing path / `--project` / `--files` selection continues to define user scope; whole-repository facts may still be collected internally for topology.
 
-### QG008 — class method count
+### 1.3 Report contract
 
-- direct authored methods `<= 20`: no method-count finding.
-- `21..50`: `SEMANTIC` review, with owner-cohesion/reuse evidence.
-- `> 50`: `CRITICAL` by default. Generated/framework-declared code may be excluded only through existing explicit mechanisms.
+`修改说明.md` must always contain machine-generated debt facts:
 
-The 21–50 review must ask whether the methods remain around one state/lifecycle/domain owner and must explicitly forbid splitting merely to reduce the count.
+- baseline ordinary debt total;
+- current ordinary debt total;
+- introduced/worsened debt count;
+- historical debt reduced count;
+- touched historical debt count;
+- untouched historical debt count;
+- cleanup-required remaining debt count when cleanup mode is active.
 
-### QG019 — module/file size
+Detailed sections:
 
-- `<= 1000` physical lines: no size finding.
-- `1001..2000`: `SEMANTIC` review: verify the file is still one owner and that splitting would create a real independent boundary.
-- `> 2000`: `CRITICAL`.
+- `DELTA-*`: new/worsened debt — existing zero-regression semantics remain.
+- `DEBT-*`: **all** still-present touched historical ordinary C/E/W in progressive mode; each requires a unique deferral row if not fixed.
+- untouched historical debt: machine-generated compact inventory only (`QG`, severity, path:line, message); no manual row.
+- cleanup mode: all still-present historical ordinary C/E/W in selected scope become blocking facts; explanations cannot waive them.
 
-### Unchanged hard/diagnostic thresholds for v0.21.3
+Remove the old “touched historical finite sample” and the repository-wide “if zero debt was reduced, explain the whole scope” obligation. Those mechanisms do not match this plan.
 
-- QG014 function length: `> 500` remains Critical.
-- QG015 parameter count: `> 8` remains Warning.
-- QG016 nesting: existing threshold remains.
-- QG017 branch count: existing threshold remains.
-- QG168 minimum helper-chain length remains 3, but eligible edges become topology-aware.
+### 1.4 Report-size constraint
 
-Do not add an arbitrary numeric cohesion score threshold in v0.21.3.
+Do not reduce evidence quality by hiding debt. Reduce **model-authored prose**, not machine facts.
 
-## 6. Algorithm changes
+A large repository may legitimately produce a large automatic inventory table, but the Agent must not write hundreds of repetitive paragraphs for untouched debt. Manual rows exist only for:
 
-### 6.1 Normalized topology facts
+- new/changed interface and semantic-review decisions already required by their own contracts;
+- touched historical debt that remains after the patch.
 
-Introduce shared facts sufficient for current and future languages:
+### 1.5 Phase A acceptance
 
-- Definition/Symbol: language, kind, owner, visibility, source location, generated/foreign flags.
-- Owner: class/module/namespace/subsystem identity.
-- DirectCallEdge.
-- CallableReferenceEdge / callback consumption.
-- ProtocolHook / Override.
-- FieldAccessEdge / owner-state access.
-- DependencyEdge / import/include relationship.
-- ClosureCapture / nested callable escape.
-- ContractOwnership: `internal_formal`, `external_optional`, `dynamic_boundary`, `unknown`.
+- Boundary tests prove 3 changed files expose all historical debt in those 3 files and do not demand explanations for identical debt in untouched files.
+- A touched historical item cannot pass with generic “historical/out of scope” prose.
+- Fixing a touched item removes its manual obligation and increases debt-reduced statistics.
+- Cleanup mode rejects any selected-scope remaining historical C/E/W.
+- Default progressive mode does not reject solely because untouched historical debt exists.
+- Non-Git/no-baseline selected scope is treated as cleanup-responsible.
+- Existing new-debt zero-regression behavior remains unchanged.
+- Report regeneration preserves completed DEBT decisions by stable ID when the finding identity is unchanged.
+- Full suite, self-audit, deterministic replay and checkpoint pass before Phase B begins.
 
-Facts providers may enrich these using language-specific parsers, but QG policy consumes the normalized model.
+## 2. Phase B — C++ build truth and compiler-neutral semantic facts
 
-### 6.2 QG001 — ephemeral helper candidate
+### 2.1 Problem statement
 
-A short definition is a helper candidate only when static evidence supports all relevant conditions:
+v0.21.3 normalized C++ topology around a Clang AST provider, but it can invoke a fixed `clang++ -std=c++20 ...` command and reconstruct include roots instead of consuming the project’s real build command. That is insufficient for GCC/G++, Clang and MSVC projects with compiler-specific flags, macros, system headers, generated headers or target configuration.
 
-- internal/private implementation detail;
-- under the configured short-function threshold;
-- ordinary direct callers <= configured low-use threshold;
-- no material callable/reference consumers;
-- not a framework/protocol/override hook;
-- not exported public API;
-- not an independently justified transaction/resource/lifecycle boundary.
+A semantic frontend must never override native build truth. A valid target proven by its project compiler must not become an audit failure merely because an auxiliary frontend cannot parse it.
 
-Public/protocol/callback functions may still receive low-confidence informational evidence where useful, but must not be described as one-shot helpers merely because direct call count is zero.
+### 2.2 Architecture principles
 
-### 6.3 QG013 — fragmented owner / helper swarm
+1. **Build contract first.** Prefer an existing `compile_commands.json` or a build-system-produced/captured compilation database. Do not guess flags when authoritative commands exist.
+2. **Reuse existing ecosystem tooling.** Before writing compiler-specific AST adapters, evaluate mature compilation-database/indexing protocols and tools. Do not turn RQG into a home-grown universal C++ AST project.
+3. **Native compiler truth is authoritative for build validity.** GCC project validity comes from its GCC command, Clang from Clang, MSVC from the real MSVC build contract where available.
+4. **Semantic provider is separable.** A provider may use Clang/clangd/SCIP or another mature indexer against normalized compile commands, but provider incompatibility yields `UNKNOWN/N/A`, not “source is invalid”.
+5. **Per-TU graceful degradation.** One unavailable translation unit or BASE snapshot must not abort unrelated rules or the TARGET audit.
+6. **Normalized topology remains the policy boundary.** QG rules consume language-neutral owner/call/reference/protocol/state facts and do not grow GCC/Clang/MSVC-specific rule families.
 
-Replace `tiny_method_count` ratio as the primary criterion. Count **ephemeral helper candidates** within the same owner. Initial candidate threshold:
+### 2.3 Required empirical fixtures
 
-- at least 5 ephemeral helpers; and
-- at least 40% of internal implementation functions/methods.
+- **SlowJSON**: GCC/G++ project with CMake and unit tests. The temporary GCC14 compatibility mbox is calibration/reference only, not the authoritative future SlowJSON design. Do not optimize SlowJSON itself as part of RQG work.
+- **geek-ai-agent sandbox C++**: determine its actual build compiler/toolchain and use it as a second compiler-family/build-system fixture if suitable.
+- Preserve public project behavior; RQG fixture preparation must not redefine project APIs or add runtime behavior merely to help the auditor.
 
-This produces `SEMANTIC`, not automatic Critical. Evidence includes caller counts, callable references, owner, and shared-consumer graph. This threshold is calibration data, not immutable doctrine; adjust only with benchmark evidence.
+### 2.4 Phase B investigation gate
 
-### 6.4 QG168 — single-use helper chain
+Before production implementation, compare available mature approaches against these requirements: compilation database fidelity, GCC/Clang/MSVC coverage, offline/package burden, structured symbol/call/type facts, licensing, deterministic installation and graceful degradation. Prefer composition over embedding a new universal AST system.
 
-Keep Critical for a >=3-layer chain only when every intermediate node is an eligible ephemeral helper and every edge is an ordinary direct-call decomposition edge. Exclude protocol/callback/override/closure-escape/lifecycle/transaction boundaries. Do not treat callback reference graphs as ordinary helper chains.
+The chosen design and rejected alternatives must be recorded before implementation.
 
-### 6.5 QG003–QG006 — contract ownership
+### 2.5 Phase B acceptance
 
-Preserve strict findings for runtime guessing of `internal_formal` contracts. For `external_optional` framework mappings/objects, use the declared external contract when resolvable; do not equate legitimate optional API access with hiding an internal schema failure. `unknown` becomes semantic/low-confidence evidence rather than a fabricated hard conclusion.
+- Real compile commands are consumed when available; tests prove compiler/flags/macros/includes/cwd are not replaced by fixed defaults.
+- SlowJSON GCC fixture: native build truth can be consumed without pretending fixed Clang parsing is authoritative.
+- Second C++ fixture exercises a different toolchain/compiler path where available.
+- BASE semantic-provider failure cannot abort the complete diff audit.
+- Missing/incompatible semantic facts remain explicit `UNKNOWN/N/A`.
+- Python/JS/TS behavior and v0.21.3 topology regressions remain unchanged.
+- Full real-project regressions, lifecycle gates, deterministic package and final v0.21.4 release pass.
 
-### 6.6 Owner cohesion evidence
+## 3. Non-goals
 
-Compute owner evidence without introducing a new hard QG number in v0.21.3:
-
-- method/function -> field/state edges;
-- public operation -> shared private primitive edges;
-- internal dependency clusters;
-- module/class owner membership.
-
-Use this evidence in QG008/QG019 semantic review. A large cohesive resource/container/domain owner may pass; multiple weakly connected owner clusters are evidence for a real split.
-
-## 7. Language strategy
-
-### Python first
-
-Python is the primary implementation target for v0.21.3 because current user projects are Python-heavy. Use stdlib `ast` plus static source/stub metadata. Implement module-owner and class-owner topology, callable references, nested closures, decorators, explicit protocols, inheritance and `self.field` access.
-
-Dependency-aware resolution may inspect installed/source `.py`/`.pyi` or package metadata **without importing the dependency**. Resolve only requested symbols/signatures/protocol relationships; do not recursively audit TensorFlow/Keras or other third-party packages.
-
-### C++
-
-Reuse the same normalized facts. Enrich through Clang AST when available: method/access specifier, calls, field/member access, virtual/override, lambda/function references, concept/requires/template protocol facts. Do not infer compiler-semantic facts from regex when Clang evidence is required.
-
-### JS/TS/Java/future languages
-
-Add providers, not new semantic QG families. Rules whose required facts are unavailable return N/A/unknown. CSS/HTML naturally do not participate in function/class topology rules.
-
-## 8. Validation strategy
-
-### Historical calibration
-
-Run the five read-only historical samples before/after. They are used to inspect precision/false positives, not as PASS targets and not as mandatory zero-finding corpora.
-
-### Paired synthetic fixtures
-
-At minimum:
-
-- 30-method cohesive resource -> QG008 Semantic, not Critical.
-- 30-method multi-owner god class -> QG008 Semantic with multi-cluster evidence.
-- 51-method class -> QG008 Critical.
-- 1500-line single-owner module -> QG019 Semantic.
-- 2001-line module -> QG019 Critical.
-- short shared helper with multiple callers -> no helper-laundering Warning.
-- one-shot short private helper -> QG001 candidate.
-- 3-layer one-shot helper chain -> QG168 Critical.
-- framework callback / Keras-style `build`/`call` -> no low-use helper misclassification when protocol evidence is available.
-- callable passed as metric/callback with direct calls=0 -> not low-use helper.
-- `hasattr` on internal formal object -> remains strict.
-- optional external framework mapping access -> not treated as internal schema laundering when contract ownership is resolved.
-
-### Real modern regression
-
-Select at least three real project histories/mbox/replay sets, including Council of Harnesses, geek-ai-rag and geek-ai-agent. Compare v0.21.2 vs v0.21.3 findings and manually review intentional deltas. The exact timeout reproducer remains part of lifecycle acceptance.
-
-### Self-audit
-
-Every behavior-changing commit must run focused tests and a current-diff self-audit. Major milestones run the full suite. Before release, RQG must audit its own v0.21.3 diff under the current policy. Historical pre-existing debt is recorded but is not a mandatory zero target unless explicitly re-authorized.
-
-## 9. Checkpoint policy
-
-All future persistent checkpoints across projects go under Library `/checkpoints/`.
-
-A checkpoint should be lightweight:
-
-- commit SHA / parent SHA;
-- optional small mbox when needed for reconstruction;
-- current PLAN/TODO/CHECKLIST status;
-- test/audit summary;
-- SHA256 and Library path references for already-persisted large inputs;
-- no duplicate copy of large repository ZIPs or benchmark archives already in Library.
-
-Prefer a recoverability commit plus manifest over repackaging the repository. Only produce a large full repository artifact for a release or when no reconstructable source exists. Intermediate checkpoint commits may be squashed/rewritten before v0.21.3 final release.
-
-## 10. Explicit non-goals
-
-- Do not make historical manual code an authority or force it to zero findings.
-- Do not weaken v0.21.2 lifecycle/bootstrap reliability.
-- Do not create per-language copies of the same semantic QG rule.
-- Do not introduce a magic cohesion score as a hard gate in this release.
-- Do not recursively scan/audit third-party dependency source as if it were project code.
-- Do not add compatibility paths merely to preserve superseded v0.21.2 implementation shapes.
+- Do not redesign SlowJSON in this release.
+- Do not implement one AST frontend per compiler unless the Phase B investigation proves there is no smaller mature composition.
+- Do not weaken new-debt zero-regression to reduce report noise.
+- Do not require explanations for unrelated untouched historical debt in progressive mode.
+- Do not let cleanup mode become the default.

@@ -1,72 +1,39 @@
-# v0.21.3 Acceptance Checklist
+# v0.21.4 Acceptance Checklist
 
-## A. Planning and authority
+## Phase A — progressive debt accountability
 
-- [x] Implementation matches `PLAN.md`; tests do not silently restore superseded v0.21.2 semantics.
-- [x] Any unresolved rule conflict is explicitly escalated instead of bypassed.
-- [x] Historical manual projects are evidence only and remain read-only.
+- [ ] Default debt mode is `progressive`.
+- [ ] New/worsened ordinary C/E/W remains zero-tolerance and cannot be waived by prose.
+- [ ] Every still-present historical ordinary C/E/W in changed production files is listed, not sampled.
+- [ ] Every such touched historical item is either gone or has a unique concrete DEFERRED decision.
+- [ ] Generic “historical/out of scope” text alone is rejected as insufficient deferral evidence.
+- [ ] Untouched historical ordinary debt is automatically inventoried but requires no manual explanation.
+- [ ] Aggregate report distinguishes baseline total, current total, new/worsened, reduced, touched remaining and untouched remaining.
+- [ ] Cleanup mode makes selected-scope remaining historical ordinary debt blocking.
+- [ ] Non-Git/no-baseline selected scope is fully debt-responsible.
+- [ ] Existing zero-new-debt gate behavior is unchanged.
+- [ ] Completed DEBT decisions survive report regeneration when stable finding identity is unchanged.
+- [ ] No repository-wide “zero debt reduction requires one generic explanation” gate remains.
+- [ ] Phase A full tests/static gates/self-audit pass.
+- [ ] Phase A commit + cumulative checkpoint are persisted before Phase B starts.
 
-## B. Rule semantics
+## Phase B — C++ build truth
 
-- [x] QG008: 20/50 two-level behavior is proven by fixtures.
-- [x] QG019: 1000/2000 two-level behavior is proven by fixtures.
-- [x] QG014=500, QG015=8, existing QG016/QG017 thresholds remain unchanged unless a later explicit decision says otherwise.
-- [x] QG001 does not call a callback/protocol/public API an ephemeral helper merely because direct-call count is zero.
-- [x] QG013 does not punish cohesive resource/container/value classes simply because many methods are tiny.
-- [x] QG168 still rejects >=3-layer one-shot helper chains and cannot be bypassed by renaming/wrapping.
-- [x] QG003–QG006 stay strict for internal formal contracts.
-- [x] External optional contracts do not become hard findings solely because `.get()` or equivalent optional access is used according to that contract.
+- [ ] Real build contract is preferred over guessed compiler flags.
+- [ ] Existing `compile_commands.json` can be consumed without rewriting compiler identity/semantic flags.
+- [ ] Mature tooling alternatives are evaluated before adding compiler-specific AST code.
+- [ ] Native compiler validity and semantic-provider availability are distinct facts.
+- [ ] Semantic-provider failure yields `UNKNOWN/N/A`, not an audit-wide source-invalid error.
+- [ ] BASE parse/provider failure cannot abort unrelated TARGET/rules.
+- [ ] SlowJSON GCC fixture validates the GCC/build-contract path.
+- [ ] A second C++ fixture validates a different toolchain path where available.
+- [ ] Normalized topology remains the only QG-facing C++ fact schema.
+- [ ] Existing Python/JS/TS and real-project regressions pass.
 
-## C. Architecture
+## Release
 
-- [x] Semantic QG rules consume normalized facts rather than language names/regex branches wherever feasible.
-- [x] Python facts cover module/class owners, call edges, callable references, closures, protocol hooks and field/state access.
-- [x] Dependency-aware Python analysis performs no runtime imports.
-- [x] C++ semantic facts use Clang when compiler-level evidence is required.
-- [x] Unknown/unavailable evidence remains unknown/N/A rather than guessed.
-- [x] New topology code has one authoritative owner; no duplicate graph implementations.
-
-## D. Anti-fragmentation and conflict checks
-
-- [x] A QG008/QG019 remediation fixture cannot pass merely by producing one-shot helpers/wrappers/classes.
-- [x] Shared private primitives with multiple consumers are not treated as helper laundering.
-- [x] Framework callbacks/overrides/protocol hooks are excluded from ordinary one-shot caller chains.
-- [x] If two rules still recommend contradictory edits, the conflict is surfaced for human adjudication.
-
-## E. Historical calibration
-
-- [x] HY, SlowJSON and CrossCameraTracking are scanned/read-only and reviewed for precision.
-- [x] 端到端车牌识别模型 and SI-FCN are scanned/read-only and reviewed for Python-specific precision.
-- [x] Findings in historical projects are not automatically waived.
-- [x] Historical projects are not required to reach zero findings.
-
-## F. Regression
-
-- [x] v0.21.2 baseline behavior captured.
-- [x] CoH real history/mbox regression reviewed.
-- [x] geek-ai-rag real history/mbox regression reviewed.
-- [x] geek-ai-agent real history/mbox regression reviewed.
-- [x] Intentional finding changes are documented by rule/reason.
-- [x] No unexplained finding disappearance/addition.
-
-## G. Runtime reliability (must not regress from v0.21.2)
-
-- [x] Fresh Agent-first CLI bootstrap remains automatic.
-- [x] No local media + no network fails fast with actionable natural-language feedback.
-- [x] Dependency subprocess timeout kills the process tree.
-- [x] Scan worker heartbeat timeout kills the worker tree.
-- [x] Parent-death guard works.
-- [x] Same-snapshot single-flight works.
-- [x] Exact historical timeout reproducer exits naturally with zero residual processes.
-- [x] Direct source and installed `.agents` modes both pass lifecycle acceptance.
-
-## H. Self-audit and release
-
-- [x] Every behavior-changing commit had focused tests and current-diff self-audit.
-- [x] Major milestones had full suite execution.
-- [x] Final v0.21.3 self-audit has no new ordinary C/E/W delta or absolute blocker.
-- [x] Historical self debt is reported but not used as a hidden release blocker.
-- [x] Final skill ZIP contains valid `.git`, profiles and offline payload and extracts to a valid clean release worktree.
-- [x] Installed `.agents` payload remains slim.
-- [x] Final mbox applies from v0.21.2 and reproduces the exact release tree.
-- [x] Deterministic release build is proven by repeated SHA256 match.
+- [ ] v0.21.4 full suite/static gates pass.
+- [ ] Whole-version ordinary C/E/W delta is zero and absolute blockers are zero.
+- [ ] Canonical ZIP is deterministic and integrity-clean.
+- [ ] Final cumulative mbox fresh replay matches exact release tree.
+- [ ] `v0.21.4` tag exists on the verified final commit.

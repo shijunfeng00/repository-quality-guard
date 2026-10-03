@@ -22,9 +22,9 @@
 - [ ] Semantic QG rules consume normalized facts rather than language names/regex branches wherever feasible.
 - [x] Python facts cover module/class owners, call edges, callable references, closures, protocol hooks and field/state access.
 - [x] Dependency-aware Python analysis performs no runtime imports.
-- [ ] C++ semantic facts use Clang when compiler-level evidence is required.
+- [x] C++ semantic facts use Clang when compiler-level evidence is required.
 - [x] Unknown/unavailable evidence remains unknown/N/A rather than guessed.
-- [ ] New topology code has one authoritative owner; no duplicate graph implementations.
+- [x] New topology code has one authoritative owner; no duplicate graph implementations.
 
 ## D. Anti-fragmentation and conflict checks
 

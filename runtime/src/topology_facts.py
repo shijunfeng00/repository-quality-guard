@@ -248,6 +248,69 @@ class RepositoryTopology:
         )
 
 
+def merge_topologies(topologies: tuple[RepositoryTopology, ...]) -> RepositoryTopology:
+    """Merge language-provider topology into one stable repository graph.
+
+    Providers own syntax extraction, while shared QG policy consumes one normalized
+    graph.  The merge therefore deduplicates identical immutable facts but rejects
+    conflicting symbol/owner identities instead of silently choosing one provider.
+
+    Args:
+        topologies: Provider graphs generated from the same repository snapshot.
+
+    Returns:
+        One deterministically ordered normalized repository topology.
+
+    Raises:
+        ValueError: Two providers emitted different facts for the same symbol/owner id.
+    """
+    symbols: dict[str, SymbolFact] = {}
+    owners: dict[str, OwnerFact] = {}
+    edges: set[UsageEdge] = set()
+    contracts: set[ContractFact] = set()
+
+    for topology in topologies:
+        for symbol in topology.symbols:
+            if symbol.symbol_id in symbols and symbols[symbol.symbol_id] != symbol:
+                raise ValueError(f"conflicting normalized symbol: {symbol.symbol_id}")
+            symbols[symbol.symbol_id] = symbol
+        for owner in topology.owners:
+            if owner.owner_id in owners and owners[owner.owner_id] != owner:
+                raise ValueError(f"conflicting normalized owner: {owner.owner_id}")
+            owners[owner.owner_id] = owner
+        edges.update(topology.edges)
+        contracts.update(topology.contracts)
+
+    return RepositoryTopology(
+        symbols=tuple(sorted(symbols.values(), key=lambda item: item.symbol_id)),
+        owners=tuple(sorted(owners.values(), key=lambda item: item.owner_id)),
+        edges=tuple(
+            sorted(
+                edges,
+                key=lambda item: (
+                    item.path.as_posix(),
+                    item.line,
+                    item.source_id,
+                    item.target_id,
+                    item.kind,
+                ),
+            )
+        ),
+        contracts=tuple(
+            sorted(
+                contracts,
+                key=lambda item: (
+                    item.path.as_posix(),
+                    item.line,
+                    item.receiver,
+                    item.operation,
+                    item.selector,
+                ),
+            )
+        ),
+    )
+
+
 def python_usage_edge(usage: Usage, target: Definition) -> UsageEdge:
     """Translate a resolved Python usage into a normalized typed edge.
 

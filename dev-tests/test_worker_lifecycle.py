@@ -169,7 +169,7 @@ class TestWorkerLifecycle(unittest.TestCase):
             ),
             self.assertRaisesRegex(RuntimeError, "超过 60 秒"),
         ):
-            multilang._node_facts(snapshot)
+            multilang.node_facts(snapshot)
 
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "Linux parent-death contract"

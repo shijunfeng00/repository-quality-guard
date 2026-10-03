@@ -9,7 +9,15 @@ from runtime.src.config import GuardConfig
 from runtime.src.python_dependency_facts import StaticPythonDependencyResolver
 from runtime.src.relation_graph import RepositoryRelationGraph, normalized_topology
 from runtime.src.scanner import RepositoryScanner
-from runtime.src.topology_facts import RepositoryTopology, UsageKind, Visibility
+from runtime.src.topology_facts import (
+    OwnerFact,
+    OwnerKind,
+    RepositoryTopology,
+    SymbolFact,
+    UsageKind,
+    Visibility,
+    merge_topologies,
+)
 
 
 _SAMPLE = """\
@@ -102,6 +110,43 @@ class TestNormalizedTopologyFacts(unittest.TestCase):
         self.assertEqual(len(direct), 2)
         self.assertEqual({edge.source_id for edge in direct}, {"sample.render"})
         self.assertEqual({edge.line for edge in direct}, {5, 6})
+
+    def test_merge_topologies_deduplicates_identical_provider_facts(self) -> None:
+        owner = OwnerFact(
+            "py:module:sample.py", "python", OwnerKind.MODULE, Path("sample.py"), 1
+        )
+        symbol = SymbolFact(
+            symbol_id="py:symbol:sample.py:run@1",
+            language="python",
+            kind="function",
+            owner_id=owner.owner_id,
+            owner_kind=OwnerKind.MODULE,
+            visibility=Visibility.INTERNAL,
+            path=Path("sample.py"),
+            line=1,
+            end_line=2,
+            lines=2,
+            name="run",
+            qualname="run",
+        )
+        provider = RepositoryTopology(symbols=(symbol,), owners=(owner,), edges=())
+
+        merged = merge_topologies((provider, provider))
+
+        self.assertEqual(merged.symbols, (symbol,))
+        self.assertEqual(merged.owners, (owner,))
+
+    def test_merge_topologies_rejects_conflicting_provider_identity(self) -> None:
+        owner = OwnerFact("shared", "python", OwnerKind.MODULE, Path("a.py"), 1)
+        conflicting = OwnerFact("shared", "cpp", OwnerKind.NAMESPACE, Path("a.cpp"), 1)
+
+        with self.assertRaisesRegex(ValueError, "conflicting normalized owner"):
+            merge_topologies(
+                (
+                    RepositoryTopology(symbols=(), owners=(owner,), edges=()),
+                    RepositoryTopology(symbols=(), owners=(conflicting,), edges=()),
+                )
+            )
 
     def test_topology_is_a_helper_policy_input_after_phase_four(self) -> None:
         temporary, root = self._repository()

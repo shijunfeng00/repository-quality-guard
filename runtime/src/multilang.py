@@ -19,8 +19,8 @@ from .graph_utils import strongly_connected_components
 from .model import Finding
 
 _SOURCE = "quality-guard-multilang"
-_SCRIPT_LANGUAGES = {"javascript", "typescript"}
-_NODE_LANGUAGES = _SCRIPT_LANGUAGES | {"css"}
+SCRIPT_LANGUAGES = {"javascript", "typescript"}
+_NODE_LANGUAGES = SCRIPT_LANGUAGES | {"css"}
 _CPP_DECL_KINDS = (
     "FunctionDecl",
     "CXXMethodDecl",
@@ -54,8 +54,18 @@ _NEST_NODES = {
 }
 
 
-def _node_facts(snapshot: RepositoryAnalysisSnapshot) -> list[dict[str, Any]]:
-    """使用随 Skill 发布的 parser 从统一快照提取 JS/TS/CSS 事实。"""
+def node_facts(snapshot: RepositoryAnalysisSnapshot) -> list[dict[str, Any]]:
+    """使用随 Skill 发布的 parser 从统一快照提取 JS/TS/CSS 事实。
+
+    Args:
+        snapshot: 已读取源文件的统一仓库快照。
+
+    Returns:
+        bundled Node parser 生成的 JS/TS/CSS 静态事实列表。
+
+    Raises:
+        RuntimeError: Node/parser 依赖缺失、超时或解析失败。
+    """
     items = [
         {
             "path": path,
@@ -635,7 +645,7 @@ def _flatten_script_definitions(
     """把具名 JS/TS definition 映射为稳定 path/qualname 键。"""
     result: dict[tuple[str, str], dict[str, Any]] = {}
     for file_fact in facts:
-        if file_fact["language"] not in _SCRIPT_LANGUAGES:
+        if file_fact["language"] not in SCRIPT_LANGUAGES:
             continue
         for definition in file_fact["definitions"]:
             if definition["name"].startswith("<anonymous@"):
@@ -835,11 +845,19 @@ def _clang_location(
     return Path(prefix).resolve(), int(match.group("line"))
 
 
-def _clang_line_range(
+def clang_line_range(
     range_text: str,
     current_file: Path | None,
 ) -> tuple[Path | None, int | None, int | None]:
-    """解析函数 AST range，单行 ``col`` 终点沿用起始行。"""
+    """解析 Clang AST source range，并保留当前文件上下文。
+
+    Args:
+        range_text: Clang 文本 AST ``<...>`` 内的 range 内容。
+        current_file: 上一条 location 已解析出的当前源文件。
+
+    Returns:
+        解析后的文件、起始行和结束行；单行 ``col`` 终点沿用起始行。
+    """
     parts = [part.strip() for part in range_text.split(",", 1)]
     file_path, start = _clang_location(parts[0], current_file)
     if len(parts) == 1:
@@ -918,7 +936,7 @@ def _cpp_metrics(
                         declaration = _FUNC_RE.search(text)
                         declaration_column = _ast_node_column(text, _CPP_DECL_KINDS)
                         if declaration and declaration_column >= 0:
-                            location_file, start, end = _clang_line_range(
+                            location_file, start, end = clang_line_range(
                                 declaration.group("range"), location_file
                             )
                             if (
@@ -1005,15 +1023,15 @@ def multilang_findings(
     Returns:
         多语言发现列表，以及稳定的文件计数与 parser 摘要。
     """
-    target_facts = _node_facts(target)
-    scripts = [item for item in target_facts if item["language"] in _SCRIPT_LANGUAGES]
+    target_facts = node_facts(target)
+    scripts = [item for item in target_facts if item["language"] in SCRIPT_LANGUAGES]
     findings = _definition_findings(scripts, config)
     findings.extend(_script_architecture_findings(scripts))
     findings.extend(_css_findings(target_facts))
     findings.extend(_html_findings(target))
 
     if base is not None:
-        base_facts = _node_facts(base)
+        base_facts = node_facts(base)
         findings.extend(_script_diff_findings(base_facts, target_facts))
         findings.extend(_cpp_changed_findings(base, target, config))
 

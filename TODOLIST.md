@@ -57,11 +57,11 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 ## Phase 6 — Cross-language adapters
 
-- [ ] Map C++ Clang facts into the same owner/call/reference/protocol model.
-- [ ] Keep existing JS/TS facts on the same normalized schema where supported.
-- [ ] Unsupported facts resolve to unknown/N/A, never guessed.
-- [ ] Verify CSS/HTML remain unaffected by function/class topology rules.
-- [ ] Commit and self-audit current diff.
+- [x] Map C++ Clang facts into the same owner/call/reference/protocol model.
+- [x] Keep existing JS/TS facts on the same normalized schema where supported.
+- [x] Unsupported facts resolve to unknown/N/A, never guessed.
+- [x] Verify CSS/HTML remain unaffected by function/class topology rules.
+- [x] Commit and self-audit current diff.
 
 ## Phase 7 — Calibration and real regression
 

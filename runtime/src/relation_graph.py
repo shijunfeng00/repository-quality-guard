@@ -841,6 +841,9 @@ class RepositoryRelationGraph:
             if target_node.kind == "class" and constructor in self.nodes:
                 target = constructor
             self._add_edge(caller, target, "CALLS")
+            self._resolved_references.append(
+                _ResolvedReference(caller, target, expr.lineno, UsageKind.DIRECT_CALL)
+            )
 
         for module, caller, expr, kind in self._pending_references:
             target = self._resolve_expr(module, caller, expr)
@@ -1198,7 +1201,6 @@ def _project_legacy_topology_edges(
 ) -> set[UsageEdge]:
     """Project established relation-graph edges into normalized usage kinds."""
     legacy_kinds = {
-        "CALLS": UsageKind.DIRECT_CALL,
         "IMPORTS": UsageKind.DEPENDENCY,
         "INHERITS": UsageKind.INHERITANCE,
         "OVERRIDES": UsageKind.OVERRIDE,

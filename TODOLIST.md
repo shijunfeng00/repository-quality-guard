@@ -32,17 +32,17 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 ## Phase 3 — Threshold calibration
 
-- [ ] QG008: <=20 none; 21–50 Semantic; >50 Critical.
-- [ ] QG019: <=1000 none; 1001–2000 Semantic; >2000 Critical.
-- [ ] Update config schema, documentation and report evidence.
-- [ ] Add paired synthetic fixtures for size thresholds and anti-fragmentation.
-- [ ] Commit and self-audit current diff.
+- [x] QG008: <=20 none; 21–50 Semantic; >50 Critical.
+- [x] QG019: <=1000 none; 1001–2000 Semantic; >2000 Critical.
+- [x] Update config schema, documentation and report evidence.
+- [x] Add paired synthetic fixtures for size thresholds and anti-fragmentation.
+- [x] Commit and self-audit current diff.
 
 ## Phase 4 — Helper topology refactor
 
-- [ ] QG001 consumes normalized usage topology; distinguish direct call, callable reference and protocol hook.
-- [ ] QG013 uses ephemeral-helper density rather than all tiny methods.
-- [ ] QG168 only follows eligible ordinary one-shot helper edges.
+- [x] QG001 consumes normalized usage topology; distinguish direct call, callable reference and protocol hook.
+- [x] QG013 uses ephemeral-helper density rather than all tiny methods.
+- [x] QG168 only follows eligible ordinary one-shot helper edges.
 - [ ] Ensure QG008/QG019 fixes cannot be satisfied by helper/class fragmentation laundering.
 - [ ] Run historical calibration corpus and inspect deltas manually.
 - [ ] Commit and self-audit current diff.

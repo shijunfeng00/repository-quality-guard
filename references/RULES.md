@@ -283,7 +283,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG165` | 子类新增与父类实现完全相同的 override；属于确定性重复实现，按 Critical 阻塞。 |
 | `QG166` | 多个兄弟子类新增完全相同的方法；属于公共所有者缺失，按 Critical 要求上提父类、中间基类或唯一公共协作者。 |
 | `QG167` | 子类新增字段与父类字段保存同一名称、属性或下标来源，形成两套可能漂移的影子状态；按 Critical 处理，字面量和新建对象不命中。 |
-| `QG168` | **Critical，绝对阻断**：当前生产代码存在连续三层以上的单调用私有 helper 链；每层只有一个静态调用方且无其他引用。即使 Git 基线已存在也直接 REJECT，默认压缩到最上游函数并删除中间层。 |
+| `QG168` | **Critical，绝对阻断**：normalized topology 证明当前生产代码存在连续三层以上 one-shot helper 链；每个中间节点都必须同时满足 QG001 的 ephemeral-helper 条件，链边只能是高置信普通 `DIRECT_CALL`。callback/callable reference、protocol/override、共享 primitive、公开 API 或其他真实复用会断开链，不能被当成普通 helper 分解。即使 Git 基线已存在也直接 REJECT；修复时默认压缩纯转发链，但保留真实事务、资源、并发或生命周期边界。 |
 | `QG169` | 相对 Git `--diff-base` 新增缺失 docstring 的生产定义；比较稳定定义指纹而非覆盖率百分比。删除已记录定义或改变分母不命中，结构完整性由 QG028/QG030 独立审计。 |
 | `QG176` | **Critical**：质量问题只被换了语法。比较 Git before/after 的 fallback 行为指纹；`.get/hasattr/getattr(default)/setdefault/异常兜底` 改成 membership、三元式、`try/except`、默认合并或显式初始化，而同一 receiver/selector 缺失时仍继续执行。 |
 | `QG177` | **Critical**：规范 AST、APTED 函数映射与跨函数调用摘要证明旧修复义务仍存在。覆盖函数改名、跨文件移动、把问题搬入 helper，以及参数改名后的同一 receiver/selector 行为。 |

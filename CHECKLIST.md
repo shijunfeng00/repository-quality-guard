@@ -8,12 +8,12 @@
 
 ## B. Rule semantics
 
-- [ ] QG008: 20/50 two-level behavior is proven by fixtures.
-- [ ] QG019: 1000/2000 two-level behavior is proven by fixtures.
+- [x] QG008: 20/50 two-level behavior is proven by fixtures.
+- [x] QG019: 1000/2000 two-level behavior is proven by fixtures.
 - [ ] QG014=500, QG015=8, existing QG016/QG017 thresholds remain unchanged unless a later explicit decision says otherwise.
-- [ ] QG001 does not call a callback/protocol/public API an ephemeral helper merely because direct-call count is zero.
-- [ ] QG013 does not punish cohesive resource/container/value classes simply because many methods are tiny.
-- [ ] QG168 still rejects >=3-layer one-shot helper chains and cannot be bypassed by renaming/wrapping.
+- [x] QG001 does not call a callback/protocol/public API an ephemeral helper merely because direct-call count is zero.
+- [x] QG013 does not punish cohesive resource/container/value classes simply because many methods are tiny.
+- [x] QG168 still rejects >=3-layer one-shot helper chains and cannot be bypassed by renaming/wrapping.
 - [ ] QG003–QG006 stay strict for internal formal contracts.
 - [ ] External optional contracts do not become hard findings solely because `.get()` or equivalent optional access is used according to that contract.
 
@@ -29,8 +29,8 @@
 ## D. Anti-fragmentation and conflict checks
 
 - [ ] A QG008/QG019 remediation fixture cannot pass merely by producing one-shot helpers/wrappers/classes.
-- [ ] Shared private primitives with multiple consumers are not treated as helper laundering.
-- [ ] Framework callbacks/overrides/protocol hooks are excluded from ordinary one-shot caller chains.
+- [x] Shared private primitives with multiple consumers are not treated as helper laundering.
+- [x] Framework callbacks/overrides/protocol hooks are excluded from ordinary one-shot caller chains.
 - [ ] If two rules still recommend contradictory edits, the conflict is surfaced for human adjudication.
 
 ## E. Historical calibration

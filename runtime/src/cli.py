@@ -1097,16 +1097,21 @@ def _compute_git_baseline(
         production_config = config.with_overrides(include_tests=False)
         test_config = config.with_overrides(include_tests=True)
         baseline_analysis = directory_analysis_snapshot(baseline_root, config)
+        baseline_topology = normalized_topology(
+            RepositoryRelationGraph(baseline_analysis),
+            StaticPythonDependencyResolver.from_environment(),
+        )
         production_scanner = RepositoryScanner(
             baseline_root,
             production_config,
             baseline_analysis,
+            baseline_topology,
         )
         production_report = production_scanner.scan()
         baseline_architecture_findings = single_use_chain_findings(
             baseline_root,
             production_config,
-            analysis_snapshot=baseline_analysis,
+            baseline_topology,
         )
         merge_findings(
             production_report,
@@ -2026,7 +2031,7 @@ def scan_target(
                 single_use_chain_findings(
                     target.root,
                     production_config,
-                    analysis_snapshot=current_analysis,
+                    production_topology,
                 )
             )
         architecture_findings.extend(

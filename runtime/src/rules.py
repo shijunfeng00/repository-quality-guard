@@ -9,42 +9,14 @@ from .facts import ModuleFacts
 from .graph_utils import strongly_connected_components
 from .model import Definition, Finding
 from .topology_facts import RepositoryTopology, UsageKind, Visibility
+from .topology_policy import (
+    HelperUsageEvidence,
+    ephemeral_helper_candidate,
+)
 
 BOOLEAN_FLAG_THRESHOLD = 3
 DUPLICATE_BODY_MIN_COUNT = 2
 DUPLICATE_BODY_MIN_LINES = 6
-
-
-def _ephemeral_helper_candidate(
-    definition: Definition, evidence: dict[str, object], config: GuardConfig
-) -> bool:
-    """Return whether normalized usage evidence describes a one-shot helper.
-
-    Args:
-        definition: Function or method being classified.
-        evidence: Normalized usage/visibility facts for the definition.
-        config: Helper length and low-use thresholds.
-
-    Returns:
-        True only for short internal/private callables without reuse or protocol edges.
-    """
-    internal = evidence["visibility"] in {
-        Visibility.INTERNAL.value,
-        Visibility.PRIVATE.value,
-    }
-    return (
-        definition.kind in {"function", "method"}
-        and definition.name not in config.ignored_names
-        and not (definition.name.startswith("__") and definition.name.endswith("__"))
-        and definition.lines <= config.short_max_lines
-        and internal
-        and not bool(evidence["exported"])
-        and int(evidence["direct_callers"]) <= config.low_use_max_calls
-        and int(evidence["direct_call_sites"]) <= config.low_use_max_calls
-        and int(evidence["callable_consumers"]) == 0
-        and int(evidence["protocol_edges"]) == 0
-        and not definition.externally_invoked
-    )
 
 
 class RuleEvaluator:
@@ -272,6 +244,7 @@ class RuleEvaluator:
         """
         if self.topology is None or definition.symbol_id not in self._symbols:
             direct_callers = definition.calls
+            direct_call_sites = definition.calls
             callable_consumers = definition.references
             protocol_edges = 1 if definition.externally_invoked else 0
             visibility = (
@@ -299,6 +272,7 @@ class RuleEvaluator:
                 definition.symbol_id, (UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE)
             )
             direct_callers = len({edge.source_id for edge in direct})
+            direct_call_sites = len(direct)
             callable_consumers = len({edge.source_id for edge in callable_edges})
             protocol_edges = len(protocol)
             visibility = symbol.visibility.value
@@ -307,7 +281,7 @@ class RuleEvaluator:
             owner_id = symbol.owner_id
         return {
             "direct_callers": direct_callers,
-            "direct_call_sites": definition.calls,
+            "direct_call_sites": direct_call_sites,
             "callable_consumers": callable_consumers,
             "protocol_edges": protocol_edges,
             "visibility": visibility,
@@ -368,7 +342,23 @@ class RuleEvaluator:
             仅真正 ephemeral helper 候选对应的 QG001。
         """
         topology_evidence = self._usage_topology(definition)
-        if not _ephemeral_helper_candidate(definition, topology_evidence, self.config):
+        if not ephemeral_helper_candidate(
+            definition.kind,
+            definition.name,
+            definition.lines,
+            HelperUsageEvidence(
+                direct_callers=int(topology_evidence["direct_callers"]),
+                direct_call_sites=int(topology_evidence["direct_call_sites"]),
+                callable_consumers=int(topology_evidence["callable_consumers"]),
+                protocol_edges=int(topology_evidence["protocol_edges"]),
+                visibility=str(topology_evidence["visibility"]),
+                exported=bool(topology_evidence["exported"]),
+                owner_id=str(topology_evidence["owner_id"]),
+                topology_resolution=str(topology_evidence["topology_resolution"]),
+            ),
+            self.config,
+            definition.externally_invoked,
+        ):
             return []
         evidence = {
             "lines": definition.lines,
@@ -508,7 +498,23 @@ class RuleEvaluator:
             helpers = [
                 definition
                 for definition, evidence in owned
-                if _ephemeral_helper_candidate(definition, evidence, self.config)
+                if ephemeral_helper_candidate(
+                    definition.kind,
+                    definition.name,
+                    definition.lines,
+                    HelperUsageEvidence(
+                        direct_callers=int(evidence["direct_callers"]),
+                        direct_call_sites=int(evidence["direct_call_sites"]),
+                        callable_consumers=int(evidence["callable_consumers"]),
+                        protocol_edges=int(evidence["protocol_edges"]),
+                        visibility=str(evidence["visibility"]),
+                        exported=bool(evidence["exported"]),
+                        owner_id=str(evidence["owner_id"]),
+                        topology_resolution=str(evidence["topology_resolution"]),
+                    ),
+                    self.config,
+                    definition.externally_invoked,
+                )
             ]
             helper_count = len(helpers)
             internal_count = len(owned)

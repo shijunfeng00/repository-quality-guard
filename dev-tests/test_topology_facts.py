@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from runtime.src.analysis_snapshot import directory_analysis_snapshot
 from runtime.src.config import GuardConfig
+from runtime.src.python_dependency_facts import StaticPythonDependencyResolver
+from runtime.src.relation_graph import RepositoryRelationGraph, normalized_topology
 from runtime.src.scanner import RepositoryScanner
 from runtime.src.topology_facts import RepositoryTopology, UsageKind, Visibility
 
@@ -76,6 +79,29 @@ class TestNormalizedTopologyFacts(unittest.TestCase):
             [(edge.source_id, edge.target_id) for edge in callback_edges],
             [("sample.main", "sample.callback")],
         )
+
+    def test_relation_graph_preserves_repeated_direct_call_sites(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / "sample.py").write_text(
+            "def _format(value):\n"
+            "    return value.strip()\n\n"
+            "def render(value):\n"
+            "    first = _format(value)\n"
+            "    return first + _format(value)\n",
+            encoding="utf-8",
+        )
+        snapshot = directory_analysis_snapshot(root, self._config())
+        topology = normalized_topology(
+            RepositoryRelationGraph(snapshot),
+            StaticPythonDependencyResolver.from_environment(),
+        )
+
+        direct = topology.incoming("sample._format", (UsageKind.DIRECT_CALL,))
+        self.assertEqual(len(direct), 2)
+        self.assertEqual({edge.source_id for edge in direct}, {"sample.render"})
+        self.assertEqual({edge.line for edge in direct}, {5, 6})
 
     def test_topology_is_a_helper_policy_input_after_phase_four(self) -> None:
         temporary, root = self._repository()

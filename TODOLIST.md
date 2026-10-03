@@ -83,6 +83,6 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 - [x] Resolve all new ordinary C/E/W delta and blockers; historical debt is recorded, not forced to zero.
 - [x] Finish documentation and migration notes.
 - [x] Clean/squash intermediate history as appropriate (decision: retain granular auditable commits).
-- [ ] Build deterministic `repository-quality-guard-v0.21.3.skill.zip`.
-- [ ] Create final mbox and prove apply-check from v0.21.2 produces the release tree.
-- [ ] Tag `v0.21.3`.
+- [x] Build deterministic `repository-quality-guard-v0.21.3.skill.zip`.
+- [x] Create final mbox and prove apply-check from v0.21.2 produces the release tree.
+- [x] Tag `v0.21.3`.

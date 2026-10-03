@@ -66,7 +66,7 @@
 - [x] Major milestones had full suite execution.
 - [x] Final v0.21.3 self-audit has no new ordinary C/E/W delta or absolute blocker.
 - [x] Historical self debt is reported but not used as a hidden release blocker.
-- [ ] Final skill ZIP contains valid `.git`, profiles and offline payload and extracts to a valid clean release worktree.
+- [x] Final skill ZIP contains valid `.git`, profiles and offline payload and extracts to a valid clean release worktree.
 - [x] Installed `.agents` payload remains slim.
-- [ ] Final mbox applies from v0.21.2 and reproduces the exact release tree.
-- [ ] Deterministic release build is proven by repeated SHA256 match.
+- [x] Final mbox applies from v0.21.2 and reproduces the exact release tree.
+- [x] Deterministic release build is proven by repeated SHA256 match.

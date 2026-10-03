@@ -375,6 +375,7 @@ class _Collector(ast.NodeVisitor):
         self.source_digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:20]
         self.class_stack: list[str] = []
         self.function_stack: list[str] = []
+        self.scope_stack: list[str] = []
         self.function_scopes: list[tuple[str, set[str]]] = []
         self.nodes: list[_RelationNode] = []
         self.imports: dict[str, str] = {}
@@ -389,7 +390,7 @@ class _Collector(ast.NodeVisitor):
     @property
     def caller(self) -> str:
         """返回当前定义的稳定 node id；模块级表达式归到 module 节点。"""
-        qualname = ".".join([*self.class_stack, *self.function_stack])
+        qualname = ".".join(self.scope_stack)
         return (
             f"{self.module}.{qualname}"
             if self.module and qualname
@@ -474,9 +475,9 @@ class _Collector(ast.NodeVisitor):
         Returns:
             None.
         """
-        qualname = ".".join([*self.class_stack, *self.function_stack, node.name])
+        qualname = ".".join([*self.scope_stack, node.name])
         node_id = f"{self.module}.{qualname}" if self.module else qualname
-        owner = ".".join([*self.class_stack, *self.function_stack])
+        owner = ".".join(self.scope_stack)
         bases = tuple(filter(None, (_dotted(base) for base in node.bases)))
         self.nodes.append(
             _RelationNode(
@@ -501,9 +502,11 @@ class _Collector(ast.NodeVisitor):
             )
         )
         self.classes[node_id] = bases
-        self.class_stack.append(node.name)
+        self.class_stack.append(qualname)
+        self.scope_stack.append(node.name)
         for child in node.body:
             self.visit(child)
+        self.scope_stack.pop()
         self.class_stack.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -530,9 +533,9 @@ class _Collector(ast.NodeVisitor):
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         """建立函数/方法/测试节点并在 caller 栈下遍历函数体。"""
-        qualname = ".".join([*self.class_stack, *self.function_stack, node.name])
+        qualname = ".".join([*self.scope_stack, node.name])
         node_id = f"{self.module}.{qualname}" if self.module else qualname
-        owner = ".".join([*self.class_stack, *self.function_stack])
+        owner = ".".join(self.scope_stack)
         kind = (
             "method"
             if self.class_stack
@@ -578,10 +581,12 @@ class _Collector(ast.NodeVisitor):
             )
         )
         self.function_stack.append(node.name)
+        self.scope_stack.append(node.name)
         self.function_scopes.append((node_id, bound_names))
         for child in node.body:
             self.visit(child)
         self.function_scopes.pop()
+        self.scope_stack.pop()
         self.function_stack.pop()
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -675,7 +680,7 @@ class _Collector(ast.NodeVisitor):
             and self.class_stack
             and self.function_stack
         ):
-            class_qualname = ".".join(self.class_stack)
+            class_qualname = self.class_stack[-1]
             class_id = (
                 f"{self.module}.{class_qualname}"
                 if self.module and class_qualname

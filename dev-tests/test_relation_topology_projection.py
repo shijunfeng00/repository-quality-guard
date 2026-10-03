@@ -131,6 +131,30 @@ class TestRelationTopologyProjection(unittest.TestCase):
         self.assertIn("worker.Worker._helper", components[0])
         self.assertIn("worker.Worker.hook", components[0])
 
+    def test_local_class_owner_preserves_lexical_scope_for_state_facts(self) -> None:
+        (self.root / "local_class.py").write_text(
+            "def build():\n"
+            "    class SpyBinder:\n"
+            "        calls = 0\n"
+            "        def require(self):\n"
+            "            self.calls += 1\n"
+            "            return self.calls\n"
+            "    return SpyBinder().require()\n",
+            encoding="utf-8",
+        )
+        snapshot = directory_analysis_snapshot(self.root, GuardConfig())
+        topology = normalized_topology(RepositoryRelationGraph(snapshot))
+        symbols = {symbol.symbol_id: symbol for symbol in topology.symbols}
+        edges = {(edge.source_id, edge.target_id, edge.kind) for edge in topology.edges}
+
+        class_id = "local_class.build.SpyBinder"
+        method_id = f"{class_id}.require"
+        field_id = f"field:{class_id}.calls"
+        self.assertIn(class_id, symbols)
+        self.assertIn(method_id, symbols)
+        self.assertIn(field_id, symbols)
+        self.assertIn((method_id, field_id, UsageKind.FIELD_ACCESS), edges)
+
     def test_bare_name_resolution_stays_inside_python_lexical_scope(self) -> None:
         (self.root / "other.py").write_text(
             "def unrelated():\n    is_valid = True\n    return is_valid\n",

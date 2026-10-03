@@ -988,8 +988,9 @@ def cpp_topology(
 ) -> RepositoryTopology:
     """Project compiler-proven C++ owner/reuse facts into normalized topology.
 
-    Clang node ids are transient resolution keys only. Stable graph identities use
-    authored qualified names and signatures; unavailable evidence stays absent.
+    Clang node ids are transient resolution keys scoped to one compiler process. Stable
+    graph identities use authored qualified names and signatures. Each translation unit
+    is accumulated atomically; unavailable units contribute no partial facts.
 
     Args:
         snapshot: Shared repository source snapshot.
@@ -1006,14 +1007,21 @@ def cpp_topology(
         requested_paths = sorted(dict.fromkeys(paths))
         include_args_by_path = clang_include_args(snapshot, root, requested_paths)
         for relative_path in requested_paths:
-            _consume_cpp_translation_unit(
-                facts,
-                root,
-                relative_path,
-                clang,
-                list(include_args_by_path[relative_path]),
-            )
-    _consume_cpp_pending_relations(facts)
+            unit_facts = _CppTopologyFacts(authored_paths=facts.authored_paths)
+            try:
+                _consume_cpp_translation_unit(
+                    unit_facts,
+                    root,
+                    relative_path,
+                    clang,
+                    list(include_args_by_path[relative_path]),
+                )
+            except RuntimeError:
+                continue
+            _consume_cpp_pending_relations(unit_facts)
+            facts.symbols.update(unit_facts.symbols)
+            facts.owners.update(unit_facts.owners)
+            facts.edges.update(unit_facts.edges)
     return RepositoryTopology(
         symbols=tuple(sorted(facts.symbols.values(), key=lambda item: item.symbol_id)),
         owners=tuple(sorted(facts.owners.values(), key=lambda item: item.owner_id)),

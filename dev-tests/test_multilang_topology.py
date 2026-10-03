@@ -311,6 +311,35 @@ void bump(T& value) {
         run = next(item for item in topology.symbols if item.name == "run")
         self.assertEqual(run.path, Path("src/sample.cpp"))
 
+    def test_clang_keeps_successful_translation_units_when_peer_is_unavailable(
+        self,
+    ) -> None:
+        snapshot = RepositoryAnalysisSnapshot(
+            root=Path("/repo"),
+            label="DIRECTORY",
+            units={},
+            language_units={
+                "src/good.cpp": LanguageUnit(
+                    "src/good.cpp",
+                    "cpp",
+                    "namespace demo {\nint good(int x) { return x + 1; }\n}\n",
+                ),
+                "src/bad.cpp": LanguageUnit(
+                    "src/bad.cpp",
+                    "cpp",
+                    "namespace demo {\nint should_not_leak() { return 1; }\nint broken = ;\n}\n",
+                ),
+            },
+        )
+        topology = normalized_multilang_topology(
+            snapshot,
+            script_facts=[],
+            cpp_paths=["src/good.cpp", "src/bad.cpp"],
+        )
+        names = {item.name for item in topology.symbols}
+        self.assertIn("good", names)
+        self.assertNotIn("should_not_leak", names)
+
     def test_missing_clang_keeps_cpp_semantics_na_instead_of_guessing(self) -> None:
         snapshot = RepositoryAnalysisSnapshot(
             root=Path("/repo"),

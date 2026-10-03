@@ -55,6 +55,30 @@ class TestEmpiricalStructureThresholds(unittest.TestCase):
         self.assertEqual(hard_51[0].severity, "critical")
         self.assertNotIn("semantic_review_required", hard_51[0].evidence)
 
+    def test_qg002_preserves_strict_short_class_boundary(self) -> None:
+        def qg002(lines: int):
+            definition = Definition(
+                module="sample",
+                qualname="Tiny",
+                name="Tiny",
+                kind="class",
+                path=Path("sample.py"),
+                line=1,
+                end_line=lines,
+                column=0,
+                code_line_count=lines,
+                calls=1,
+            )
+            evaluator = RuleEvaluator(GuardConfig(require_docstrings=False))
+            return [
+                item
+                for item in evaluator.evaluate([definition], [])
+                if item.code == "QG002"
+            ]
+
+        self.assertEqual(len(qg002(9)), 1)
+        self.assertEqual(qg002(10), [])
+
     def test_qg019_uses_1000_review_2000_hard_limit(self) -> None:
         self.assertEqual(self._module_findings(1000), [])
         review_1001 = self._module_findings(1001)

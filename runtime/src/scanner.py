@@ -14,6 +14,7 @@ from .advanced_rules import AdvancedRuleEvaluator
 from .config import GuardConfig, is_test_path
 from .facts import FactsCollector, ModuleFacts
 from .model import Definition, Finding, ScanReport, Usage
+from .python_import_resolution import resolve_local_import_symbol
 from .rules import RuleEvaluator
 from .topology_facts import (
     RepositoryTopology,
@@ -502,8 +503,11 @@ class RepositoryScanner:
             suffix = usage.base[len(base_root) :].lstrip(".")
             qualified_base = imported_base + (f".{suffix}" if suffix else "")
             candidate_id = f"{qualified_base}.{usage.target}"
-            if candidate_id in by_id:
-                return [by_id[candidate_id]]
+            resolved = resolve_local_import_symbol(
+                candidate_id, imports_by_module, by_id
+            )
+            if resolved is not None:
+                return [by_id[resolved]]
         class_candidate = f"{usage.module}.{usage.base}.{usage.target}"
         if class_candidate in by_id:
             return [by_id[class_candidate]]
@@ -535,8 +539,12 @@ class RepositoryScanner:
             匹配到的名称目标定义列表。
         """
         imports = imports_by_module[usage.module]
-        if usage.target in imports and imports[usage.target] in by_id:
-            return [by_id[imports[usage.target]]]
+        if usage.target in imports:
+            resolved = resolve_local_import_symbol(
+                imports[usage.target], imports_by_module, by_id
+            )
+            if resolved is not None:
+                return [by_id[resolved]]
 
         scope = usage.owner_qualname
         while scope and scope != usage.owner_class:

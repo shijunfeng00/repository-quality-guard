@@ -416,6 +416,8 @@ def annotation_names(annotation: ast.expr | None) -> set[str]:
             names.add(item.id)
         elif isinstance(item, ast.Attribute):
             names.add(item.attr)
+        elif isinstance(item, ast.Constant) and item.value is None:
+            names.add("None")
     return names
 
 

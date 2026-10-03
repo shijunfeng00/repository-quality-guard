@@ -304,7 +304,7 @@ class RuleEvaluator:
         """
         eligible = (
             definition.name not in self.config.ignored_names
-            and definition.lines <= self.config.short_max_lines
+            and definition.lines < self.config.short_max_lines
             and definition.calls <= self.config.low_use_max_calls
         )
         if not eligible:

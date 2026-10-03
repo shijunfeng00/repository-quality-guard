@@ -15,6 +15,7 @@ from .docstrings import definition_code_lines, function_parameter_names
 from .config import is_test_path
 from .model import Finding, InterfaceChange, InterfaceDiffReport
 from .python_dependency_facts import StaticPythonDependencyResolver
+from .python_import_resolution import resolve_local_import_symbol
 from .topology_facts import (
     OwnerFact,
     OwnerKind,
@@ -886,8 +887,9 @@ class RepositoryRelationGraph:
         root, dot, suffix = name.partition(".")
         if root in imports:
             candidate = imports[root] + (f".{suffix}" if dot else "")
-            if candidate in self.nodes:
-                return candidate
+            resolved = resolve_local_import_symbol(candidate, self._imports, self.nodes)
+            if resolved is not None:
+                return resolved
         caller_node = self.nodes[caller] if caller in self.nodes else None
         if caller_node is not None and not dot:
             qualname = caller_node.qualname
@@ -957,7 +959,7 @@ class RepositoryRelationGraph:
         if parts[0] not in imports:
             return None
         candidate = ".".join([imports[parts[0]], *parts[1:]])
-        return candidate if candidate in self.nodes else None
+        return resolve_local_import_symbol(candidate, self._imports, self.nodes)
 
     def _resolve_expr(self, module: str, caller: str, expr: ast.expr) -> str | None:
         """解析调用表达式到唯一静态目标；动态目标保持未知。"""

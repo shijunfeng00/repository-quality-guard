@@ -78,11 +78,11 @@ Status legend: `[ ]` pending, `[-]` in progress, `[x]` complete, `[!]` blocked/u
 
 ## Phase 8 — Final release v0.21.3
 
-- [ ] Full unit suite, Ruff, format, compileall, diff-check.
-- [ ] Final self-audit of v0.21.3 diff.
-- [ ] Resolve all new ordinary C/E/W delta and blockers; historical debt is recorded, not forced to zero.
-- [ ] Finish documentation and migration notes.
-- [ ] Clean/squash intermediate history as appropriate.
+- [x] Full unit suite, Ruff, format, compileall, diff-check.
+- [x] Final self-audit of v0.21.3 diff.
+- [x] Resolve all new ordinary C/E/W delta and blockers; historical debt is recorded, not forced to zero.
+- [x] Finish documentation and migration notes.
+- [x] Clean/squash intermediate history as appropriate (decision: retain granular auditable commits).
 - [ ] Build deterministic `repository-quality-guard-v0.21.3.skill.zip`.
 - [ ] Create final mbox and prove apply-check from v0.21.2 produces the release tree.
 - [ ] Tag `v0.21.3`.

@@ -2,13 +2,13 @@
 name: repository-quality-guard
 description: 对 Git 仓库执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
 metadata:
-  version: "0.21.2"
+  version: "0.21.3"
   status: stable
 ---
 
 # Repository Quality Guard
 
-**Version:** 0.21.2
+**Version:** 0.21.3
 **Status:** Stable
 **Distribution:** canonical full-repository ZIP / repository-installed `.agents`
 

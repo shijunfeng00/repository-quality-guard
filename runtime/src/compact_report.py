@@ -997,10 +997,19 @@ def render_compact_report(
 
 
 def _has_placeholder(value: str) -> bool:
-    """判断模型字段是否仍是占位或空话。"""
+    """判断模型字段是否仍是占位或空话，避免误伤合法标识符与说明文本。"""
     normalized = value.strip()
-    return not normalized or any(
-        marker.lower() in normalized.lower() for marker in PLACEHOLDERS
+    if not normalized:
+        return True
+    if re.search(
+        r"(?<![A-Za-z0-9_])(?:PENDING(?:_VERIFY)?|TODO|TBD)(?![A-Za-z0-9_])",
+        normalized,
+    ):
+        return True
+    return any(
+        marker in normalized
+        for marker in PLACEHOLDERS
+        if marker not in {"PENDING", "TODO", "TBD"}
     )
 
 

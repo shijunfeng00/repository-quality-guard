@@ -239,7 +239,7 @@ RQG does not guarantee quality by saying “please review the code carefully.”
 
 | Example | What it focuses on |
 | --- | --- |
-| `QG001` | Thin helper functions, unnecessary wrappers, and similar code smells |
+| `QG001` | Ephemeral one-shot helper/wrapper topology; shared primitives, callbacks, protocol hooks, and public APIs are distinguished from decomposition helpers |
 | `QG170–QG175` | Deleted tests, reduced assertions, skip / xfail, or new tests with no meaningful assertion |
 | `QG192–QG194` | Production code changed without meaningful behavioral verification, or tests coupled too tightly to implementation details |
 | `QG980–QG985` | Whether `修改说明.md` is complete, whether the Agent's explanation matches the facts, and whether final verification is valid |
@@ -248,6 +248,10 @@ RQG does not guarantee quality by saying “please review the code carefully.”
 All of these checks end in only three formal states: **`ACCEPT`** = the quality gate passed and the change can be delivered; **`REVIEW_REQUIRED`** = the quality gate passed, but an important change still requires a human decision; **`REJECT`** = the current code is not acceptable and the Agent must continue modifying it.
 
 The complete QG definitions live in **[`references/RULES.md`](references/RULES.md)**.
+
+### Structure-topology calibration
+
+The current structure policy keeps the same QG families but makes structural decisions evidence-driven: QG001/QG013/QG168 consume normalized ownership and reuse topology; QG003–QG006 distinguish internal formal contracts from external/unknown boundaries; QG008 reviews 21–50 methods and remains Critical above 50; QG019 reviews 1001–2000-line owners and remains Critical above 2000. Unsupported compiler/dependency evidence stays unknown/N/A rather than being guessed. Existing projects may therefore see fewer helper findings and some QG003/QG004 candidates reclassified to QG026; this is a semantic calibration, not an automatic waiver.
 
 ---
 

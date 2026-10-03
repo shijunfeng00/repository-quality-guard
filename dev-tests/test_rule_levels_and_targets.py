@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runtime.src.cli import _apply_profile_rule_policy, build_parser, resolve_target
-from runtime.src.compact_report import _absolute_blocker_rows
+from runtime.src.compact_report import _absolute_blocker_rows, _has_placeholder
 from runtime.src.config import GuardConfig
 from runtime.src.gate_status import code_status
 from runtime.src.model import Finding, ScanReport
@@ -95,6 +95,18 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
 
         self.assertIn("QG205", rendered)
         self.assertIn("profile-rule=BLOCKER", rendered)
+
+    def test_placeholder_detection_does_not_match_legitimate_identifiers_or_prose(
+        self,
+    ) -> None:
+        self.assertTrue(_has_placeholder("PENDING"))
+        self.assertTrue(_has_placeholder("status PENDING: fill later"))
+        self.assertTrue(_has_placeholder("TODO: fill later"))
+        self.assertTrue(_has_placeholder("PENDING_VERIFY"))
+        self.assertTrue(_has_placeholder("待填写"))
+        self.assertFalse(_has_placeholder("_pending_edges"))
+        self.assertFalse(_has_placeholder("TODOLIST.md"))
+        self.assertFalse(_has_placeholder("Resolve pending ids after traversal."))
 
     def test_non_git_directory_target_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

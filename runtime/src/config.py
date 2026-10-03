@@ -78,8 +78,10 @@ class GuardConfig:
     profile_settings: tuple[tuple[str, Any], ...] = ()
     short_max_lines: int = 10
     low_use_max_calls: int = 1
-    max_class_methods: int = 20
+    class_method_review_threshold: int = 20
+    max_class_methods: int = 50
     max_function_lines: int = 500
+    module_line_review_threshold: int = 1000
     max_module_lines: int = 2000
     jobs: int = 0
     max_parameters: int = 8

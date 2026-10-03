@@ -295,7 +295,8 @@ class RuleEvaluator:
             当前类对应的结构问题列表。
         """
         findings: list[Finding] = []
-        if definition.direct_method_count > self.config.max_class_methods:
+        method_count = definition.direct_method_count
+        if method_count > self.config.max_class_methods:
             findings.append(
                 Finding(
                     code="QG008",
@@ -305,15 +306,50 @@ class RuleEvaluator:
                     line=definition.line,
                     column=definition.column,
                     message=(
-                        f"class `{definition.qualname}` 直接定义 {definition.direct_method_count} 个方法，"
-                        f"超过阈值 {self.config.max_class_methods}。"
+                        f"class `{definition.qualname}` 直接定义 {method_count} 个方法，"
+                        f"超过硬上限 {self.config.max_class_methods}。"
                     ),
                     symbol=definition.symbol_id,
-                    suggestion="按稳定职责拆分，而不是机械拆成更多无状态小类；先识别状态所有权和外部契约。",
+                    suggestion=(
+                        "识别真正独立的状态、生命周期或领域 owner 后再拆分；"
+                        "禁止为了降低方法数制造无状态 wrapper、mixin 或一次性 helper。"
+                    ),
                     evidence={
-                        "methods": definition.direct_method_count,
+                        "methods": method_count,
+                        "review_threshold": self.config.class_method_review_threshold,
+                        "hard_limit": self.config.max_class_methods,
                         "public_methods": definition.public_method_count,
                         "tiny_methods": definition.tiny_method_count,
+                    },
+                )
+            )
+        elif method_count > self.config.class_method_review_threshold:
+            findings.append(
+                Finding(
+                    code="QG008",
+                    severity="info",
+                    confidence="medium",
+                    path=str(definition.path),
+                    line=definition.line,
+                    column=definition.column,
+                    message=(
+                        f"class `{definition.qualname}` 直接定义 {method_count} 个方法，"
+                        "进入 owner cohesion 语义复核区间。"
+                    ),
+                    symbol=definition.symbol_id,
+                    suggestion=(
+                        "确认这些方法仍围绕同一状态、生命周期或领域对象；"
+                        "只有存在独立 owner 时才拆分，禁止为压数字制造碎片化。"
+                    ),
+                    evidence={
+                        "methods": method_count,
+                        "review_threshold": self.config.class_method_review_threshold,
+                        "hard_limit": self.config.max_class_methods,
+                        "public_methods": definition.public_method_count,
+                        "tiny_methods": definition.tiny_method_count,
+                        "semantic_review_required": True,
+                        "semantic_review_question": "Q4,Q9",
+                        "semantic_review_kind": "owner-cohesion-size",
                     },
                 )
             )
@@ -548,9 +584,42 @@ class RuleEvaluator:
                         path=str(item.path),
                         line=1,
                         column=1,
-                        message=f"模块共 {lines} 行，可能同时承载过多职责。",
-                        suggestion="先按稳定领域边界、状态所有权或外部接口拆分；避免按任意行数机械切文件。",
-                        evidence={"lines": lines, "definitions": len(item.definitions)},
+                        message=f"模块共 {lines} 行，超过硬上限 {self.config.max_module_lines}。",
+                        suggestion=(
+                            "先按稳定领域边界、状态所有权或外部接口拆分；"
+                            "禁止为了降低行数机械切文件或制造转发层。"
+                        ),
+                        evidence={
+                            "lines": lines,
+                            "review_threshold": self.config.module_line_review_threshold,
+                            "hard_limit": self.config.max_module_lines,
+                            "definitions": len(item.definitions),
+                        },
+                    )
+                )
+            elif lines > self.config.module_line_review_threshold:
+                findings.append(
+                    Finding(
+                        code="QG019",
+                        severity="info",
+                        confidence="medium",
+                        path=str(item.path),
+                        line=1,
+                        column=1,
+                        message=f"模块共 {lines} 行，进入 owner cohesion 语义复核区间。",
+                        suggestion=(
+                            "确认文件仍对应单一稳定 owner；如果没有独立职责、状态或生命周期边界，"
+                            "不要仅按行数拆分。"
+                        ),
+                        evidence={
+                            "lines": lines,
+                            "review_threshold": self.config.module_line_review_threshold,
+                            "hard_limit": self.config.max_module_lines,
+                            "definitions": len(item.definitions),
+                            "semantic_review_required": True,
+                            "semantic_review_question": "Q4,Q9",
+                            "semantic_review_kind": "owner-cohesion-size",
+                        },
                     )
                 )
             if item.tree is None:

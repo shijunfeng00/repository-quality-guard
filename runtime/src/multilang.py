@@ -173,11 +173,40 @@ def _definition_findings(
                     path=script["path"],
                     line=1,
                     column=1,
-                    message=f"模块共 {script['lines']} 行，可能同时承载过多职责。",
+                    message=f"模块共 {script['lines']} 行，超过硬上限 {config.max_module_lines}。",
                     suggestion="按稳定职责/状态 owner 拆分；禁止仅按行数机械切文件。",
                     evidence={
                         "language": script["language"],
                         "lines": script["lines"],
+                        "review_threshold": config.module_line_review_threshold,
+                        "hard_limit": config.max_module_lines,
+                    },
+                    source=_SOURCE,
+                )
+            )
+        elif script["lines"] > config.module_line_review_threshold:
+            findings.append(
+                Finding(
+                    code="QG019",
+                    severity="info",
+                    confidence="medium",
+                    path=script["path"],
+                    line=1,
+                    column=1,
+                    message=(
+                        f"模块共 {script['lines']} 行，进入 owner cohesion 语义复核区间。"
+                    ),
+                    suggestion=(
+                        "确认文件仍对应单一稳定 owner；没有独立职责/状态边界时不要机械拆分。"
+                    ),
+                    evidence={
+                        "language": script["language"],
+                        "lines": script["lines"],
+                        "review_threshold": config.module_line_review_threshold,
+                        "hard_limit": config.max_module_lines,
+                        "semantic_review_required": True,
+                        "semantic_review_question": "Q4,Q9",
+                        "semantic_review_kind": "owner-cohesion-size",
                     },
                     source=_SOURCE,
                 )

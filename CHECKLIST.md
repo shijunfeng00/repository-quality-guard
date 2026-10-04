@@ -21,16 +21,20 @@ Evidence: `f3269ee`; 153/153 PASS; ordinary C/E/W delta 0; 7 touched historical 
 
 ## Phase B — C++ build truth
 
-- [ ] Real build contract is preferred over guessed compiler flags.
-- [ ] Existing `compile_commands.json` can be consumed without rewriting compiler identity/semantic flags.
+- [x] Real build contract is preferred over guessed compiler flags.
+- [x] Existing `compile_commands.json` can be consumed without rewriting compiler identity/semantic flags.
 - [x] Mature tooling alternatives are evaluated before adding compiler-specific AST code.
-- [ ] Native compiler validity and semantic-provider availability are distinct facts.
-- [ ] Semantic-provider failure yields `UNKNOWN/N/A`, not an audit-wide source-invalid error.
-- [ ] BASE parse/provider failure cannot abort unrelated TARGET/rules.
-- [ ] SlowJSON GCC fixture validates the GCC/build-contract path.
-- [ ] A second C++ fixture validates a different toolchain path where available.
-- [ ] Normalized topology remains the only QG-facing C++ fact schema.
-- [ ] Existing Python/JS/TS and real-project regressions pass.
+- [x] Native compiler validity and semantic-provider availability are distinct facts.
+- [x] Semantic-provider failure yields `UNKNOWN/N/A`, not an audit-wide source-invalid error.
+- [x] BASE parse/provider failure cannot abort unrelated TARGET/rules.
+- [x] SlowJSON GCC fixture validates the GCC/build-contract path.
+- [x] A second C++ fixture validates a different toolchain path where available.
+- [x] Normalized topology remains the only QG-facing C++ fact schema.
+- [x] Existing Python/JS/TS and real-project regressions pass.
+
+C++ evidence: SlowJSON target `ed982082…` builds with GCC14 and its aggregate test executable reports `All done correctly!`; RQG loads 36 GCC build specs and all 36 native syntax checks PASS while Clang semantic facts stay N/A. The same geek-ai-agent sandbox source builds and passes 2/2 CTest cases under GCC14 and Clang17. GCC compdb: 3/3 native PASS, semantic N/A. Clang compdb: 3/3 native PASS, normalized topology 134/13/120. Concurrent conflicting GCC+Clang compdb entries are left unknown.
+
+Regression evidence: CoH rc2/rc3 ScanReport JSON is byte-for-byte unchanged from v0.21.3. RAG MMR `1918` and 0025 `1971`, Agent normal `2138` and cut `2145`: finding identities, by-rule counts and summaries are unchanged. Direct-source exact timeout: natural cleanup and zero residual workers; hot runs 1.831s/2.024s. Installed `.agents`: sealed `geek-ai-agent` policy, natural cleanup and zero residual workers; hot runs 1.900s/1.841s.
 
 ## Release
 

@@ -26,12 +26,16 @@ Evidence: implementation `f3269ee`; 153/153 tests PASS; Ruff/format/compileall/d
 
 - [x] Inspect SlowJSON build contract and geek-ai-agent sandbox C++ toolchain without modifying RQG production code.
 - [x] Evaluate mature compilation-database / indexer / semantic-provider options; record decision and rejected alternatives.
-- [ ] Implement build-contract acquisition with `compile_commands.json` first.
-- [ ] Separate native compiler validity from auxiliary semantic-provider availability.
-- [ ] Make per-TU and BASE/TARGET semantic unavailability graceful rather than audit-fatal.
-- [ ] Project available C++ facts into existing normalized topology without compiler-specific QG families.
-- [ ] Run SlowJSON + second C++ fixture and Python/JS/TS regressions.
-- [ ] Run full real-project/lifecycle regression.
+- [x] Implement build-contract acquisition with `compile_commands.json` first.
+- [x] Separate native compiler validity from auxiliary semantic-provider availability.
+- [x] Make per-TU and BASE/TARGET semantic unavailability graceful rather than audit-fatal.
+- [x] Project available C++ facts into existing normalized topology without compiler-specific QG families.
+- [x] Run SlowJSON + second C++ fixture and Python/JS/TS regressions.
+
+C++ fixture evidence: SlowJSON GCC14 compatibility tree builds and runs 34 tests; 36/36 authored GCC TU syntax checks PASS while semantic facts remain N/A. geek-ai-agent sandbox builds/tests under both GCC14 and Clang17; GCC gives 3/3 native PASS + semantic N/A, Clang gives 3/3 native PASS + normalized topology 134 symbols / 13 owners / 120 edges. Two conflicting compdb configurations for the same TU resolve to unknown rather than path-order guessing.
+
+Real-regression evidence: CoH rc2/rc3 v0.21.3→v0.21.4 ScanReport JSON is byte-identical. geek-ai-rag MMR/0025 and geek-ai-agent normal/cut preserve every finding and every by-rule count; only `multilang_summary` gains build-contract/provider metadata. Exact timeout reproduction finishes naturally in direct-source and formally deployed installed `.agents` modes; cache-hit runs are ~1.8–2.0s and leave zero residual workers.
+- [x] Run full real-project/lifecycle regression.
 
 ## Final v0.21.4 release
 

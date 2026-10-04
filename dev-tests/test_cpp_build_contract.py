@@ -14,7 +14,7 @@ from runtime.src.cpp_build_contract import (
 )
 
 
-class CppBuildContractTests(unittest.TestCase):
+class TestCppBuildContract(unittest.TestCase):
     def _snapshot(
         self, root: Path, label: str = "WORKTREE"
     ) -> RepositoryAnalysisSnapshot:

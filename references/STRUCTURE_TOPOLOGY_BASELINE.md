@@ -112,3 +112,46 @@ The exact historical timeout snapshot was then exercised with the current implem
 - The snapshot's pre-existing `.agents` payload was v0.21.1 and was not used as the current installed acceptance target; current installed mode was produced by the current deploy path.
 
 Conclusion: the geek-ai-agent normal/cut finding deltas are fully explained by the frozen v0.21.3 policy, and the exact historical lifecycle reproducer exits naturally with zero residual processes in both direct-source and formally deployed installed `.agents` modes. Phase 7 / Step 5 real regression is complete.
+
+
+## v0.21.4 Phase B C++ build-truth calibration
+
+The Phase B fixtures validate build truth separately from optional semantic extraction. Project source is not modified for these checks except the previously frozen SlowJSON GCC14 compatibility mbox used only as a buildable fixture.
+
+### SlowJSON — GCC build truth
+
+- compatibility tree: `ed98208299f13e60b066b64bfc862419d43f46e8`; original comparison base remains `b6b6eab4ea317f960213e6c49b0340f3c4844d76`.
+- GCC/G++ 14.2 CMake build completes and the aggregate test executable runs 34 test functions, ending with `All done correctly!`.
+- generated `build-rqg/compile_commands.json`: 36 unambiguous translation-unit contracts, all classified `gcc`.
+- native no-output validation using authored GCC commands: `36/36 PASS`.
+- normalized compiler-semantic topology under a GCC build contract: `0 symbols / 0 owners / 0 edges` by design; RQG does not rewrite the GCC build command into Clang semantics.
+- full RQG diff audit against the original base completes normally instead of returning a source-parse execution error; after excluding the local CMake build directory from Git inventory, static scan is `ACCEPT` with ordinary C/E/W delta `0`.
+
+### geek-ai-agent sandbox — same source under GCC and Clang
+
+- sandbox CMake contract is standard C++20 with `-Wall -Wextra -Wpedantic -Werror`; official Docker build installs `g++`.
+- GCC/G++ 14.2 build: PASS; CTest `2/2 PASS`; compdb has 3 GCC TU contracts; native checks `3/3 PASS`; semantic topology N/A (`0/0/0`).
+- Clang/clang++ 17 build of the same source: PASS; CTest `2/2 PASS`; compdb has 3 Clang TU contracts; native checks `3/3 PASS`; normalized topology `134 symbols / 13 owners / 120 edges`.
+- when both GCC and Clang databases provide conflicting commands for the same TU, build-contract loading returns no unambiguous spec rather than choosing by discovery order.
+
+Conclusion: v0.21.4 treats compilation databases/native compilers as build truth and Clang AST as optional enrichment. Compiler/provider failure remains per-TU N/A and cannot invalidate unrelated rules or fabricate QG204 regressions.
+
+
+## v0.21.4 Phase B real-project and lifecycle non-regression
+
+The build-truth/provider changes were replayed against the same v0.21.3 frozen real-project snapshots. ScanReport comparisons use machine JSON so report-format changes from Phase A cannot mask rule drift.
+
+- CoH rc2: v0.21.3 and v0.21.4 ScanReport JSON are byte-identical (`949776` bytes; SHA256 `07bfc2e9…`).
+- CoH rc3: byte-identical (`960400` bytes; SHA256 `1273de9c…`).
+- geek-ai-rag MMR: `1918` findings on both versions; finding identity/by-rule/summary/baseline are identical. Only multilang metadata adds `cpp_build_contracts`, `cpp_compiler_families`, and the new provider description.
+- geek-ai-rag 0025 final: `1971` findings on both versions with the same zero-drift result.
+- geek-ai-agent normal: `2138` findings on both versions; finding identity/by-rule/summary are identical; only multilang metadata changes.
+- geek-ai-agent cut: `2145` findings on both versions with the same zero-drift result.
+
+Exact historical timeout fixture (`73fc0df` cumulative replay) was then exercised with the current implementation:
+
+- direct source: cold run reaches `runtime cleanup complete`; cache-hit repeats complete in `1.831s` and `2.024s`; zero residual scan/audit workers after every run.
+- formally deployed installed `.agents`: sealed installed `geek-ai-agent` Profile `0.20.1`; cold run reaches `runtime cleanup complete`; cache-hit repeats complete in `1.900s` and `1.841s`; zero residual workers.
+- audit `rc=3` remains the historical project's static/manual-ledger rejection and is not a lifecycle/runtime failure.
+
+Conclusion: Phase B changes C++ build-contract/provider evidence without changing existing Python/JS/TS findings or the v0.21.3 lifecycle guarantees.

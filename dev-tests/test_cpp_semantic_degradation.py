@@ -12,7 +12,7 @@ from runtime.src.config import GuardConfig
 from runtime.src.multilang import _cpp_changed_findings
 
 
-class CppSemanticDegradationTests(unittest.TestCase):
+class TestCppSemanticDegradation(unittest.TestCase):
     @unittest.skipUnless(
         shutil.which("clang++") or shutil.which("clang"), "clang required"
     )

@@ -38,8 +38,8 @@ Regression evidence: CoH rc2/rc3 ScanReport JSON is byte-for-byte unchanged from
 
 ## Release
 
-- [ ] v0.21.4 full suite/static gates pass.
-- [ ] Whole-version ordinary C/E/W delta is zero and absolute blockers are zero.
-- [ ] Canonical ZIP is deterministic and integrity-clean.
-- [ ] Final cumulative mbox fresh replay matches exact release tree.
-- [ ] `v0.21.4` tag exists on the verified final commit.
+- [x] v0.21.4 full suite/static gates pass.
+- [x] Whole-version ordinary C/E/W delta is zero and absolute blockers are zero.
+- [x] Canonical ZIP is deterministic and integrity-clean.
+- [x] Final cumulative mbox fresh replay matches exact release tree.
+- [x] `v0.21.4` tag exists on the verified final commit.

@@ -39,8 +39,8 @@ Real-regression evidence: CoH rc2/rc3 v0.21.3→v0.21.4 ScanReport JSON is byte-
 
 ## Final v0.21.4 release
 
-- [ ] Full suite / Ruff / format / compileall / diff-check.
-- [ ] Whole-version self-audit: no new ordinary C/E/W delta or blocker.
-- [ ] Deterministic canonical skill ZIP twice with identical SHA.
-- [ ] Final cumulative mbox fresh replay reproduces exact tree.
-- [ ] Tag `v0.21.4` and persist final Library release checkpoint.
+- [x] Full suite / Ruff / format / compileall / diff-check.
+- [x] Whole-version self-audit: no new ordinary C/E/W delta or blocker.
+- [x] Deterministic canonical skill ZIP twice with identical SHA.
+- [x] Final cumulative mbox fresh replay reproduces exact tree.
+- [x] Tag `v0.21.4` and persist final Library release checkpoint.

@@ -970,17 +970,24 @@ def _readme_sync_finding(
     """
     public_changes: list[InterfaceChange] = []
     for change in interface_diff.changes:
-        if (
-            change.change == "removed"
-            or change.kind == "file"
-            or is_test_path(change.path, project_name)
+        if any(
+            (
+                change.change == "removed",
+                change.kind == "file",
+                is_test_path(change.path, project_name),
+            )
         ):
             continue
-        symbol = change.after or change.before
+        symbol = change.after if change.after is not None else change.before
         if symbol is None:
             continue
         leaf = symbol.qualname.rsplit(".", 1)[-1]
-        if not leaf.startswith("_") or (leaf.startswith("__") and leaf.endswith("__")):
+        if any(
+            (
+                not leaf.startswith("_"),
+                all((leaf.startswith("__"), leaf.endswith("__"))),
+            )
+        ):
             public_changes.append(change)
     if not public_changes:
         return None
@@ -1014,7 +1021,7 @@ def _readme_sync_finding(
     if readme_changed:
         return None
     first = public_changes[0]
-    symbol = first.after or first.before
+    symbol = first.after if first.after is not None else first.before
     return Finding(
         code="QG161",
         severity="error",
@@ -1258,12 +1265,14 @@ def _append_quality_count_regression_finding(report: ScanReport) -> None:
     current_counts = dict.fromkeys(severities, 0)
     current_findings: dict[str, Finding] = {}
     for finding in report.findings:
-        if (
-            finding.code.startswith("QG98")
-            or finding.code == "QG179"
-            or finding.code in _INTERFACE_POLICY_CODES
-            or finding.evidence.get("qg179_exempt") is True
-            or finding.severity not in current_counts
+        if any(
+            (
+                finding.code.startswith("QG98"),
+                finding.code == "QG179",
+                finding.code in _INTERFACE_POLICY_CODES,
+                finding.evidence.get("qg179_exempt") is True,
+                finding.severity not in current_counts,
+            )
         ):
             continue
         current_counts[finding.severity] += 1
@@ -1282,7 +1291,7 @@ def _append_quality_count_regression_finding(report: ScanReport) -> None:
             introduced.append(finding)
         elif rank[finding.severity] > rank[previous]:
             worsened.append((finding, previous))
-    if not introduced and not worsened:
+    if all((not introduced, not worsened)):
         return
 
     introduced_counts = dict.fromkeys(severities, 0)
@@ -1295,7 +1304,7 @@ def _append_quality_count_regression_finding(report: ScanReport) -> None:
     for severity in severities:
         count = introduced_counts[severity]
         upgraded = worsened_counts[severity]
-        if count or upgraded:
+        if any((count, upgraded)):
             detail_parts.append(
                 f"{severity.upper()} 新增 {count}、升级至该档 {upgraded}"
             )

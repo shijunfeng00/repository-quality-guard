@@ -302,7 +302,6 @@ class GuardConfig:
 
     def with_overrides(
         self,
-        *,
         strict_get: bool | None = None,
         include_tests: bool | None = None,
         extra_excludes: tuple[str, ...] = (),

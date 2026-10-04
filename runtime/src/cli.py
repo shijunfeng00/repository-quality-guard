@@ -1709,7 +1709,6 @@ def _review_required_notice(
 
 
 def _final_gate_status(
-    *,
     final_check: bool,
     report_contract_findings: list[Finding],
     tool_status: str,
@@ -1733,7 +1732,6 @@ def _final_gate_status(
 
 def _final_exit_code(
     final_status: str,
-    *,
     report_contract_findings: list[Finding],
     code_exit: int,
 ) -> int:

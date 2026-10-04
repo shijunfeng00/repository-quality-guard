@@ -79,7 +79,6 @@ def filter_interface_symbols(
     symbols: dict[str, InterfaceSymbol],
     sources: dict[str, str],
     aliases: list[ImportAlias],
-    *,
     forced_symbols: set[str],
     include_private: bool,
     private_min_lines: int,

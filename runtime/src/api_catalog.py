@@ -156,7 +156,6 @@ def _type_text(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) -> s
 
 
 def _record(
-    *,
     node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
     module: str,
     qualname: str,
@@ -217,7 +216,7 @@ def _discover_python_files(root: Path, config: GuardConfig) -> tuple[Path, ...]:
     return tuple(sorted(set(accepted)))
 
 
-def _file_state(path: Path, *, digest: str | None = None) -> _FileState:
+def _file_state(path: Path, digest: str | None = None) -> _FileState:
     """计算源码文件内容摘要及廉价变更探针。"""
     stat = path.stat()
     content_digest = digest or hashlib.sha256(path.read_bytes()).hexdigest()
@@ -444,7 +443,6 @@ def _write_api_catalog(
     output: Path,
     records: list[_ApiRecord],
     states: dict[str, _FileState],
-    *,
     changed_groups: set[str] | None = None,
 ) -> None:
     """写入 catalog.json，并只重写受影响的 Markdown package shard。"""
@@ -653,7 +651,6 @@ def build_api_catalog(
     root: Path,
     output: Path,
     config: GuardConfig,
-    *,
     changed_paths: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """生成或增量刷新接口文档与 BM25 机器目录。
@@ -691,7 +688,6 @@ def search_api_catalog(
     output: Path,
     config: GuardConfig,
     query: str,
-    *,
     limit: int = 10,
     changed_paths: tuple[str, ...] | None = None,
 ) -> tuple[list[_ApiSearchHit], dict[str, float | bool | int | str]]:

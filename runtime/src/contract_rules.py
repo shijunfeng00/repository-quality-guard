@@ -239,7 +239,6 @@ def equal_length_guards(
 
 def equal_length_pair(
     expression: ast.expr,
-    *,
     require_equal: bool,
 ) -> frozenset[str] | None:
     """
@@ -628,7 +627,6 @@ def check_side_effect_rules(
     facts: ModuleFacts,
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     qualname: str,
-    *,
     allow_print: bool = False,
 ) -> list[Finding]:
     """

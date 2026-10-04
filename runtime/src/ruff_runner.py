@@ -20,7 +20,6 @@ class RuffRunner:
     def __init__(
         self,
         root: Path,
-        *,
         cache_root: Path,
         environment: dict[str, str],
     ) -> None:

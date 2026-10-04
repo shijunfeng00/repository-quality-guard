@@ -624,7 +624,6 @@ def build_function_models(
 def tree_similarity(
     left: CanonicalNode,
     right: CanonicalNode,
-    *,
     max_nodes: int = _DEFAULT_MAX_TREE_NODES,
 ) -> tuple[float, str]:
     """计算两棵规范代码树的结构相似度。
@@ -687,7 +686,6 @@ def _resolve_call(
 def _summary(
     model: FunctionModel,
     models: dict[str, FunctionModel],
-    *,
     depth: int,
     stack: tuple[str, ...] = (),
 ) -> tuple[BehaviorObligation, ...]:
@@ -759,7 +757,6 @@ def _changed_python_paths(root: Path, base_revision: str, staged: bool) -> list[
 def _match_functions(
     before: dict[str, FunctionModel],
     after: dict[str, FunctionModel],
-    *,
     threshold: float,
     max_nodes: int,
 ) -> list[tuple[FunctionModel, FunctionModel, float, str]]:

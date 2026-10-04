@@ -314,7 +314,6 @@ def make_finding(
     node: ast.AST,
     code: str,
     message: str,
-    *,
     symbol: str,
     severity: str = "warning",
     confidence: str = "high",

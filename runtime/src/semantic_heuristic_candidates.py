@@ -427,7 +427,6 @@ def semantic_heuristic_candidate_findings(
     config: GuardConfig,
     revision: str,
     target_analysis: RepositoryAnalysisSnapshot | None = None,
-    *,
     staged: bool = False,
     static_exemptions: tuple[str, ...] = (),
     authorization_path: str = "",

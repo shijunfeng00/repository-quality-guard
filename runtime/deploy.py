@@ -105,17 +105,17 @@ def _profile_selection(
         release_root=bundle,
     )
     if selection.source == "explicit-cli":
-        print(
-            f"[QG] Install profile selected: '{selection.name}' (source=explicit-cli)."
+        sys.stdout.write(
+            f"[QG] Install profile selected: '{selection.name}' (source=explicit-cli).\n"
         )
     elif selection.source == "auto-directory-name":
-        print(
+        sys.stdout.write(
             f"[QG] Auto-selected install profile '{selection.name}' because repository "
-            "directory name matches an available profile. (source=auto-directory-name)"
+            "directory name matches an available profile. (source=auto-directory-name)\n"
         )
     else:
-        print(
-            "[QG] No install profile selected; freezing generic policy. (source=generic)"
+        sys.stdout.write(
+            "[QG] No install profile selected; freezing generic policy. (source=generic)\n"
         )
     profile = profiles.get_project_profile(selection.reference)
     return selection, profile
@@ -346,7 +346,7 @@ def _create_host_agents_if_missing(repo: Path, source: Path) -> bool:
             stream.write(source.read_bytes())
             stream.flush()
             os.fsync(stream.fileno())
-    except Exception:
+    except (OSError, ValueError):
         target.unlink(missing_ok=True)
         raise
     return True
@@ -457,7 +457,9 @@ def main() -> int:
         help="compatibility no-op; installation is always full staging + atomic replacement",
     )
     args = parser.parse_args()
-    print(deploy(Path(args.bundle), Path(args.destination), args.profile))
+    sys.stdout.write(
+        f"{deploy(Path(args.bundle), Path(args.destination), args.profile)}\n"
+    )
     return 0
 
 

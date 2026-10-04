@@ -1310,14 +1310,16 @@ def _question_issues(
         "Q6" in str(item.finding.evidence["semantic_review_question"])
         for item in delta_items
     )
-    has_production_interface_changes = bool(
-        facts.additions
-        or facts.parameter_interface_changes
-        or facts.interface_removed_definitions
-        or facts.protocol_findings
+    has_production_interface_changes = any(
+        (
+            facts.additions,
+            facts.parameter_interface_changes,
+            facts.interface_removed_definitions,
+            facts.protocol_findings,
+        )
     )
-    q11_required = bool(
-        facts.test_audits or has_production_interface_changes or facts.changed_files
+    q11_required = any(
+        (facts.test_audits, has_production_interface_changes, facts.changed_files)
     )
     obligations = (
         (

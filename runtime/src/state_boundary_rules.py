@@ -14,8 +14,19 @@ _CAST_ARGUMENT_COUNT = 2
 
 
 def _profile_settings(config: GuardConfig) -> dict[str, object]:
-    """把冻结的 Profile settings 转为当前规则只读使用的普通映射。"""
-    return dict(config.profile_settings)
+    """Normalize optional profile settings into one total state-boundary contract map."""
+    settings: dict[str, object] = {
+        "state_boundary_type": "",
+        "absolute_boundary_name": "",
+        "state_boundary_allowed_transitions": (),
+        "state_boundary_state_read_methods": (),
+        "state_boundary_child_read_methods": (),
+        "state_boundary_conventional_names": ("state",),
+        "state_boundary_suggestion": "",
+        "dynamic_execution_nonblocking_hint": "",
+    }
+    settings.update(config.profile_settings)
+    return settings
 
 
 _REFLECTION_MUTATORS = frozenset(
@@ -113,32 +124,32 @@ class StateBoundaryEvaluator:
         )
         self._enabled = self._state_enabled or self._dynamic_enabled
         self.config_name = config.project_name
-        state_type = str(settings.get("state_boundary_type") or "")
+        state_type = str(settings["state_boundary_type"] or "")
         self._state_contract = _StateBoundaryContract(
             state_type=state_type,
             profile_name=config.project_name,
             boundary_name=str(
-                settings.get("absolute_boundary_name") or state_type or "state"
+                settings["absolute_boundary_name"] or state_type or "state"
             ),
             allowed_transitions=frozenset(
-                settings.get("state_boundary_allowed_transitions") or ()
+                settings["state_boundary_allowed_transitions"] or ()
             ),
             state_read_methods=frozenset(
-                settings.get("state_boundary_state_read_methods") or ()
+                settings["state_boundary_state_read_methods"] or ()
             ),
             child_read_methods=frozenset(
-                settings.get("state_boundary_child_read_methods") or ()
+                settings["state_boundary_child_read_methods"] or ()
             ),
             conventional_names=frozenset(
-                settings.get("state_boundary_conventional_names") or ("state",)
+                settings["state_boundary_conventional_names"] or ("state",)
             ),
             suggestion=str(
-                settings.get("state_boundary_suggestion")
+                settings["state_boundary_suggestion"]
                 or "Use the profile-declared canonical state transition API; do not mutate state directly or through reflection."
             ),
         )
         self._dynamic_hint = str(
-            settings.get("dynamic_execution_nonblocking_hint")
+            settings["dynamic_execution_nonblocking_hint"]
             or "test/nonblocking paths remain separately audited"
         )
         self._holders = (

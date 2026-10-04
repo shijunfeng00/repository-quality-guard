@@ -353,7 +353,7 @@ class _ApiBm25Index:
         for field, lengths in self.lengths.items():
             self.averages[field] = sum(lengths) / len(lengths) if lengths else 1.0
 
-    def search(self, query: str, *, limit: int = 10) -> list[_ApiSearchHit]:
+    def search(self, query: str, limit: int = 10) -> list[_ApiSearchHit]:
         """按自然语言、符号名和类型词混合查询已有能力。
 
         Args:

@@ -277,29 +277,6 @@ def _subscript_matches(node: ast.AST, receiver: ast.AST, selector: ast.AST) -> b
     )
 
 
-def _contains_subscript(node: ast.AST, receiver: ast.AST, selector: ast.AST) -> bool:
-    """判断表达式内部是否读取同一 receiver/selector。"""
-    return any(
-        isinstance(item, ast.Subscript)
-        and _subscript_matches(item, receiver, selector)
-        and isinstance(item.ctx, ast.Load)
-        for item in ast.walk(node)
-    )
-
-
-def _handler_exception_names(handler: ast.ExceptHandler) -> set[str]:
-    """提取 except 捕获的异常名称。"""
-    exception_type = handler.type
-    if exception_type is None:
-        return {"<bare>"}
-    candidates = (
-        exception_type.elts
-        if isinstance(exception_type, ast.Tuple)
-        else [exception_type]
-    )
-    return {_display_expr(item).rsplit(".", 1)[-1] for item in candidates}
-
-
 def _fallback_value(statements: list[ast.stmt]) -> ast.AST | None:
     """提取异常或守卫分支中的固定兜底结果。"""
     for statement in statements:
@@ -402,7 +379,13 @@ def _ifexp_patterns(
     receiver, selector, present = membership
     direct = node.body if present else node.orelse
     fallback = node.orelse if present else node.body
-    if not _contains_subscript(direct, receiver, selector):
+    direct_reads_selector = any(
+        isinstance(item, ast.Subscript)
+        and _subscript_matches(item, receiver, selector)
+        and isinstance(item.ctx, ast.Load)
+        for item in ast.walk(direct)
+    )
+    if not direct_reads_selector:
         return []
     return [
         _pattern(
@@ -485,7 +468,16 @@ def _try_patterns(
     patterns: list[FallbackPattern] = []
     accesses = _accesses_in_statements(node.body)
     for handler in node.handlers:
-        names = _handler_exception_names(handler)
+        exception_type = handler.type
+        if exception_type is None:
+            names = {"<bare>"}
+        else:
+            candidates = (
+                exception_type.elts
+                if isinstance(exception_type, ast.Tuple)
+                else [exception_type]
+            )
+            names = {_display_expr(item).rsplit(".", 1)[-1] for item in candidates}
         if not names & (_MISSING_EXCEPTIONS | _BROAD_EXCEPTIONS):
             continue
         fallback = _fallback_value(handler.body)
@@ -618,24 +610,6 @@ def _changed_python_paths(root: Path, base_revision: str, staged: bool) -> list[
     )
 
 
-def _git_source(root: Path, revision: str, path: str) -> str | None:
-    """读取 Git revision 中的 UTF-8 Python 源码。"""
-    result = run_readonly_git(root, "show", f"{revision}:{path}")
-    return result.stdout if result.returncode == 0 else None
-
-
-def _target_source(root: Path, path: str, staged: bool) -> str | None:
-    """读取工作树或暂存区中的目标源码。"""
-    if staged:
-        result = run_readonly_git(root, "show", f":{path}")
-        return result.stdout if result.returncode == 0 else None
-    candidate = root / path
-    try:
-        return candidate.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return None
-
-
 def _changed_patterns(
     before: list[FallbackPattern],
     after: list[FallbackPattern],
@@ -726,16 +700,24 @@ def fallback_laundering_findings(
     for path in _changed_python_paths(root, base_revision, staged):
         before_unit = base_analysis.unit(path) if base_analysis is not None else None
         after_unit = target_analysis.unit(path) if target_analysis is not None else None
-        before_source = (
-            before_unit.source
-            if before_unit is not None
-            else _git_source(root, base_revision, path)
-        )
-        after_source = (
-            after_unit.source
-            if after_unit is not None
-            else _target_source(root, path, staged)
-        )
+        if before_unit is not None:
+            before_source = before_unit.source
+        else:
+            before_result = run_readonly_git(root, "show", f"{base_revision}:{path}")
+            before_source = (
+                before_result.stdout if before_result.returncode == 0 else None
+            )
+
+        if after_unit is not None:
+            after_source = after_unit.source
+        elif staged:
+            after_result = run_readonly_git(root, "show", f":{path}")
+            after_source = after_result.stdout if after_result.returncode == 0 else None
+        else:
+            try:
+                after_source = (root / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                after_source = None
         if before_source is None or after_source is None:
             continue
         before = extract_fallback_patterns(

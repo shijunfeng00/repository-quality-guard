@@ -314,7 +314,9 @@ class PythonInterfaceExtractor:
         self.tree = tree
         self.symbols: dict[str, InterfaceSymbol] = {}
         self._variants: dict[tuple[str, str], int] = defaultdict(int)
-        self._variables: dict[tuple[str, str], _VariableCandidate] = {}
+        self._variables: dict[tuple[str, str], list[_VariableCandidate]] = defaultdict(
+            list
+        )
         self.import_aliases: list[ImportAlias] = []
         self.loaded_names: set[str] = set()
 
@@ -344,7 +346,8 @@ class PythonInterfaceExtractor:
         )
         for node in _scope_statements(tree.body):
             self._extract_module_statement(node)
-        for candidate in self._variables.values():
+        for candidates in self._variables.values():
+            candidate = max(candidates, key=lambda item: item.priority)
             self.symbols[candidate.symbol.key] = candidate.symbol
         return self.symbols, ()
 
@@ -626,10 +629,9 @@ class PythonInterfaceExtractor:
             None。
         """
         key = (symbol.kind, symbol.qualname)
-        current = self._variables.get(key)
-        candidate = _VariableCandidate(symbol=symbol, priority=priority)
-        if current is None or candidate.priority > current.priority:
-            self._variables[key] = candidate
+        self._variables[key].append(
+            _VariableCandidate(symbol=symbol, priority=priority)
+        )
 
     def _add(self, symbol: InterfaceSymbol) -> None:
         """

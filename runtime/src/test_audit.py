@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .ast_utils import dotted_name
 from .git_utils import run_readonly_git
 from .model import Finding, InterfaceChange
 
@@ -112,18 +113,6 @@ _SOURCEISH_NAMES = frozenset(
 )
 
 
-def _call_name(node: ast.Call) -> str:
-    """返回调用表达式的点分名称。"""
-    current: ast.expr = node.func
-    parts: list[str] = []
-    while isinstance(current, ast.Attribute):
-        parts.append(current.attr)
-        current = current.value
-    if isinstance(current, ast.Name):
-        parts.append(current.id)
-    return ".".join(reversed(parts))
-
-
 def _assertion_metrics(node: ast.AST) -> tuple[int, tuple[str, ...]]:
     """统计断言并提取可观察断言表达式，供测试契约差分使用。"""
     count = 0
@@ -133,7 +122,7 @@ def _assertion_metrics(node: ast.AST) -> tuple[int, tuple[str, ...]]:
             count += 1
             contracts.append(f"assert {ast.unparse(child.test)}")
         elif isinstance(child, ast.Call):
-            name = _call_name(child).lower()
+            name = dotted_name(child.func).lower()
             if name.rsplit(".", 1)[-1].startswith("assert") or name in {
                 "pytest.raises",
                 "pytest.warns",
@@ -183,7 +172,7 @@ def _implementation_signals(
         signals.add("tombstone_test_name")
     for child in ast.walk(node):
         if isinstance(child, ast.Call):
-            name = _call_name(child).lower()
+            name = dotted_name(child.func).lower()
             if name in _SOURCE_INTROSPECTION_CALLS:
                 signals.add("source_or_signature_introspection")
             continue
@@ -251,7 +240,7 @@ def _metrics(source: str) -> TestMetrics:
             continue
         if not isinstance(node, ast.Call):
             continue
-        name = _call_name(node).lower()
+        name = dotted_name(node.func).lower()
         leaf = name.rsplit(".", 1)[-1]
         if name in {"pytest.skip", "pytest.xfail"}:
             skips += 1

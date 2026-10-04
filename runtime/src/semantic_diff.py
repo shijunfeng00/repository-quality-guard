@@ -289,7 +289,7 @@ class _AstCanonicalizer:
     def _behavior_node(self, node: ast.AST) -> CanonicalNode | None:
         """把不同语法表达的同一 fallback 行为折叠为统一节点。"""
         line = node.lineno
-        patterns = self.patterns_by_line.get(line, [])
+        patterns = self.patterns_by_line[line]
         expected = {
             "dict.get": ast.Call,
             "dict.setdefault": ast.Call,

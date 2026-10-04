@@ -126,6 +126,13 @@ def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
     ``git diff --numstat`` 的非 ``-z`` rename 会把路径压成 ``{old => new}``，
     不能与 ``--name-status`` 的新路径直接 join。这里统一消费 NUL 协议，rename/copy
     都以目标路径作为唯一事实，避免报告把一次移动重复统计成两项。
+
+    Args:
+        root: Git 工作树根目录。
+        revision: 用于比较当前工作树的基线 revision。
+
+    Returns:
+        已规范化并排除工具产物的文件变化元组。
     """
     numstat = run_readonly_git(root, "diff", "--numstat", "-z", revision, "--")
     name_status = run_readonly_git(root, "diff", "--name-status", "-z", revision, "--")

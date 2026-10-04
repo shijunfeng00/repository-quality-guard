@@ -980,11 +980,21 @@ class _FrozenSSEAnalyzer:
             ),
             None,
         )
-        self.methods = {
-            node.name: node
-            for node in (() if self.class_node is None else self.class_node.body)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
+        self.methods: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+        self.envelope_method: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+        self.close_builder: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+        self.constructor: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+        class_body = () if self.class_node is None else self.class_node.body
+        for node in class_body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            self.methods[node.name] = node
+            if node.name == self.contract.envelope_method:
+                self.envelope_method = node
+            if node.name == self.contract.close_builder:
+                self.close_builder = node
+            if node.name == "__init__":
+                self.constructor = node
 
     def event_types(self) -> tuple[dict[str, set[str]], set[str], dict[str, list[str]]]:
         """提取成员函数发送的事件类型及静态 ``content`` 字段。
@@ -1039,7 +1049,7 @@ class _FrozenSSEAnalyzer:
         Returns:
             与冻结字段重合度最高的字典键集合。
         """
-        node = self.methods.get(self.contract.envelope_method)
+        node = self.envelope_method
         if node is None:
             return set()
         expected = set(self.contract.envelope_keys)
@@ -1068,7 +1078,7 @@ class _FrozenSSEAnalyzer:
             初始化用量字段与 close builder 新增字段的并集。
         """
         keys = self._usage_attribute_keys()
-        builder = self.methods.get(self.contract.close_builder)
+        builder = self.close_builder
         if builder is None:
             return keys
         for child in ast.walk(builder):
@@ -1091,7 +1101,7 @@ class _FrozenSSEAnalyzer:
 
     def _usage_attribute_keys(self) -> set[str]:
         """提取构造函数中用量映射属性的字面量键。"""
-        constructor = self.methods.get("__init__")
+        constructor = self.constructor
         if constructor is None:
             return set()
         for child in ast.walk(constructor):

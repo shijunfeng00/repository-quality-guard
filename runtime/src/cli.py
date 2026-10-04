@@ -799,22 +799,21 @@ def _interface_policy_finding(change: InterfaceChange) -> Finding:
     promoted_from = policy.get("visibility_promotion_from", "")
     property_added = bool(policy.get("property_added"))
     property_changed = bool(policy.get("property_decorator_changed"))
+    changed_fields = "、".join(sorted(change.details)) or "声明"
+    message = f"存量 `{change.kind}` 接口 `{change.symbol}` 的声明发生变化：{changed_fields}。"
+    if "parameters" in change.details:
+        message = f"存量 `{change.kind}` 接口 `{change.symbol}` 的参数列表发生变化。"
+    if property_changed:
+        message = f"存量接口 `{change.symbol}` 的 property/装饰器形态发生变化。"
+    if is_addition:
+        message = f"新增生产 `{change.kind}` 接口 `{change.symbol}`，必须完成减法审判。"
+    if property_added:
+        message = f"新增生产 property 接口 `{change.symbol}`，必须完成接口必要性审判。"
     if promoted_from:
         message = (
             f"生产接口 `{promoted_from}` 被提升为 public `{change.symbol}`，"
             "属于函数权限与接口契约变更。"
         )
-    elif property_added:
-        message = f"新增生产 property 接口 `{change.symbol}`，必须完成接口必要性审判。"
-    elif is_addition:
-        message = f"新增生产 `{change.kind}` 接口 `{change.symbol}`，必须完成减法审判。"
-    elif property_changed:
-        message = f"存量接口 `{change.symbol}` 的 property/装饰器形态发生变化。"
-    elif "parameters" in change.details:
-        message = f"存量 `{change.kind}` 接口 `{change.symbol}` 的参数列表发生变化。"
-    else:
-        changed_fields = "、".join(sorted(change.details)) or "声明"
-        message = f"存量 `{change.kind}` 接口 `{change.symbol}` 的声明发生变化：{changed_fields}。"
     return Finding(
         code="QG180",
         severity="warning",

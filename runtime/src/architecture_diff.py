@@ -612,14 +612,14 @@ def _is_excluded(path: str, config: GuardConfig) -> bool:
 
 def _base_sources(root: Path, revision: str, config: GuardConfig) -> dict[str, str]:
     """读取指定 Git 基线中的 Python 源码。"""
-    listed = run_readonly_git(root, "ls-tree", "-r", "--name-only", revision)
+    listed = run_readonly_git(root, ("ls-tree", "-r", "--name-only", revision))
     if listed.returncode != 0:
         raise RuntimeError(listed.stderr.strip() or f"无法读取 Git 基线 {revision}")
     result: dict[str, str] = {}
     for path in listed.stdout.splitlines():
         if not path.endswith(".py") or _is_excluded(path, config):
             continue
-        content = run_readonly_git(root, "show", f"{revision}:{path}")
+        content = run_readonly_git(root, ("show", f"{revision}:{path}"))
         if content.returncode == 0:
             result[path] = content.stdout
     return result
@@ -628,7 +628,7 @@ def _base_sources(root: Path, revision: str, config: GuardConfig) -> dict[str, s
 def _worktree_sources(root: Path, config: GuardConfig) -> dict[str, str]:
     """读取当前工作区中的 Python 源码。"""
     listed = run_readonly_git(
-        root, "ls-files", "--cached", "--others", "--exclude-standard", "--", "*.py"
+        root, ("ls-files", "--cached", "--others", "--exclude-standard", "--", "*.py")
     )
     if listed.returncode != 0:
         raise RuntimeError(listed.stderr.strip() or "无法读取工作区 Python 文件")

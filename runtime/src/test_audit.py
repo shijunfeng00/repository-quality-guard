@@ -501,7 +501,7 @@ def build_test_change_audits(
     for index, item in enumerate(changed_files, 1):
         path = item.path
         status = item.status
-        result = run_readonly_git(root, "show", f"{revision}:{path}")
+        result = run_readonly_git(root, ("show", f"{revision}:{path}"))
         before = _metrics(result.stdout if result.returncode == 0 else "")
         current_source = ""
         candidate = root / path

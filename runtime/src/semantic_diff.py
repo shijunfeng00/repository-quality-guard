@@ -732,18 +732,13 @@ def _changed_python_paths(root: Path, base_revision: str, staged: bool) -> list[
     if staged:
         args.append("--cached")
     args.extend(["--name-only", "--diff-filter=ACMRD", base_revision, "--", "*.py"])
-    result = run_readonly_git(root, *args)
+    result = run_readonly_git(root, args)
     if result.returncode != 0:
         return []
     paths = set(result.stdout.splitlines())
     if not staged:
         untracked = run_readonly_git(
-            root,
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-            "--",
-            "*.py",
+            root, ("ls-files", "--others", "--exclude-standard", "--", "*.py")
         )
         if untracked.returncode == 0:
             paths.update(untracked.stdout.splitlines())
@@ -896,12 +891,12 @@ def _collect_project_models(
         if before_unit is not None:
             before_source = before_unit.source
         else:
-            result = run_readonly_git(root, "show", f"{base_revision}:{path}")
+            result = run_readonly_git(root, ("show", f"{base_revision}:{path}"))
             before_source = result.stdout if result.returncode == 0 else None
         if after_unit is not None:
             after_source = after_unit.source
         elif staged:
-            result = run_readonly_git(root, "show", f":{path}")
+            result = run_readonly_git(root, ("show", f":{path}"))
             after_source = result.stdout if result.returncode == 0 else None
         else:
             try:

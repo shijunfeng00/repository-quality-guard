@@ -134,8 +134,10 @@ def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
     Returns:
         已规范化并排除工具产物的文件变化元组。
     """
-    numstat = run_readonly_git(root, "diff", "--numstat", "-z", revision, "--")
-    name_status = run_readonly_git(root, "diff", "--name-status", "-z", revision, "--")
+    numstat = run_readonly_git(root, ("diff", "--numstat", "-z", revision, "--"))
+    name_status = run_readonly_git(
+        root, ("diff", "--name-status", "-z", revision, "--")
+    )
     numbers: dict[str, tuple[int, int]] = {}
     statuses: dict[str, str] = {}
     if numstat.returncode == 0:
@@ -173,7 +175,7 @@ def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
                 index += 1
             if path:
                 statuses[path] = status
-    untracked = run_readonly_git(root, "ls-files", "--others", "--exclude-standard")
+    untracked = run_readonly_git(root, ("ls-files", "--others", "--exclude-standard"))
     if untracked.returncode == 0:
         for path in untracked.stdout.splitlines():
             if path:

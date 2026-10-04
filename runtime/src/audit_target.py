@@ -242,7 +242,7 @@ def git_stdout(root: Path, arguments: tuple[str, ...]) -> str:
     Returns:
         命令成功时去除首尾空白的标准输出；失败时为空串。
     """
-    result = run_readonly_git(root, *arguments)
+    result = run_readonly_git(root, arguments)
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
@@ -291,11 +291,7 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
             if (
                 verified
                 and run_readonly_git(
-                    root,
-                    "merge-base",
-                    "--is-ancestor",
-                    verified,
-                    "HEAD",
+                    root, ("merge-base", "--is-ancestor", verified, "HEAD")
                 ).returncode
                 == 0
             ):
@@ -330,11 +326,7 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
         if (
             verified
             and run_readonly_git(
-                root,
-                "merge-base",
-                "--is-ancestor",
-                verified,
-                "HEAD",
+                root, ("merge-base", "--is-ancestor", verified, "HEAD")
             ).returncode
             == 0
         ):
@@ -348,11 +340,7 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
         return None
     if (
         run_readonly_git(
-            root,
-            "merge-base",
-            "--is-ancestor",
-            upstream_commit,
-            "HEAD",
+            root, ("merge-base", "--is-ancestor", upstream_commit, "HEAD")
         ).returncode
         == 0
     ):
@@ -389,7 +377,7 @@ def git_comparison_plan(
             "HEAD", requested_target, "非 Git 输入：自动基线不可用"
         )
     status = run_readonly_git(
-        target.root, "status", "--porcelain=v1", "--untracked-files=all"
+        target.root, ("status", "--porcelain=v1", "--untracked-files=all")
     )
     if status.returncode != 0:
         detail = status.stderr.strip() or f"exit={status.returncode}"

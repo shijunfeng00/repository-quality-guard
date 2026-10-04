@@ -378,7 +378,7 @@ def _changed_line_map(root: Path, revision: str, staged: bool) -> dict[str, set[
     if staged:
         args.append("--cached")
     args.extend([revision, "--", "*.py"])
-    result = run_readonly_git(root, *args)
+    result = run_readonly_git(root, args)
     if result.returncode != 0:
         return {}
     changed: defaultdict[str, set[int]] = defaultdict(set)
@@ -405,7 +405,7 @@ def _baseline_authorizations(
     """读取 Git 基线中预先存在的精确授权指纹。"""
     if not relative_path:
         return frozenset()
-    result = run_readonly_git(root, "show", f"{revision}:{relative_path}")
+    result = run_readonly_git(root, ("show", f"{revision}:{relative_path}"))
     if result.returncode != 0:
         return frozenset()
     try:

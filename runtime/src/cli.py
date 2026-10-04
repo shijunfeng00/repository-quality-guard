@@ -1000,14 +1000,14 @@ def _readme_sync_finding(
             args.diff_base,
             "--",
         ]
-        changed = run_readonly_git(target.root, *command)
+        changed = run_readonly_git(target.root, command)
         if changed.returncode == 0:
             changed_paths.update(
                 line.strip() for line in changed.stdout.splitlines() if line.strip()
             )
         if not args.staged:
             untracked = run_readonly_git(
-                target.root, "ls-files", "--others", "--exclude-standard"
+                target.root, ("ls-files", "--others", "--exclude-standard")
             )
             if untracked.returncode == 0:
                 changed_paths.update(

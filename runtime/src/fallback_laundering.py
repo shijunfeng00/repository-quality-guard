@@ -600,7 +600,7 @@ def _changed_python_paths(root: Path, base_revision: str, staged: bool) -> list[
     if staged:
         args.append("--cached")
     args.extend(["--name-only", "--diff-filter=ACMR", base_revision, "--", "*.py"])
-    result = run_readonly_git(root, *args)
+    result = run_readonly_git(root, args)
     if result.returncode != 0:
         return []
     return sorted(
@@ -703,7 +703,7 @@ def fallback_laundering_findings(
         if before_unit is not None:
             before_source = before_unit.source
         else:
-            before_result = run_readonly_git(root, "show", f"{base_revision}:{path}")
+            before_result = run_readonly_git(root, ("show", f"{base_revision}:{path}"))
             before_source = (
                 before_result.stdout if before_result.returncode == 0 else None
             )
@@ -711,7 +711,7 @@ def fallback_laundering_findings(
         if after_unit is not None:
             after_source = after_unit.source
         elif staged:
-            after_result = run_readonly_git(root, "show", f":{path}")
+            after_result = run_readonly_git(root, ("show", f":{path}"))
             after_source = after_result.stdout if after_result.returncode == 0 else None
         else:
             try:

@@ -131,7 +131,7 @@ def worktree_analysis_snapshot(
         WORKTREE 对应的统一源码与 AST 快照。
     """
     listed = run_readonly_git_bytes(
-        root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"
+        root, ("ls-files", "--cached", "--others", "--exclude-standard", "-z")
     )
     if listed.returncode != 0:
         detail = listed.stderr.decode("utf-8", errors="replace").strip()
@@ -214,7 +214,7 @@ def revision_analysis_snapshot(
     Returns:
         指定 revision 对应的统一源码与 AST 快照。
     """
-    archive = run_readonly_git_bytes(root, "archive", "--format=tar", revision)
+    archive = run_readonly_git_bytes(root, ("archive", "--format=tar", revision))
     if archive.returncode != 0:
         detail = archive.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(detail or f"无法生成 Git 快照: {revision}")
@@ -254,7 +254,7 @@ def index_analysis_snapshot(
     Returns:
         INDEX 对应的统一源码与 AST 快照。
     """
-    listed = run_readonly_git_bytes(root, "ls-files", "--cached", "-z")
+    listed = run_readonly_git_bytes(root, ("ls-files", "--cached", "-z"))
     if listed.returncode != 0:
         detail = listed.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(detail or "无法列出 Git index")
@@ -267,7 +267,7 @@ def index_analysis_snapshot(
         language = source_language(relative, config)
         if not language:
             continue
-        blob = run_readonly_git_bytes(root, "show", f":{relative}")
+        blob = run_readonly_git_bytes(root, ("show", f":{relative}"))
         if blob.returncode != 0:
             continue
         try:

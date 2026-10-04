@@ -22,10 +22,7 @@ class TestSubprocessEncoding(unittest.TestCase):
 
             with patch.object(subprocess, "_text_encoding", return_value="gbk"):
                 result = run_readonly_git(
-                    root,
-                    "status",
-                    "--porcelain=v1",
-                    "--untracked-files=all",
+                    root, ("status", "--porcelain=v1", "--untracked-files=all")
                 )
 
             self.assertEqual(0, result.returncode)

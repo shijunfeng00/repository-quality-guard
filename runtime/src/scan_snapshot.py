@@ -67,7 +67,7 @@ def _private_cache_dir(name: str) -> Path:
 def _git_commit(root: Path, revision: str) -> str:
     """解析 commit-ish 为不可变提交 ID。"""
     result = run_readonly_git_bytes(
-        root, "rev-parse", "--verify", f"{revision}^{{commit}}"
+        root, ("rev-parse", "--verify", f"{revision}^{{commit}}")
     )
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", errors="replace").strip()
@@ -78,7 +78,7 @@ def _git_commit(root: Path, revision: str) -> str:
 def _relevant_worktree_paths(root: Path, config: GuardConfig) -> tuple[str, ...]:
     """列出会影响现有扫描、配置、README 同步和 AGENTS 唯一性规则的输入。"""
     listed = run_readonly_git_bytes(
-        root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"
+        root, ("ls-files", "--cached", "--others", "--exclude-standard", "-z")
     )
     if listed.returncode != 0:
         detail = listed.stderr.decode("utf-8", errors="replace").strip()
@@ -132,7 +132,7 @@ def _worktree_fingerprint(
         hasher.update(value.encode("utf-8"))
         hasher.update(b"\0")
     if staged:
-        index = run_readonly_git_bytes(root, "ls-files", "-s", "-z")
+        index = run_readonly_git_bytes(root, ("ls-files", "-s", "-z"))
         if index.returncode != 0:
             detail = index.stderr.decode("utf-8", errors="replace").strip()
             raise RuntimeError(detail or "无法读取 Git index")

@@ -11,7 +11,10 @@ from .model import Finding, InterfaceChange
 
 
 class ChangedFileLike(Protocol):
-    """声明测试审计所需的最小文件变化字段。"""
+    """声明测试审计所需的最小文件变化字段。
+
+    路径和状态确定审计对象，增删行数供报告展示文件变更规模。
+    """
 
     path: str
     status: str
@@ -21,7 +24,10 @@ class ChangedFileLike(Protocol):
 
 @dataclass(slots=True, frozen=True)
 class TestCaseMetrics:
-    """保存单个测试用例的稳定结构指纹、断言契约与实现耦合候选信号。"""
+    """保存单个测试用例的稳定结构指纹、断言契约与实现耦合候选信号。
+
+    限定名定位用例，指纹忽略 docstring 和位置信息，断言表达式参与契约差分。
+    """
 
     qualname: str
     fingerprint: str
@@ -32,7 +38,10 @@ class TestCaseMetrics:
 
 @dataclass(slots=True, frozen=True)
 class TestMetrics:
-    """保存单个测试文件在一个 Git 快照中的可比较结构指标。"""
+    """保存单个测试文件在一个 Git 快照中的可比较结构指标。
+
+    用例、断言、跳过和 mock 统计参与前后比较；语法错误单独记录为风险。
+    """
 
     test_cases: tuple[str, ...] = ()
     cases: tuple[TestCaseMetrics, ...] = ()
@@ -44,7 +53,10 @@ class TestMetrics:
 
 @dataclass(slots=True, frozen=True)
 class TestCaseChange:
-    """表示需要人工说明的一项稳定测试契约变化。"""
+    """表示需要人工说明的一项稳定测试契约变化。
+
+    变化关联文件和用例，保留增删断言与静态信号以供报告逐项裁决。
+    """
 
     item_id: str
     path: str
@@ -59,7 +71,10 @@ class TestCaseChange:
 
 @dataclass(slots=True, frozen=True)
 class TestChangeAudit:
-    """表示测试文件的变更、行为指标、用例变化和静态风险。"""
+    """表示测试文件的变更、行为指标、用例变化和静态风险。
+
+    同时关联该文件的接口变化，使报告可以核对测试覆盖和生产契约。
+    """
 
     item_id: str
     path: str
@@ -109,17 +124,6 @@ def _call_name(node: ast.Call) -> str:
     return ".".join(reversed(parts))
 
 
-def _is_assertion_call(node: ast.Call) -> bool:
-    """判断调用是否承担测试断言语义。"""
-    name = _call_name(node).lower()
-    leaf = name.rsplit(".", 1)[-1]
-    return leaf.startswith("assert") or name in {
-        "pytest.raises",
-        "pytest.warns",
-        "pytest.fail",
-    }
-
-
 def _assertion_metrics(node: ast.AST) -> tuple[int, tuple[str, ...]]:
     """统计断言并提取可观察断言表达式，供测试契约差分使用。"""
     count = 0
@@ -128,9 +132,15 @@ def _assertion_metrics(node: ast.AST) -> tuple[int, tuple[str, ...]]:
         if isinstance(child, ast.Assert):
             count += 1
             contracts.append(f"assert {ast.unparse(child.test)}")
-        elif isinstance(child, ast.Call) and _is_assertion_call(child):
-            count += 1
-            contracts.append(ast.unparse(child))
+        elif isinstance(child, ast.Call):
+            name = _call_name(child).lower()
+            if name.rsplit(".", 1)[-1].startswith("assert") or name in {
+                "pytest.raises",
+                "pytest.warns",
+                "pytest.fail",
+            }:
+                count += 1
+                contracts.append(ast.unparse(child))
     return count, tuple(sorted(set(contracts)))
 
 
@@ -163,23 +173,6 @@ def _case_fingerprint(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
 
 
-def _name_mentions_source(node: ast.AST) -> bool:
-    """判断表达式是否明显指向源码/代码文本变量。"""
-    return any(
-        isinstance(child, ast.Name) and child.id.lower() in _SOURCEISH_NAMES
-        for child in ast.walk(node)
-    )
-
-
-def _literal_identifier(node: ast.AST) -> str:
-    """从表达式中提取适合作为源码结构探测对象的字符串字面量。"""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        value = node.value.strip()
-        if value and (value.startswith("_") or value.isidentifier() or "def " in value):
-            return value
-    return ""
-
-
 def _implementation_signals(
     qualname: str, node: ast.FunctionDef | ast.AsyncFunctionDef
 ) -> tuple[str, ...]:
@@ -193,23 +186,30 @@ def _implementation_signals(
             name = _call_name(child).lower()
             if name in _SOURCE_INTROSPECTION_CALLS:
                 signals.add("source_or_signature_introspection")
-        elif isinstance(child, ast.Name) and child.id.upper().startswith("REMOVED_"):
+            continue
+        if isinstance(child, ast.Name) and child.id.upper().startswith("REMOVED_"):
             signals.add("historical_removed_symbol_list")
-        elif isinstance(child, ast.Assert) and isinstance(child.test, ast.Compare):
-            compare = child.test
-            if len(compare.ops) != 1 or len(compare.comparators) != 1:
-                continue
-            operator = compare.ops[0]
-            if not isinstance(operator, (ast.In, ast.NotIn)):
-                continue
-            left = _literal_identifier(compare.left)
-            right = compare.comparators[0]
-            if left and _name_mentions_source(right):
-                signals.add(
-                    "source_text_absence_assertion"
-                    if isinstance(operator, ast.NotIn)
-                    else "source_text_presence_assertion"
+            continue
+        match child:
+            case ast.Assert(
+                test=ast.Compare(
+                    left=ast.Constant(value=str() as literal),
+                    ops=[ast.In() | ast.NotIn() as operator],
+                    comparators=[right],
                 )
+            ):
+                left = literal.strip()
+                if not (left.startswith("_") or left.isidentifier() or "def " in left):
+                    continue
+                if any(
+                    isinstance(part, ast.Name) and part.id.lower() in _SOURCEISH_NAMES
+                    for part in ast.walk(right)
+                ):
+                    signals.add(
+                        "source_text_absence_assertion"
+                        if isinstance(operator, ast.NotIn)
+                        else "source_text_presence_assertion"
+                    )
     return tuple(sorted(signals))
 
 
@@ -219,57 +219,52 @@ def _qualified_case_nodes(
     """提取模块级与 Test* 类中的测试用例 AST。"""
     result: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
     for node in ast.iter_child_nodes(tree):
-        if isinstance(
-            node, (ast.FunctionDef, ast.AsyncFunctionDef)
-        ) and node.name.startswith("test_"):
-            result.append((node.name, node))
-        elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
-            for child in node.body:
-                if isinstance(
-                    child, (ast.FunctionDef, ast.AsyncFunctionDef)
-                ) and child.name.startswith("test_"):
-                    result.append((f"{node.name}.{child.name}", child))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name.startswith("test_"):
+                result.append((node.name, node))
+            continue
+        if not isinstance(node, ast.ClassDef) or not node.name.startswith("Test"):
+            continue
+        for child in node.body:
+            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if child.name.startswith("test_"):
+                result.append((f"{node.name}.{child.name}", child))
     return tuple(sorted(result, key=lambda item: item[0]))
 
 
 def _metrics(source: str) -> TestMetrics:
     """解析测试源码并统计用例、断言、跳过、mock 与用例稳定指纹。"""
-    if not source:
-        return TestMetrics()
     try:
         tree = ast.parse(source)
     except SyntaxError as error:
         return TestMetrics(parse_error=f"{error.msg}:{error.lineno or 1}")
-    assertions = 0
+    assertions, _ = _assertion_metrics(tree)
     skips = 0
     mocks = 0
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assert):
-            assertions += 1
-            continue
-        if isinstance(node, ast.Call):
-            name = _call_name(node).lower()
-            leaf = name.rsplit(".", 1)[-1]
-            if _is_assertion_call(node):
-                assertions += 1
-            if name in {"pytest.skip", "pytest.xfail"}:
-                skips += 1
-            if leaf in {
-                "mock",
-                "magicmock",
-                "patch",
-                "patch.object",
-                "monkeypatch",
-            } or any(
-                marker in name
-                for marker in ("unittest.mock", "monkeypatch.", "mocker.")
-            ):
-                mocks += 1
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             for decorator in node.decorator_list:
                 text = ast.unparse(decorator).lower()
                 if "skip" in text or "xfail" in text:
                     skips += 1
+            continue
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node).lower()
+        leaf = name.rsplit(".", 1)[-1]
+        if name in {"pytest.skip", "pytest.xfail"}:
+            skips += 1
+        if leaf in {
+            "mock",
+            "magicmock",
+            "patch",
+            "patch.object",
+            "monkeypatch",
+        } or any(
+            marker in name for marker in ("unittest.mock", "monkeypatch.", "mocker.")
+        ):
+            mocks += 1
     case_metrics: list[TestCaseMetrics] = []
     for qualname, node in _qualified_case_nodes(tree):
         case_assertions, assertion_contracts = _assertion_metrics(node)
@@ -290,23 +285,6 @@ def _metrics(source: str) -> TestMetrics:
         skips=skips,
         mocks=mocks,
     )
-
-
-def _git_source(root: Path, revision: str, path: str) -> str:
-    """读取 Git 基线中的测试源码，不存在时返回空字符串。"""
-    result = run_readonly_git(root, "show", f"{revision}:{path}")
-    return result.stdout if result.returncode == 0 else ""
-
-
-def _current_source(root: Path, path: str) -> str:
-    """读取工作区测试源码，不存在或不可解码时返回空字符串。"""
-    candidate = root / path
-    if not candidate.is_file():
-        return ""
-    try:
-        return candidate.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return ""
 
 
 def _finding(
@@ -516,7 +494,17 @@ def build_test_change_audits(
     interface_changes: tuple[InterfaceChange, ...],
     revision: str,
 ) -> tuple[TestChangeAudit, ...]:
-    """为变更测试文件建立独立审计事实；只解析发生变化的 tests。"""
+    """为变更测试文件建立独立审计事实；只解析发生变化的 tests。
+
+    Args:
+        root: 待审计 Git 工作区根目录。
+        changed_files: 已选出的变更测试文件及其状态和增删行数。
+        interface_changes: 与测试文件关联的定义接口变化。
+        revision: 读取测试文件旧源码的 Git 基线。
+
+    Returns:
+        按输入文件顺序排列的测试变化审计事实，包含用例契约差分和风险。
+    """
     by_path: dict[str, list[InterfaceChange]] = {}
     for change in interface_changes:
         by_path.setdefault(change.path, []).append(change)
@@ -524,8 +512,16 @@ def build_test_change_audits(
     for index, item in enumerate(changed_files, 1):
         path = item.path
         status = item.status
-        before = _metrics(_git_source(root, revision, path))
-        after = _metrics(_current_source(root, path))
+        result = run_readonly_git(root, "show", f"{revision}:{path}")
+        before = _metrics(result.stdout if result.returncode == 0 else "")
+        current_source = ""
+        candidate = root / path
+        if candidate.is_file():
+            try:
+                current_source = candidate.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                current_source = ""
+        after = _metrics(current_source)
         previous = _case_lookup(before)
         current = _case_lookup(after)
         added_cases = tuple(sorted(set(current) - set(previous)))

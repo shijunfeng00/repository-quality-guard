@@ -96,20 +96,15 @@ def _assignment_name(node: ast.AST) -> str:
     return "<expression>"
 
 
-def _expression_names(node: ast.AST) -> frozenset[str]:
-    """提取表达式中可定位的名称，供文本来源判定使用。"""
+def _is_semantic_text_expression(node: ast.AST) -> bool:
+    """判断表达式是否显式引用 query/message/content 等语义文本来源。"""
     names: set[str] = set()
     for child in ast.walk(node):
         if isinstance(child, ast.Name):
             names.add(child.id.casefold())
         elif isinstance(child, ast.Attribute):
             names.add(child.attr.casefold())
-    return frozenset(names)
-
-
-def _is_semantic_text_expression(node: ast.AST) -> bool:
-    """判断表达式是否显式引用 query/message/content 等语义文本来源。"""
-    for name in _expression_names(node):
+    for name in names:
         normalized = name.replace("-", "_")
         if normalized in _SEMANTIC_TEXT_MARKERS:
             return True
@@ -124,30 +119,26 @@ def _generator_literal_keyword_membership(node: ast.Call) -> tuple[int, str] | N
     name = _call_name(node.func)
     if name not in {"any", "all"} or len(node.args) != 1:
         return None
-    generator = node.args[0]
-    if not isinstance(generator, ast.GeneratorExp) or len(generator.generators) != 1:
-        return None
-    comprehension = generator.generators[0]
-    element = generator.elt
-    valid_shape = (
-        not comprehension.ifs
-        and not comprehension.is_async
-        and isinstance(comprehension.target, ast.Name)
-        and isinstance(element, ast.Compare)
-        and len(element.ops) == 1
-        and len(element.comparators) == 1
-        and isinstance(element.ops[0], (ast.In, ast.NotIn))
-        and isinstance(element.left, ast.Name)
-        and element.left.id == comprehension.target.id
-    )
-    if not valid_shape:
-        return None
-    size = _string_collection_size(comprehension.iter)
-    if size < _MIN_LITERAL_RULE_SIZE or not _is_semantic_text_expression(
-        element.comparators[0]
-    ):
-        return None
-    return size, name
+    match node.args[0]:
+        case ast.GeneratorExp(
+            elt=ast.Compare(
+                left=ast.Name(id=keyword),
+                ops=[ast.In() | ast.NotIn()],
+                comparators=[text],
+            ),
+            generators=[
+                ast.comprehension(
+                    target=ast.Name(id=target),
+                    iter=literals,
+                    ifs=[],
+                    is_async=0,
+                )
+            ],
+        ) if keyword == target:
+            size = _string_collection_size(literals)
+            if size >= _MIN_LITERAL_RULE_SIZE and _is_semantic_text_expression(text):
+                return size, name
+    return None
 
 
 class _CandidateVisitor(ast.NodeVisitor):
@@ -270,31 +261,33 @@ class _CandidateVisitor(ast.NodeVisitor):
         Returns:
             None。
         """
-        if node.lineno in self.changed_lines:
-            name = _call_name(node.func)
-            if name in _REGEX_APIS:
-                self._append(node, "regex", name)
-            elif name in _FUZZY_APIS:
-                self._append(node, "fuzzy_similarity", name)
-            elif isinstance(node.func, ast.Attribute) and node.func.attr in {
-                "startswith",
-                "endswith",
-            }:
-                size = _string_collection_size(node.args[0]) if node.args else 0
-                if size >= _MIN_LITERAL_RULE_SIZE:
-                    self._append(
-                        node,
-                        "literal_prefix_suffix_table",
-                        f"{node.func.attr}({size} literals)",
-                    )
-            generator_membership = _generator_literal_keyword_membership(node)
-            if generator_membership is not None:
-                size, function_name = generator_membership
+        if node.lineno not in self.changed_lines:
+            self.generic_visit(node)
+            return
+        name = _call_name(node.func)
+        if name in _REGEX_APIS:
+            self._append(node, "regex", name)
+        elif name in _FUZZY_APIS:
+            self._append(node, "fuzzy_similarity", name)
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in {
+            "startswith",
+            "endswith",
+        }:
+            size = _string_collection_size(node.args[0]) if node.args else 0
+            if size >= _MIN_LITERAL_RULE_SIZE:
                 self._append(
                     node,
-                    "semantic_keyword_table",
-                    f"{function_name} over {size} literal keywords against semantic text",
+                    "literal_prefix_suffix_table",
+                    f"{node.func.attr}({size} literals)",
                 )
+        generator_membership = _generator_literal_keyword_membership(node)
+        if generator_membership is not None:
+            size, function_name = generator_membership
+            self._append(
+                node,
+                "semantic_keyword_table",
+                f"{function_name} over {size} literal keywords against semantic text",
+            )
         self.generic_visit(node)
 
     def visit_Dict(self, node: ast.Dict) -> None:
@@ -429,11 +422,6 @@ def _baseline_authorizations(
     return frozenset(authorized)
 
 
-def _fingerprint(relative: str, candidate: _Candidate) -> str:
-    """构造只能由 profile 或基线授权文件匹配的精确候选指纹。"""
-    return ":".join((relative, candidate.owner, candidate.target, candidate.mechanism))
-
-
 def semantic_heuristic_candidate_findings(
     root: Path,
     config: GuardConfig,
@@ -485,7 +473,9 @@ def semantic_heuristic_candidate_findings(
         visitor.visit(tree)
         seen: set[str] = set()
         for candidate in visitor.candidates:
-            fingerprint = _fingerprint(relative, candidate)
+            fingerprint = ":".join(
+                (relative, candidate.owner, candidate.target, candidate.mechanism)
+            )
             if fingerprint in exemptions or fingerprint in seen:
                 continue
             seen.add(fingerprint)

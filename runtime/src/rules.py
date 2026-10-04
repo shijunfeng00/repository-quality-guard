@@ -562,23 +562,17 @@ class RuleEvaluator:
             )
         return findings
 
-    def _function_size_findings(self, definition: Definition) -> list[Finding]:
-        """
-        检查包装函数、长度、嵌套和分支数量。
+    def _wrapper_contract(
+        self, definition: Definition
+    ) -> tuple[bool, bool, bool, bool]:
+        """裁决薄包装的公开/private/protocol 边界及是否需报告。
 
         Args:
-            definition: 待评估的代码定义。
+            definition: 包含 wrapper target、装饰器和外部调用事实的定义。
 
         Returns:
-            当前函数对应的规模问题列表。
+            private facade、property facade、critical facade 和报告条件。
         """
-        findings: list[Finding] = []
-        common = {
-            "path": str(definition.path),
-            "line": definition.line,
-            "column": definition.column,
-            "symbol": definition.symbol_id,
-        }
         target_leaf = definition.wrapper_target.rsplit(".", 1)[-1]
         private_facade = (
             bool(definition.wrapper_target)
@@ -605,16 +599,32 @@ class RuleEvaluator:
             and not property_facade
             and (critical_facade or not definition.externally_invoked)
         )
+        return private_facade, property_facade, critical_facade, bool(report_wrapper)
+
+    def _wrapper_findings(self, definition: Definition) -> list[Finding]:
+        """根据包装边界契约生成委托与 private 套壳发现。
+
+        Args:
+            definition: 待评估的函数定义。
+
+        Returns:
+            包装契约发现，保留调用次数和边界裁决证据。
+        """
+        findings: list[Finding] = []
+        common = {
+            "path": str(definition.path),
+            "line": definition.line,
+            "column": definition.column,
+            "symbol": definition.symbol_id,
+        }
+        private_facade, property_facade, critical_facade, report_wrapper = (
+            self._wrapper_contract(definition)
+        )
         if report_wrapper:
             if private_facade:
                 message = (
                     f"公开接口 `{definition.qualname}` 只套壳访问 private 目标 "
                     f"`{definition.wrapper_target}`。"
-                )
-            elif property_facade:
-                message = (
-                    f"property 接口 `{definition.qualname}` 只委托给 "
-                    f"`{definition.wrapper_target}`，没有独立契约。"
                 )
             else:
                 message = (
@@ -650,6 +660,25 @@ class RuleEvaluator:
                     **common,
                 )
             )
+        return findings
+
+    def _function_size_findings(self, definition: Definition) -> list[Finding]:
+        """
+        按包装契约和函数规模依次生成质量发现。
+
+        Args:
+            definition: 待评估的代码定义。
+
+        Returns:
+            当前函数对应的规模问题列表。
+        """
+        findings = self._wrapper_findings(definition)
+        common = {
+            "path": str(definition.path),
+            "line": definition.line,
+            "column": definition.column,
+            "symbol": definition.symbol_id,
+        }
         if definition.lines > self.config.max_function_lines:
             findings.append(
                 Finding(

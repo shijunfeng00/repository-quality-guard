@@ -29,6 +29,13 @@ def is_test_path(path: str | Path, project_name: str = "") -> bool:
 
     通用规则识别 ``test/tests`` 目录；Profile 可额外声明精确 glob，
     但这些路径仍完整扫描，只是不进入生产硬门槛。Core 不包含项目名特判。
+
+    Args:
+        path: 待分类的仓库相对路径。
+        project_name: 当前进程已加载的 Profile 名称；为空时只应用通用规则。
+
+    Returns:
+        路径属于测试或当前 Profile 非阻断源码域时返回 True。
     """
     candidate = Path(path)
     normalized = candidate.as_posix().lstrip("./")
@@ -45,18 +52,20 @@ def is_test_path(path: str | Path, project_name: str = "") -> bool:
 
 
 def is_profile_nonblocking_path(path: str | Path, project_name: str = "") -> bool:
-    """判断路径是否由当前 Profile 显式声明为非阻断源码域。"""
+    """判断路径是否由当前 Profile 显式声明为非阻断源码域。
+
+    Args:
+        path: 待分类的仓库相对路径。
+        project_name: 当前进程已加载的 Profile 名称。
+
+    Returns:
+        路径匹配该 Profile 的非阻断 glob 时返回 True。
+    """
     normalized = Path(path).as_posix().lstrip("./")
     return any(
         fnmatch(normalized, pattern)
         for pattern in _PROFILE_NONBLOCKING_PATHS.get(project_name, ())
     )
-
-
-def _register_profile_nonblocking_paths(name: str, patterns: tuple[str, ...]) -> None:
-    """注册当前进程已加载 Profile 的非阻断路径分类。"""
-    if name:
-        _PROFILE_NONBLOCKING_PATHS[name] = tuple(patterns)
 
 
 @dataclass(slots=True, frozen=True)
@@ -256,7 +265,8 @@ class GuardConfig:
         settings = tuple(
             sorted(dict(profile.settings).items(), key=lambda item: item[0])
         )
-        _register_profile_nonblocking_paths(profile.name, profile.nonblocking_paths)
+        if profile.name:
+            _PROFILE_NONBLOCKING_PATHS[profile.name] = tuple(profile.nonblocking_paths)
         return replace(
             self,
             project_name=profile.name,

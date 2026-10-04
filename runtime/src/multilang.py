@@ -150,20 +150,12 @@ def _script_usage(
     return definitions, usage
 
 
-def _definition_findings(
+def _script_module_findings(
     scripts: list[dict[str, Any]],
     config: GuardConfig,
 ) -> list[Finding]:
-    """生成 JS/TS 函数级通用质量发现。"""
+    """按模块顺序报告 parser diagnostics 和模块规模契约。"""
     findings: list[Finding] = []
-    definitions, usage = _script_usage(scripts)
-    by_scope: defaultdict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(
-        list
-    )
-    shapes: defaultdict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(
-        list
-    )
-
     for script in scripts:
         for diagnostic in script["diagnostics"]:
             findings.append(
@@ -228,6 +220,25 @@ def _definition_findings(
                     source=_SOURCE,
                 )
             )
+
+    return findings
+
+
+def _definition_findings(
+    scripts: list[dict[str, Any]],
+    config: GuardConfig,
+) -> list[Finding]:
+    """生成 JS/TS 函数级通用质量发现。"""
+    findings: list[Finding] = []
+    definitions, usage = _script_usage(scripts)
+    by_scope: defaultdict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(
+        list
+    )
+    shapes: defaultdict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(
+        list
+    )
+
+    findings.extend(_script_module_findings(scripts, config))
 
     for script, definition in definitions:
         lines = definition["end_line"] - definition["line"] + 1
@@ -346,6 +357,16 @@ def _definition_findings(
         if lines >= 4 and shape:
             shapes[shape].append((script, definition))
 
+    findings.extend(_script_duplicate_findings(by_scope, shapes))
+    return findings
+
+
+def _script_duplicate_findings(
+    by_scope: dict[tuple[str, str, str], list[dict[str, Any]]],
+    shapes: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]],
+) -> list[Finding]:
+    """从同 scope 名称和函数体形状索引报告定义重复。"""
+    findings: list[Finding] = []
     for (path, scope, name), group in by_scope.items():
         if len(group) <= 1:
             continue
@@ -419,27 +440,24 @@ def _script_architecture_findings(
     for module, composition in compositions:
         bags = [name for name in composition["bags"] if name in bag_module]
         modules = sorted({bag_module[name] for name in bags})
+        methods = [
+            (bag_module[bag], method) for bag in bags for method in bag_methods[bag]
+        ]
         method_owners: defaultdict[str, list[str]] = defaultdict(list)
-        for bag in bags:
-            for method in bag_methods[bag]:
-                method_owners[method["name"]].append(bag_module[bag])
+        for owner, method in methods:
+            method_owners[method["name"]].append(owner)
         unique_owner = {
             name: owners[0]
             for name, owners in method_owners.items()
             if len(set(owners)) == 1
         }
-
-        edges: list[tuple[str, str]] = []
-        cross_feature_calls = 0
-        for bag in bags:
-            source = bag_module[bag]
-            for method in bag_methods[bag]:
-                for call in method["calls"]:
-                    target = unique_owner[call] if call in unique_owner else None
-                    if target is None or target == source:
-                        continue
-                    edges.append((source, target))
-                    cross_feature_calls += 1
+        edges = [
+            (source, unique_owner[call])
+            for source, method in methods
+            for call in method["calls"]
+            if call in unique_owner and unique_owner[call] != source
+        ]
+        cross_feature_calls = len(edges)
 
         class_fact = next(
             (item for _, item in classes if item["name"] == composition["class_name"]),
@@ -663,15 +681,12 @@ def _flatten_script_definitions(
     return result
 
 
-def _script_diff_findings(
-    base_facts: list[dict[str, Any]],
-    target_facts: list[dict[str, Any]],
+def _script_growth_findings(
+    base: dict[tuple[str, str], dict[str, Any]],
+    target: dict[tuple[str, str], dict[str, Any]],
 ) -> list[Finding]:
-    """检测 giant owner 恶化和同 owner 内 helper laundering。"""
-    base = _flatten_script_definitions(base_facts)
-    target = _flatten_script_definitions(target_facts)
+    """比较既有具名 giant definition 的行数和嵌套定义增长。"""
     findings: list[Finding] = []
-
     for key, target_definition in target.items():
         if key not in base:
             continue
@@ -709,6 +724,20 @@ def _script_diff_findings(
                     source=_SOURCE,
                 )
             )
+
+    return findings
+
+
+def _script_diff_findings(
+    base_facts: list[dict[str, Any]],
+    target_facts: list[dict[str, Any]],
+) -> list[Finding]:
+    """检测 giant owner 恶化和同 owner 内 helper laundering。"""
+    base = _flatten_script_definitions(base_facts)
+    target = _flatten_script_definitions(target_facts)
+    findings: list[Finding] = []
+
+    findings.extend(_script_growth_findings(base, target))
 
     for key, base_definition in base.items():
         if base_definition["lines"] <= 500 and base_definition["nested_defs"] < 50:

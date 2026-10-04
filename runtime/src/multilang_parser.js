@@ -101,35 +101,42 @@ function simpleWrapperArgument(expr) {
 }
 
 function wrapperTarget(node, sf) {
-  let call = null;
   if (!node.body) return '';
-  if (ts.isBlock(node.body) && node.body.statements.length === 1) {
-    const statement = node.body.statements[0];
-    if (ts.isReturnStatement(statement) && statement.expression && ts.isCallExpression(statement.expression)) {
-      call = statement.expression;
-    } else if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) {
-      call = statement.expression;
-    }
-  } else if (!ts.isBlock(node.body) && ts.isCallExpression(node.body)) {
-    call = node.body;
+  let expression = node.body;
+  if (ts.isBlock(expression)) {
+    if (expression.statements.length !== 1) return '';
+    const statement = expression.statements[0];
+    if (!ts.isReturnStatement(statement) && !ts.isExpressionStatement(statement)) return '';
+    expression = statement.expression;
   }
-  if (!call || !simpleCallable(call.expression)) return '';
-  if (call.arguments.some(hasFunctionLikeDescendant)) return '';
-  if (!call.arguments.every(simpleWrapperArgument)) return '';
-  return callName(call.expression, sf);
+  if (!expression || !ts.isCallExpression(expression)) return '';
+  if (!simpleCallable(expression.expression)) return '';
+  if (expression.arguments.some(hasFunctionLikeDescendant)) return '';
+  if (!expression.arguments.every(simpleWrapperArgument)) return '';
+  return callName(expression.expression, sf);
 }
 
 function normalizedShape(root) {
   const parts = [];
   function walk(n) {
     let tag = ts.SyntaxKind[n.kind];
-    if (ts.isIdentifier(n)) tag = 'Identifier';
-    else if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) tag = 'StringLiteral';
-    else if (ts.isNumericLiteral(n)) tag = 'NumericLiteral';
-    else if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword) tag = 'BooleanLiteral';
-    else if (ts.isBinaryExpression(n)) tag = `Binary:${ts.SyntaxKind[n.operatorToken.kind]}`;
-    else if (ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) tag = `Unary:${n.operator}`;
-    else if (ts.isPropertyAccessExpression(n)) tag = `Property:${n.name.text}`;
+    switch (n.kind) {
+      case ts.SyntaxKind.NumericLiteral:
+        tag = 'NumericLiteral'; break;
+      case ts.SyntaxKind.StringLiteral:
+      case ts.SyntaxKind.NoSubstitutionTemplateLiteral:
+        tag = 'StringLiteral'; break;
+      case ts.SyntaxKind.TrueKeyword:
+      case ts.SyntaxKind.FalseKeyword:
+        tag = 'BooleanLiteral'; break;
+      case ts.SyntaxKind.BinaryExpression:
+        tag = `Binary:${ts.SyntaxKind[n.operatorToken.kind]}`; break;
+      case ts.SyntaxKind.PrefixUnaryExpression:
+      case ts.SyntaxKind.PostfixUnaryExpression:
+        tag = `Unary:${n.operator}`; break;
+      case ts.SyntaxKind.PropertyAccessExpression:
+        tag = `Property:${n.name.text}`; break;
+    }
     parts.push(tag);
     ts.forEachChild(n, walk);
   }
@@ -144,18 +151,22 @@ function functionMetrics(node, sf) {
   let nestedDefs = 0;
   const calls = [];
   const body = node.body || node;
+  const branchKinds = new Set([
+    ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForInStatement,
+    ts.SyntaxKind.ForOfStatement, ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement,
+    ts.SyntaxKind.CaseClause, ts.SyntaxKind.ConditionalExpression, ts.SyntaxKind.CatchClause,
+    ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken
+  ]);
+  const nestingKinds = new Set([
+    ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForInStatement,
+    ts.SyntaxKind.ForOfStatement, ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement,
+    ts.SyntaxKind.SwitchStatement, ts.SyntaxKind.TryStatement
+  ]);
   function visit(n, depth, root = false) {
     nodeCount += 1;
     if (!root && isFunctionLike(n)) { nestedDefs += 1; return; }
-    if (ts.isIfStatement(n) || ts.isForStatement(n) || ts.isForInStatement(n) ||
-        ts.isForOfStatement(n) || ts.isWhileStatement(n) || ts.isDoStatement(n) ||
-        ts.isCaseClause(n) || ts.isConditionalExpression(n) || ts.isCatchClause(n)) branches += 1;
-    if (n.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
-        n.kind === ts.SyntaxKind.BarBarToken || n.kind === ts.SyntaxKind.QuestionQuestionToken) branches += 1;
-    const nesting = ts.isIfStatement(n) || ts.isForStatement(n) || ts.isForInStatement(n) ||
-      ts.isForOfStatement(n) || ts.isWhileStatement(n) || ts.isDoStatement(n) ||
-      ts.isSwitchStatement(n) || ts.isTryStatement(n);
-    const nextDepth = depth + (nesting ? 1 : 0);
+    if (branchKinds.has(n.kind)) branches += 1;
+    const nextDepth = depth + (nestingKinds.has(n.kind) ? 1 : 0);
     maxNesting = Math.max(maxNesting, nextDepth);
     if (ts.isCallExpression(n)) calls.push(callName(n.expression, sf));
     ts.forEachChild(n, child => visit(child, nextDepth, false));
@@ -216,6 +227,75 @@ function scriptKind(language, filePath) {
   return filePath.endsWith('.jsx') ? ts.ScriptKind.JSX : ts.ScriptKind.JS;
 }
 
+function methodBag(decl, sf) {
+  const methods = [];
+  for (const prop of decl.initializer.properties) {
+    let bodyNode = null;
+    if (ts.isMethodDeclaration(prop)) bodyNode = prop;
+    else if (ts.isPropertyAssignment(prop) && (ts.isFunctionExpression(prop.initializer) || ts.isArrowFunction(prop.initializer))) bodyNode = prop.initializer;
+    if (!bodyNode || !bodyNode.body) continue;
+    const refs = ownerRefs(bodyNode);
+    methods.push({name: propertyName(prop.name, sf), line: sf.getLineAndCharacterOfPosition(prop.getStart(sf)).line + 1, calls: refs.calls, refs: refs.refs});
+  }
+  return methods;
+}
+
+function scriptClass(statement, sf) {
+  const info = {name: statement.name.text, methods: [], constructor_fields: []};
+  for (const member of statement.members) {
+    if (ts.isConstructorDeclaration(member)) {
+      function walkConstructor(node) {
+        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+            ts.isPropertyAccessExpression(node.left) && node.left.expression.kind === ts.SyntaxKind.ThisKeyword) {
+          info.constructor_fields.push(node.left.name.text);
+        }
+        ts.forEachChild(node, walkConstructor);
+      }
+      walkConstructor(member);
+    } else if (ts.isMethodDeclaration(member) && member.body) {
+      const refs = ownerRefs(member);
+      info.methods.push({name: propertyName(member.name, sf), line: sf.getLineAndCharacterOfPosition(member.getStart(sf)).line + 1, calls: refs.calls, refs: refs.refs});
+    }
+  }
+  info.constructor_fields = [...new Set(info.constructor_fields)];
+  return info;
+}
+
+function scriptOwnership(sf) {
+  const imports = [];
+  const bags = [];
+  const classes = [];
+  const compositions = [];
+  for (const statement of sf.statements) {
+    if (ts.isImportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+      imports.push(statement.moduleSpecifier.text);
+    }
+    if (ts.isVariableStatement(statement)) {
+      for (const decl of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(decl.name) || !decl.initializer || !ts.isObjectLiteralExpression(decl.initializer)) continue;
+        const methods = methodBag(decl, sf);
+        if (methods.length) bags.push({name: decl.name.text, methods});
+      }
+    }
+    if (ts.isClassDeclaration(statement) && statement.name) {
+      classes.push(scriptClass(statement, sf));
+    }
+  }
+  function walkComposition(node) {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.expression.getText(sf) === 'Object' && node.expression.name.text === 'assign' && node.arguments.length >= 2) {
+      const first = node.arguments[0];
+      if (ts.isPropertyAccessExpression(first) && first.name.text === 'prototype') {
+        compositions.push({class_name: first.expression.getText(sf), bags: node.arguments.slice(1).map(arg => arg.getText(sf))});
+      }
+    }
+    ts.forEachChild(node, walkComposition);
+  }
+  walkComposition(sf);
+
+  return {imports, bags, classes, compositions};
+}
+
 function parseScript(item) {
   const sf = ts.createSourceFile(item.path, item.source, ts.ScriptTarget.Latest, true, scriptKind(item.language, item.path));
   const definitions = [];
@@ -254,61 +334,7 @@ function parseScript(item) {
   }
   countIdentifiers(sf);
 
-  const imports = [];
-  const bags = [];
-  const classes = [];
-  const compositions = [];
-  for (const statement of sf.statements) {
-    if (ts.isImportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
-      imports.push(statement.moduleSpecifier.text);
-    }
-    if (ts.isVariableStatement(statement)) {
-      for (const decl of statement.declarationList.declarations) {
-        if (!ts.isIdentifier(decl.name) || !decl.initializer || !ts.isObjectLiteralExpression(decl.initializer)) continue;
-        const methods = [];
-        for (const prop of decl.initializer.properties) {
-          let bodyNode = null;
-          if (ts.isMethodDeclaration(prop)) bodyNode = prop;
-          else if (ts.isPropertyAssignment(prop) && (ts.isFunctionExpression(prop.initializer) || ts.isArrowFunction(prop.initializer))) bodyNode = prop.initializer;
-          if (!bodyNode || !bodyNode.body) continue;
-          const refs = ownerRefs(bodyNode);
-          methods.push({name: propertyName(prop.name, sf), line: sf.getLineAndCharacterOfPosition(prop.getStart(sf)).line + 1, calls: refs.calls, refs: refs.refs});
-        }
-        if (methods.length) bags.push({name: decl.name.text, methods});
-      }
-    }
-    if (ts.isClassDeclaration(statement) && statement.name) {
-      const info = {name: statement.name.text, methods: [], constructor_fields: []};
-      for (const member of statement.members) {
-        if (ts.isConstructorDeclaration(member)) {
-          function walkConstructor(node) {
-            if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-                ts.isPropertyAccessExpression(node.left) && node.left.expression.kind === ts.SyntaxKind.ThisKeyword) {
-              info.constructor_fields.push(node.left.name.text);
-            }
-            ts.forEachChild(node, walkConstructor);
-          }
-          walkConstructor(member);
-        } else if (ts.isMethodDeclaration(member) && member.body) {
-          const refs = ownerRefs(member);
-          info.methods.push({name: propertyName(member.name, sf), line: sf.getLineAndCharacterOfPosition(member.getStart(sf)).line + 1, calls: refs.calls, refs: refs.refs});
-        }
-      }
-      info.constructor_fields = [...new Set(info.constructor_fields)];
-      classes.push(info);
-    }
-  }
-  function walkComposition(node) {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.expression.getText(sf) === 'Object' && node.expression.name.text === 'assign' && node.arguments.length >= 2) {
-      const first = node.arguments[0];
-      if (ts.isPropertyAccessExpression(first) && first.name.text === 'prototype') {
-        compositions.push({class_name: first.expression.getText(sf), bags: node.arguments.slice(1).map(arg => arg.getText(sf))});
-      }
-    }
-    ts.forEachChild(node, walkComposition);
-  }
-  walkComposition(sf);
+  const {imports, bags, classes, compositions} = scriptOwnership(sf);
 
   return {
     path: item.path, language: item.language, bytes: Buffer.byteLength(item.source),

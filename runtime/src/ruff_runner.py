@@ -74,7 +74,12 @@ class RuffRunner:
             return [executable]
         if importlib.util.find_spec("ruff") is not None:
             return [sys.executable, "-m", "ruff"]
-        wheelhouse = self._local_wheelhouse()
+        directory = Path(__file__).resolve().parents[2] / "offline" / "wheels"
+        wheelhouse = (
+            directory
+            if directory.is_dir() and any(directory.glob("ruff*.whl"))
+            else None
+        )
         if wheelhouse is not None and self._install_ruff(
             ["--no-index", "--find-links", str(wheelhouse)]
         ):
@@ -97,19 +102,6 @@ class RuffRunner:
             ),
             source="integration",
         )
-
-    def _local_wheelhouse(self) -> Path | None:
-        """
-        查找随 skill 包携带的 Ruff wheelhouse。
-
-        Returns:
-            存在 Ruff wheel 时返回目录，否则返回 None。
-        """
-        candidates = [Path(__file__).resolve().parents[2] / "offline" / "wheels"]
-        for directory in candidates:
-            if directory.is_dir() and any(directory.glob("ruff*.whl")):
-                return directory
-        return None
 
     def _install_ruff(self, extra_args: list[str]) -> bool:
         """

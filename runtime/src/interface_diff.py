@@ -102,16 +102,6 @@ class _NestedDefinitionCollector(ast.NodeVisitor):
         self.nodes.append(node)
 
 
-def _nested_definitions(
-    body: list[ast.stmt],
-) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, ...]:
-    """返回函数体中的直接嵌套定义，包括条件和异常分支中的定义。"""
-    collector = _NestedDefinitionCollector()
-    for statement in body:
-        collector.visit(statement)
-    return tuple(collector.nodes)
-
-
 class _InstanceAttributeCollector(ast.NodeVisitor):
     """
     收集单个成员函数直接写入的实例或类属性。
@@ -477,7 +467,10 @@ class PythonInterfaceExtractor:
             code_lines=definition_code_lines(node),
         )
         self._add(symbol)
-        for child in _nested_definitions(node.body):
+        collector = _NestedDefinitionCollector()
+        for statement in node.body:
+            collector.visit(statement)
+        for child in collector.nodes:
             nested_name = f"{qualname}.<locals>.{child.name}"
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._add_callable(child, "function", nested_name)

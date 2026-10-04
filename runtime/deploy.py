@@ -67,6 +67,7 @@ def _release_identity(bundle: Path) -> str:
 
 
 def _remove_tree(path: Path) -> None:
+    """Remove an existing staging or retired installation directory."""
     if path.exists():
         shutil.rmtree(path)
 
@@ -85,24 +86,19 @@ def _repo_for_destination(destination: Path) -> Path:
     return destination.parent.parent.parent
 
 
-def _profile_runtime(bundle: Path) -> Any:
-    """Import the verified bundle's generic Profile loader."""
+def _profile_selection(
+    bundle: Path, repo: Path, explicit: str
+) -> tuple[Any, Any | None]:
+    """Resolve install-time Profile using the verified bundle's Portable precedence."""
     bundle_text = str(bundle)
     inserted = bundle_text not in sys.path
     if inserted:
         sys.path.insert(0, bundle_text)
     try:
-        return importlib.import_module("runtime.src.project_profiles")
+        profiles = importlib.import_module("runtime.src.project_profiles")
     finally:
         if inserted:
             sys.path.remove(bundle_text)
-
-
-def _profile_selection(
-    bundle: Path, repo: Path, explicit: str
-) -> tuple[Any, Any | None]:
-    """Resolve install-time Profile using the same Portable precedence."""
-    profiles = _profile_runtime(bundle)
     selection = profiles.resolve_profile_reference(
         repo,
         explicit or None,
@@ -191,6 +187,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
 
 
 def _profile_source_dir(bundle: Path, reference: str) -> Path:
+    """Resolve an explicit Profile directory or a bundled Profile name."""
     candidate = Path(reference).expanduser()
     if candidate.is_dir():
         return candidate.resolve()
@@ -389,7 +386,22 @@ def _activate_release(
 
 
 def deploy(bundle: Path, destination: Path, profile_reference: str = "") -> str:
-    """Atomically install QG and freeze exactly one generic/Profile policy."""
+    """Atomically install QG and freeze exactly one generic/Profile policy.
+
+    Args:
+        bundle: Source Skill directory with a verified release manifest.
+        destination: Target repository's `.agents/skills/repository-quality-guard` path.
+        profile_reference: Explicit Profile name or directory; empty selects by
+            repository directory name, then falls back to generic policy.
+
+    Returns:
+        First twenty characters of the installed release seal.
+
+    Raises:
+        RuntimeError: Source integrity, installation layout, Profile resources,
+            installed payload, or Git persistence validation fails.
+        OSError: Filesystem or dependency preparation prevents installation.
+    """
     bundle = bundle.resolve()
     destination = destination.resolve()
     _release_identity(bundle)
@@ -421,6 +433,12 @@ def deploy(bundle: Path, destination: Path, profile_reference: str = "") -> str:
 
 
 def main() -> int:
+    """Install the command-line bundle and print its installed release seal.
+
+    Returns:
+        Zero after a successful deployment; argument and installation failures
+        propagate through argparse or the deployment operation.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("bundle")
     parser.add_argument("destination")

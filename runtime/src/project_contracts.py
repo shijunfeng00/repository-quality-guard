@@ -56,6 +56,7 @@ class _ReturnMappingAnalyzer:
             path: Python 文件路径。
             source: 对应 Git 快照源码。
             tree: 可选的已解析 AST；存在时直接复用。
+            state_contract: 可选的 Profile 状态映射契约。
 
         Returns:
             None。
@@ -199,82 +200,21 @@ class _ReturnMappingAnalyzer:
         writer_methods = set(contract.state_writer_methods)
         key_writer_methods = set(contract.state_key_writer_methods)
         constructor_fields = set(contract.state_constructor_fields)
-        excluded_keywords = set(contract.state_constructor_excluded_keywords)
+        excluded_keywords = {*contract.state_constructor_excluded_keywords, None}
         source_suffix = contract.state_source_suffix
         state_type = contract.state_type
+        is_state_source = bool(source_suffix and path.endswith(source_suffix))
         for node in nodes:
-            if isinstance(node, ast.Call):
-                leaf = (
-                    node.func.id
-                    if isinstance(node.func, ast.Name)
-                    else node.func.attr
-                    if isinstance(node.func, ast.Attribute)
-                    else ""
-                )
-                if leaf == state_type:
-                    expressions.extend(node.args[:1])
-                    expressions.extend(
-                        keyword.value
-                        if keyword.arg in constructor_fields
-                        else ast.Constant(keyword.arg)
-                        for keyword in node.keywords
-                        if keyword.arg is not None
-                        and keyword.arg not in excluded_keywords
-                    )
-                if isinstance(node.func, ast.Attribute) and leaf in writer_methods:
-                    receiver = node.func.value
-                    named_state = isinstance(receiver, ast.Name) and (
-                        receiver.id in state_names
-                        or (
-                            receiver.id == "self"
-                            and source_suffix
-                            and path.endswith(source_suffix)
-                        )
-                    )
-                    attributed_state = (
-                        isinstance(receiver, ast.Attribute)
-                        and receiver.attr in state_names
-                    )
-                    if named_state or attributed_state:
-                        key = (
-                            next(
-                                (
-                                    item.value
-                                    for item in node.keywords
-                                    if item.arg == "key"
-                                ),
-                                node.args[0] if node.args else None,
-                            )
-                            if leaf in key_writer_methods
-                            else node.args[0]
-                            if node.args
-                            else None
-                        )
-                        if key is not None:
-                            expressions.append(key)
-                if (
-                    source_suffix
-                    and path.endswith(source_suffix)
-                    and leaf == "__init__"
-                    and isinstance(node.func, ast.Attribute)
-                    and isinstance(node.func.value, ast.Call)
-                ):
-                    expressions.extend(
-                        ast.Constant(keyword.arg)
-                        for keyword in node.keywords
-                        if keyword.arg is not None
-                    )
-            if (
-                source_suffix
-                and path.endswith(source_suffix)
-                and isinstance(
-                    node,
-                    (ast.Assign, ast.AnnAssign, ast.AugAssign),
-                )
-            ):
-                targets = (
-                    node.targets if isinstance(node, ast.Assign) else [node.target]
-                )
+            if not isinstance(node, ast.Call):
+                match node:
+                    case ast.Assign(targets=targets) if is_state_source:
+                        pass
+                    case (
+                        ast.AnnAssign(target=target) | ast.AugAssign(target=target)
+                    ) if is_state_source:
+                        targets = [target]
+                    case _:
+                        continue
                 expressions.extend(
                     target.slice
                     for target in targets
@@ -282,7 +222,74 @@ class _ReturnMappingAnalyzer:
                     and isinstance(target.value, ast.Name)
                     and target.value.id == "self"
                 )
+                continue
+            match node.func:
+                case ast.Name(id=leaf) | ast.Attribute(attr=leaf):
+                    pass
+                case _:
+                    leaf = ""
+            if leaf == state_type:
+                expressions.extend(node.args[:1])
+                expressions.extend(
+                    keyword.value
+                    if keyword.arg in constructor_fields
+                    else ast.Constant(keyword.arg)
+                    for keyword in node.keywords
+                    if keyword.arg not in excluded_keywords
+                )
+            expressions.extend(
+                cls._state_writer_keys(
+                    node,
+                    state_names,
+                    writer_methods,
+                    key_writer_methods,
+                    is_state_source,
+                )
+            )
+            match node.func:
+                case ast.Attribute(value=ast.Call(), attr="__init__") if (
+                    is_state_source
+                ):
+                    expressions.extend(
+                        ast.Constant(keyword.arg)
+                        for keyword in node.keywords
+                        if keyword.arg is not None
+                    )
         return expressions
+
+    @staticmethod
+    def _state_writer_keys(
+        node: ast.Call,
+        state_names: set[str],
+        writer_methods: set[str],
+        key_writer_methods: set[str],
+        is_state_source: bool,
+    ) -> tuple[ast.expr, ...]:
+        """按 Profile 写入口的接收者与参数协议提取状态键。
+
+        显式 key 参数只属于单键写入口；映射写入口始终使用首个位置参数。
+        """
+        if not isinstance(node.func, ast.Attribute):
+            return ()
+        leaf = node.func.attr
+        if leaf not in writer_methods:
+            return ()
+        match node.func.value:
+            case ast.Name(id=name):
+                is_state = name in state_names or (name == "self" and is_state_source)
+            case ast.Attribute(attr=name):
+                is_state = name in state_names
+            case _:
+                is_state = False
+        if not is_state:
+            return ()
+        positional_key = node.args[0] if node.args else None
+        if leaf in key_writer_methods:
+            positional_key = next(
+                (keyword.value for keyword in node.keywords if keyword.arg == "key"),
+                positional_key,
+            )
+        return () if positional_key is None else (positional_key,)
 
     @staticmethod
     def _static_string_keys(
@@ -302,35 +309,38 @@ class _ReturnMappingAnalyzer:
         pending = list(expressions)
         while pending:
             expression = pending.pop()
-            if isinstance(expression, ast.Constant):
-                if isinstance(expression.value, str):
-                    keys.add(expression.value)
-                continue
-            if isinstance(expression, ast.Name):
-                if expression.id in defaults:
-                    keys.add(defaults[expression.id])
-                continue
-            if isinstance(expression, ast.Dict):
-                pending.extend(key for key in expression.keys if key is not None)
-                continue
-            if isinstance(expression, (ast.List, ast.Tuple, ast.Set)):
-                pending.extend(expression.elts)
-                continue
-            if not isinstance(expression, ast.JoinedStr):
-                continue
+            match expression:
+                case ast.Constant(value=str() as value):
+                    keys.add(value)
+                    continue
+                case ast.Name(id=name) if name in defaults:
+                    keys.add(defaults[name])
+                    continue
+                case ast.Dict(keys=dict_keys):
+                    pending.extend(key for key in dict_keys if key is not None)
+                    continue
+                case (
+                    ast.List(elts=elements)
+                    | ast.Tuple(elts=elements)
+                    | ast.Set(elts=elements)
+                ):
+                    pending.extend(elements)
+                    continue
+                case ast.JoinedStr():
+                    pass
+                case _:
+                    continue
             parts: list[str] = []
             for part in expression.values:
-                if isinstance(part, ast.Constant) and isinstance(part.value, str):
-                    parts.append(part.value)
-                    continue
-                if (
-                    isinstance(part, ast.FormattedValue)
-                    and isinstance(part.value, ast.Name)
-                    and part.value.id in defaults
-                ):
-                    parts.append(defaults[part.value.id])
-                    continue
-                break
+                match part:
+                    case ast.Constant(value=str() as value):
+                        parts.append(value)
+                    case ast.FormattedValue(value=ast.Name(id=name)) if (
+                        name in defaults
+                    ):
+                        parts.append(defaults[name])
+                    case _:
+                        break
             else:
                 keys.add("".join(parts))
         return keys
@@ -988,24 +998,18 @@ class _FrozenSSEAnalyzer:
         for name, node in self.methods.items():
             values: set[str] = set()
             for child in ast.walk(node):
-                if not isinstance(child, ast.Call) or not isinstance(
-                    child.func, ast.Attribute
-                ):
-                    continue
-                if child.func.attr != self.contract.envelope_method or not child.args:
-                    continue
-                receiver = child.func.value
-                if not isinstance(receiver, ast.Name) or receiver.id not in {
-                    "self",
-                    "cls",
-                }:
-                    continue
-                event = child.args[0]
-                if not isinstance(event, ast.Constant) or not isinstance(
-                    event.value, str
-                ):
-                    continue
-                values.add(event.value)
+                match child:
+                    case ast.Call(
+                        func=ast.Attribute(value=ast.Name(id=receiver), attr=method),
+                        args=[ast.Constant(value=str() as event_type), *_],
+                    ) if method == self.contract.envelope_method and receiver in {
+                        "self",
+                        "cls",
+                    }:
+                        pass
+                    case _:
+                        continue
+                values.add(event_type)
                 if len(child.args) >= _SSE_EMIT_MIN_ARGS and isinstance(
                     child.args[1], ast.Dict
                 ):
@@ -1015,7 +1019,7 @@ class _FrozenSSEAnalyzer:
                         if isinstance(key, ast.Constant) and isinstance(key.value, str)
                     }
                     if keys:
-                        content_keys.setdefault(event.value, set()).update(keys)
+                        content_keys.setdefault(event_type, set()).update(keys)
             if values:
                 by_method[name] = values
                 all_types.update(values)

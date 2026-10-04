@@ -155,20 +155,6 @@ def _type_text(node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) -> s
     return " ".join(value for value in values if value)
 
 
-def _visibility(name: str) -> str:
-    """按 Python 命名约定返回 public/private 可见性标签。"""
-    private = name.startswith("_") and not (
-        name.startswith("__") and name.endswith("__")
-    )
-    return "private" if private else "public"
-
-
-def _module_name(relative: str) -> str:
-    """把仓库相对 Python 路径转换为模块名。"""
-    module = ".".join(Path(relative).with_suffix("").parts)
-    return module.removesuffix(".__init__")
-
-
 def _record(
     *,
     node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
@@ -186,6 +172,10 @@ def _record(
         return_type = _render(node.returns)
         if return_type:
             signature += f" -> {return_type}"
+    name = qualname.rsplit(".", 1)[-1]
+    private = name.startswith("_") and not (
+        name.startswith("__") and name.endswith("__")
+    )
     return _ApiRecord(
         symbol=f"{module}.{qualname}" if module else qualname,
         kind=kind,
@@ -194,7 +184,7 @@ def _record(
         signature=signature,
         docstring=ast.get_docstring(node, clean=True) or "",
         types=_type_text(node),
-        visibility=_visibility(qualname.rsplit(".", 1)[-1]),
+        visibility="private" if private else "public",
     )
 
 
@@ -252,7 +242,7 @@ def _extract_path_records(root: Path, path: Path) -> list[_ApiRecord]:
     relative = path.relative_to(root).as_posix()
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=relative, type_comments=True)
-    module = _module_name(relative)
+    module = ".".join(Path(relative).with_suffix("").parts).removesuffix(".__init__")
     records: list[_ApiRecord] = []
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
@@ -301,18 +291,6 @@ def _extract_api_records(root: Path, paths: tuple[Path, ...]) -> list[_ApiRecord
     return records
 
 
-def _identifier_tokens(token: str) -> list[str]:
-    """拆分 snake_case/CamelCase 标识符并补充连写词。"""
-    parts: list[str] = []
-    for piece in token.replace("-", "_").split("_"):
-        if piece:
-            parts.extend(part for part in _CAMEL_BOUNDARY.split(piece) if part)
-    lowered = [part.lower() for part in parts]
-    if len(lowered) > 1:
-        lowered.append("".join(lowered))
-    return lowered
-
-
 def _tokenize(text: str) -> list[str]:
     """生成适合代码能力 BM25 的英文标识符与中文 n-gram 词项。"""
     tokens: list[str] = []
@@ -329,7 +307,16 @@ def _tokenize(text: str) -> list[str]:
                     token[index : index + 3] for index in range(len(token) - 2)
                 )
         else:
-            tokens.extend(_identifier_tokens(token))
+            lowered = [
+                part.lower()
+                for piece in token.replace("-", "_").split("_")
+                if piece
+                for part in _CAMEL_BOUNDARY.split(piece)
+                if part
+            ]
+            if len(lowered) > 1:
+                lowered.append("".join(lowered))
+            tokens.extend(lowered)
     return tokens
 
 
@@ -512,18 +499,6 @@ def _write_api_catalog(
     )
 
 
-def _load_api_catalog(path: Path) -> tuple[list[_ApiRecord], dict[str, _FileState]]:
-    """读取机器可读 API catalog，并验证 schema。"""
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload["schema"] != _API_SCHEMA:
-        raise ValueError(f"API catalog schema 不匹配: {payload['schema']}")
-    records = [_ApiRecord(**item) for item in payload["records"]]
-    states = {
-        relative: _FileState(**state) for relative, state in payload["files"].items()
-    }
-    return records, states
-
-
 def _changed_paths_from_state(
     root: Path,
     paths: tuple[Path, ...],
@@ -596,11 +571,18 @@ def _refresh_catalog(
     cached_states: dict[str, _FileState] = {}
     cache_available = catalog_path.is_file() and not force_full
     if cache_available:
-        cached_records, cached_states = _load_api_catalog(catalog_path)
+        payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+        if payload["schema"] != _API_SCHEMA:
+            raise ValueError(f"API catalog schema 不匹配: {payload['schema']}")
+        cached_records = [_ApiRecord(**item) for item in payload["records"]]
+        cached_states = {
+            relative: _FileState(**state)
+            for relative, state in payload["files"].items()
+        }
     loaded = time.perf_counter()
 
     current_paths = {path.relative_to(root).as_posix(): path for path in paths}
-    if force_full or not cache_available:
+    if not cache_available:
         selected = set(current_paths)
         states = {
             relative: _file_state(path) for relative, path in current_paths.items()
@@ -621,11 +603,11 @@ def _refresh_catalog(
             states = dict(cached_states)
             hashed = 0
             for relative in selected:
+                if relative not in current_paths and relative not in states:
+                    raise ValueError(
+                        f"增量接口文档路径既不存在于当前源码，也不存在于旧 catalog: {relative}"
+                    )
                 if relative not in current_paths:
-                    if relative not in states:
-                        raise ValueError(
-                            f"增量接口文档路径既不存在于当前源码，也不存在于旧 catalog: {relative}"
-                        )
                     del states[relative]
                     continue
                 state = _file_state(current_paths[relative])
@@ -642,14 +624,12 @@ def _refresh_catalog(
         records.sort(key=lambda item: (item.path, item.line, item.symbol))
         changed_groups = {relative.split("/", 1)[0] for relative in selected}
     extracted = time.perf_counter()
-    if force_full or not cache_available or selected:
+    if not cache_available or selected:
         _write_api_catalog(
             output,
             records,
             states,
-            changed_groups=None
-            if force_full or not cache_available
-            else changed_groups,
+            changed_groups=None if not cache_available else changed_groups,
         )
     written = time.perf_counter()
     return (

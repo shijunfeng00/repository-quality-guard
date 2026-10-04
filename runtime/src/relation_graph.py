@@ -949,18 +949,6 @@ class RepositoryRelationGraph:
                 return candidate
         return None
 
-    def _resolve_external_attribute(
-        self,
-        module: str,
-        parts: list[str],
-    ) -> str | None:
-        """仅解析 import 根明确绑定的属性调用；未知对象属性保持未知。"""
-        imports = self._imports[module] if module in self._imports else {}
-        if parts[0] not in imports:
-            return None
-        candidate = ".".join([imports[parts[0]], *parts[1:]])
-        return resolve_local_import_symbol(candidate, self._imports, self.nodes)
-
     def _resolve_expr(self, module: str, caller: str, expr: ast.expr) -> str | None:
         """解析调用表达式到唯一静态目标；动态目标保持未知。"""
         if isinstance(expr, ast.Name):
@@ -973,11 +961,13 @@ class RepositoryRelationGraph:
         parts = dotted.split(".")
         caller_node = self.nodes[caller] if caller in self.nodes else None
         owned = self._resolve_owned_attribute(module, caller_node, parts)
-        return (
-            owned
-            if owned is not None
-            else self._resolve_external_attribute(module, parts)
-        )
+        if owned is not None:
+            return owned
+        imports = self._imports[module] if module in self._imports else {}
+        if parts[0] not in imports:
+            return None
+        candidate = ".".join([imports[parts[0]], *parts[1:]])
+        return resolve_local_import_symbol(candidate, self._imports, self.nodes)
 
     def outgoing(self, node_id: str, kind: str = "CALLS") -> tuple[str, ...]:
         """返回指定关系的稳定排序出边目标。

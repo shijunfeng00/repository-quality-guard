@@ -255,18 +255,17 @@ class _AstCanonicalizer:
         if isinstance(node, ast.Constant):
             return CanonicalNode(self._constant_label(node.value))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            return self._function_node(node)
+            body = list(node.body)
+            if body and isinstance(body[0], ast.Expr):
+                expression = body[0].value
+                if isinstance(expression, ast.Constant) and isinstance(
+                    expression.value, str
+                ):
+                    body = body[1:]
+            return CanonicalNode(
+                type(node).__name__, [self.convert(item) for item in body]
+            )
         return None
-
-    def _function_node(
-        self,
-        node: ast.FunctionDef | ast.AsyncFunctionDef,
-    ) -> CanonicalNode:
-        """转换函数主体，并剔除首行 docstring。"""
-        body = list(node.body)
-        if body and self._is_docstring(body[0]):
-            body = body[1:]
-        return CanonicalNode(type(node).__name__, [self.convert(item) for item in body])
 
     def _generic_node(self, node: ast.AST) -> CanonicalNode:
         """按 AST 字段顺序转换普通节点。"""
@@ -342,15 +341,6 @@ class _AstCanonicalizer:
         if isinstance(value, bytes):
             return "Const:BYTES"
         return f"Const:{type(value).__name__}"
-
-    @staticmethod
-    def _is_docstring(statement: ast.stmt) -> bool:
-        """判断语句是否为函数首个字符串表达式。"""
-        return (
-            isinstance(statement, ast.Expr)
-            and isinstance(statement.value, ast.Constant)
-            and isinstance(statement.value.value, str)
-        )
 
 
 class _FunctionCollector(ast.NodeVisitor):
@@ -440,19 +430,6 @@ class _OwnedVisitor(ast.NodeVisitor):
             return
         self.nodes.append(node)
         super().generic_visit(node)
-
-
-def _parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]:
-    """按调用位置返回函数全部参数名。"""
-    args = node.args
-    positional = [*args.posonlyargs, *args.args]
-    names = [item.arg for item in positional]
-    if args.vararg is not None:
-        names.append(args.vararg.arg)
-    names.extend(item.arg for item in args.kwonlyargs)
-    if args.kwarg is not None:
-        names.append(args.kwarg.arg)
-    return tuple(names)
 
 
 def _canonical_expression(node: ast.AST, names: _NameTable) -> str:
@@ -618,7 +595,14 @@ def build_function_models(
         patterns_by_qualname[pattern.qualname].append(pattern)
     models: dict[str, FunctionModel] = {}
     for qualname, node in collector.items:
-        parameters = _parameters(node)
+        args = node.args
+        parameter_names = [item.arg for item in (*args.posonlyargs, *args.args)]
+        if args.vararg is not None:
+            parameter_names.append(args.vararg.arg)
+        parameter_names.extend(item.arg for item in args.kwonlyargs)
+        if args.kwarg is not None:
+            parameter_names.append(args.kwarg.arg)
+        parameters = tuple(parameter_names)
         owner = qualname.rsplit(".", 1)[0] if "." in qualname else ""
         function_patterns = patterns_by_qualname[qualname]
         canonicalizer = _AstCanonicalizer(parameters, function_patterns)
@@ -637,15 +621,6 @@ def build_function_models(
     return models
 
 
-def _coarse_similarity(left: CanonicalNode, right: CanonicalNode) -> float:
-    """使用节点标签 Dice 系数快速淘汰明显不相似函数。"""
-    left_counts = left.labels()
-    right_counts = right.labels()
-    overlap = sum((left_counts & right_counts).values())
-    total = sum(left_counts.values()) + sum(right_counts.values())
-    return 1.0 if total == 0 else (2.0 * overlap) / total
-
-
 def tree_similarity(
     left: CanonicalNode,
     right: CanonicalNode,
@@ -662,7 +637,11 @@ def tree_similarity(
     Returns:
         0 到 1 的相似度以及实际使用的算法名称。
     """
-    coarse = _coarse_similarity(left, right)
+    left_counts = left.labels()
+    right_counts = right.labels()
+    overlap = sum((left_counts & right_counts).values())
+    total = sum(left_counts.values()) + sum(right_counts.values())
+    coarse = 1.0 if total == 0 else (2.0 * overlap) / total
     if coarse < _DEFAULT_COARSE_THRESHOLD:
         return coarse, "label-dice"
     left_size = left.size
@@ -672,18 +651,6 @@ def tree_similarity(
     distance = float(APTED(left, right, _AptedConfig()).compute_edit_distance())
     denominator = max(left_size, right_size, 1)
     return max(0.0, 1.0 - distance / denominator), "apted"
-
-
-def _rewrite_receiver(receiver: str, replacements: dict[str, str]) -> str:
-    """将被调用函数参数占位符替换为调用点表达式。"""
-    rewritten = receiver
-    for parameter, argument in sorted(
-        replacements.items(), key=lambda item: -len(item[0])
-    ):
-        if rewritten == parameter:
-            return argument
-        rewritten = rewritten.replace(f"({parameter},", f"({argument},")
-    return rewritten
 
 
 def _resolve_call(
@@ -737,10 +704,18 @@ def _summary(
             f"ARG{index}": argument for index, argument in enumerate(call.arguments)
         }
         for obligation in _summary(target, models, depth=depth - 1, stack=next_stack):
+            receiver = obligation.receiver
+            for parameter, argument in sorted(
+                replacements.items(), key=lambda item: -len(item[0])
+            ):
+                if receiver == parameter:
+                    receiver = argument
+                    break
+                receiver = receiver.replace(f"({parameter},", f"({argument},")
             result.append(
                 BehaviorObligation(
                     kind=obligation.kind,
-                    receiver=_rewrite_receiver(obligation.receiver, replacements),
+                    receiver=receiver,
                     selector=obligation.selector,
                     default=obligation.default,
                     syntax=obligation.syntax,
@@ -779,23 +754,6 @@ def _changed_python_paths(root: Path, base_revision: str, staged: bool) -> list[
         for path in paths
         if path and not is_test_path(path) and not path.startswith(".agents/")
     )
-
-
-def _git_source(root: Path, revision: str, path: str) -> str | None:
-    """读取指定 Git revision 的源码。"""
-    result = run_readonly_git(root, "show", f"{revision}:{path}")
-    return result.stdout if result.returncode == 0 else None
-
-
-def _target_source(root: Path, path: str, staged: bool) -> str | None:
-    """读取暂存区或工作树源码。"""
-    if staged:
-        result = run_readonly_git(root, "show", f":{path}")
-        return result.stdout if result.returncode == 0 else None
-    try:
-        return (root / path).read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
-        return None
 
 
 def _match_functions(
@@ -938,16 +896,21 @@ def _collect_project_models(
     for path in _changed_python_paths(root, base_revision, staged):
         before_unit = base_analysis.unit(path) if base_analysis is not None else None
         after_unit = target_analysis.unit(path) if target_analysis is not None else None
-        before_source = (
-            before_unit.source
-            if before_unit is not None
-            else _git_source(root, base_revision, path)
-        )
-        after_source = (
-            after_unit.source
-            if after_unit is not None
-            else _target_source(root, path, staged)
-        )
+        if before_unit is not None:
+            before_source = before_unit.source
+        else:
+            result = run_readonly_git(root, "show", f"{base_revision}:{path}")
+            before_source = result.stdout if result.returncode == 0 else None
+        if after_unit is not None:
+            after_source = after_unit.source
+        elif staged:
+            result = run_readonly_git(root, "show", f":{path}")
+            after_source = result.stdout if result.returncode == 0 else None
+        else:
+            try:
+                after_source = (root / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                after_source = None
         if before_source is not None:
             for model in build_function_models(
                 path,

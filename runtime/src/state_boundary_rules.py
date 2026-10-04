@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from .ast_utils import dotted_name, enclosing_class_name
 from .config import GuardConfig
@@ -67,8 +68,29 @@ _DYNAMIC_EXECUTION_CALLS = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _StateBoundaryContract:
+    """保存唯一 Profile 输入边界已解析的状态写约束。
+
+    同一仓库的函数分析器共享不可变契约；局部别名与发现仍由各分析器持有。
+    """
+
+    state_type: str
+    boundary_name: str
+    allowed_transitions: frozenset[str]
+    state_read_methods: frozenset[str]
+    child_read_methods: frozenset[str]
+    conventional_names: frozenset[str]
+    suggestion: str
+    profile_name: str
+
+
 class StateBoundaryEvaluator:
-    """按 Profile 声明检查状态写边界与动态代码执行逃逸。"""
+    """按 Profile 声明检查状态写边界与动态代码执行逃逸。
+
+    评估器在仓库范围解析一次可选配置并收集状态持有字段，再将冻结的状态
+    约束交给逐函数分析器。动态执行检查使用同一 Profile 的独立能力开关。
+    """
 
     def __init__(
         self,
@@ -91,33 +113,37 @@ class StateBoundaryEvaluator:
         )
         self._enabled = self._state_enabled or self._dynamic_enabled
         self.config_name = config.project_name
-        self._state_type = str(settings.get("state_boundary_type") or "")
-        self._boundary_name = str(
-            settings.get("absolute_boundary_name") or self._state_type or "state"
-        )
-        self._allowed_transitions = frozenset(
-            settings.get("state_boundary_allowed_transitions") or ()
-        )
-        self._state_read_methods = frozenset(
-            settings.get("state_boundary_state_read_methods") or ()
-        )
-        self._child_read_methods = frozenset(
-            settings.get("state_boundary_child_read_methods") or ()
-        )
-        self._conventional_names = frozenset(
-            settings.get("state_boundary_conventional_names") or ("state",)
-        )
-        self._suggestion = str(
-            settings.get("state_boundary_suggestion")
-            or "Use the profile-declared canonical state transition API; do not mutate state directly or through reflection."
+        state_type = str(settings.get("state_boundary_type") or "")
+        self._state_contract = _StateBoundaryContract(
+            state_type=state_type,
+            profile_name=config.project_name,
+            boundary_name=str(
+                settings.get("absolute_boundary_name") or state_type or "state"
+            ),
+            allowed_transitions=frozenset(
+                settings.get("state_boundary_allowed_transitions") or ()
+            ),
+            state_read_methods=frozenset(
+                settings.get("state_boundary_state_read_methods") or ()
+            ),
+            child_read_methods=frozenset(
+                settings.get("state_boundary_child_read_methods") or ()
+            ),
+            conventional_names=frozenset(
+                settings.get("state_boundary_conventional_names") or ("state",)
+            ),
+            suggestion=str(
+                settings.get("state_boundary_suggestion")
+                or "Use the profile-declared canonical state transition API; do not mutate state directly or through reflection."
+            ),
         )
         self._dynamic_hint = str(
             settings.get("dynamic_execution_nonblocking_hint")
             or "test/nonblocking paths remain separately audited"
         )
         self._holders = (
-            _collect_state_holder_fields(modules, self._state_type)
-            if self._state_enabled and self._state_type
+            _collect_state_holder_fields(modules, state_type)
+            if self._state_enabled and state_type
             else set()
         )
 
@@ -148,21 +174,14 @@ class StateBoundaryEvaluator:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             owner = enclosing_class_name(node, module.parents)
-            if not self._state_enabled or owner == self._state_type:
+            if not self._state_enabled or owner == self._state_contract.state_type:
                 continue
             analyzer = _FunctionMutationAnalyzer(
                 facts=facts,
                 function=node,
                 owner=owner,
                 holder_fields=self._holders,
-                state_type=self._state_type,
-                boundary_name=self._boundary_name,
-                allowed_transitions=self._allowed_transitions,
-                state_read_methods=self._state_read_methods,
-                child_read_methods=self._child_read_methods,
-                conventional_names=self._conventional_names,
-                suggestion=self._suggestion,
-                profile_name=self.config_name,
+                contract=self._state_contract,
             )
             findings.extend(analyzer.run())
         return findings
@@ -177,14 +196,7 @@ class _FunctionMutationAnalyzer:
         function: ast.FunctionDef | ast.AsyncFunctionDef,
         owner: str,
         holder_fields: set[tuple[str, str, str]],
-        state_type: str,
-        boundary_name: str,
-        allowed_transitions: frozenset[str],
-        state_read_methods: frozenset[str],
-        child_read_methods: frozenset[str],
-        conventional_names: frozenset[str],
-        suggestion: str,
-        profile_name: str,
+        contract: _StateBoundaryContract,
     ) -> None:
         """初始化单函数状态写分析器。
 
@@ -193,6 +205,7 @@ class _FunctionMutationAnalyzer:
             function: 待分析函数或异步函数。
             owner: 函数所属类名；模块函数为空字符串。
             holder_fields: 全仓可静态证明持有 Profile state 的字段。
+            contract: Profile 输入边界已解析的不可变状态写约束。
 
         Returns:
             None。
@@ -200,14 +213,7 @@ class _FunctionMutationAnalyzer:
         self._facts = facts
         self._function = function
         self._owner = owner
-        self._state_type = state_type
-        self._boundary_name = boundary_name
-        self._allowed_transitions = allowed_transitions
-        self._state_read_methods = state_read_methods
-        self._child_read_methods = child_read_methods
-        self._conventional_names = conventional_names
-        self._suggestion = suggestion
-        self._profile_name = profile_name
+        self._contract = contract
         self._aliases: dict[str, str] = {}
         self._findings: list[Finding] = []
         self._reported_nodes: set[int] = set()
@@ -217,9 +223,12 @@ class _FunctionMutationAnalyzer:
             if module == facts.module and class_name == owner
         }
         for argument in all_parameters(function):
-            annotated = self._state_type in annotation_names(argument.annotation)
+            annotated = self._contract.state_type in annotation_names(
+                argument.annotation
+            )
             conventional = (
-                argument.arg in self._conventional_names and owner != self._state_type
+                argument.arg in self._contract.conventional_names
+                and owner != self._contract.state_type
             )
             if annotated or conventional:
                 self._aliases[argument.arg] = "state"
@@ -265,7 +274,9 @@ class _FunctionMutationAnalyzer:
             if statement.value is not None:
                 self._visit_expression(statement.value)
             self._check_target(statement.target, statement)
-            annotated = self._state_type in annotation_names(statement.annotation)
+            annotated = self._contract.state_type in annotation_names(
+                statement.annotation
+            )
             if annotated and isinstance(statement.target, ast.Name):
                 self._aliases[statement.target.id] = "state"
             elif statement.value is None:
@@ -389,7 +400,7 @@ class _FunctionMutationAnalyzer:
         if kind is not None:
             self._report(
                 node,
-                f"通过赋值或删除直接修改 {self._boundary_name} {kind}对象 `{_node_text(target)}`",
+                f"通过赋值或删除直接修改 {self._contract.boundary_name} {kind}对象 `{_node_text(target)}`",
             )
 
     def _check_call(self, node: ast.Call) -> None:
@@ -398,7 +409,9 @@ class _FunctionMutationAnalyzer:
             return
         name = dotted_name(node.func)
         if name in {"eval", "exec"} and self._expression_mentions_state(node):
-            self._report(node, f"通过 `{name}` 动态执行路径触达 {self._boundary_name}")
+            self._report(
+                node, f"通过 `{name}` 动态执行路径触达 {self._contract.boundary_name}"
+            )
             return
         if isinstance(node.func, ast.Attribute):
             self._check_bound_call(node)
@@ -406,7 +419,7 @@ class _FunctionMutationAnalyzer:
         if self._origin(node.func) is not None:
             self._report(
                 node,
-                f"动态取得 {self._boundary_name} 成员后直接调用，无法保持唯一写入口",
+                f"动态取得 {self._contract.boundary_name} 成员后直接调用，无法保持唯一写入口",
             )
 
     def _check_static_mutator_call(self, node: ast.Call) -> bool:
@@ -417,7 +430,9 @@ class _FunctionMutationAnalyzer:
             and node.args
             and self._origin(node.args[0]) is not None
         ):
-            self._report(node, f"通过反射写入口 `{name}` 修改 {self._boundary_name}")
+            self._report(
+                node, f"通过反射写入口 `{name}` 修改 {self._contract.boundary_name}"
+            )
             return True
         suffix = name.rsplit(".", 1)[-1]
         owner_name = name.rsplit(".", 1)[0] if "." in name else ""
@@ -426,7 +441,9 @@ class _FunctionMutationAnalyzer:
             return False
         if self._origin(node.args[0]) is None:
             return False
-        self._report(node, f"通过基类写入口 `{name}` 修改 {self._boundary_name}")
+        self._report(
+            node, f"通过基类写入口 `{name}` 修改 {self._contract.boundary_name}"
+        )
         return True
 
     def _check_bound_call(self, node: ast.Call) -> None:
@@ -437,17 +454,17 @@ class _FunctionMutationAnalyzer:
         method = node.func.attr
         if receiver_kind == "state":
             if (
-                method in self._allowed_transitions
-                or method in self._state_read_methods
+                method in self._contract.allowed_transitions
+                or method in self._contract.state_read_methods
             ):
                 return
             receiver = _node_text(node.func.value)
             self._report(node, f"绕过受控状态入口调用 `{receiver}.{method}()`")
             return
-        if method not in self._child_read_methods:
+        if method not in self._contract.child_read_methods:
             self._report(
                 node,
-                f"直接调用 {self._boundary_name} 子对象 `{_node_text(node.func.value)}` "
+                f"直接调用 {self._contract.boundary_name} 子对象 `{_node_text(node.func.value)}` "
                 f"的 `{method}()` 修改或逃逸状态边界",
             )
 
@@ -470,14 +487,14 @@ class _FunctionMutationAnalyzer:
     def _call_origin(self, expression: ast.Call) -> str | None:  # noqa: PLR0911
         """推断调用返回值是否仍指向状态或嵌套对象。"""
         name = dotted_name(expression.func)
-        if _is_state_value(expression, set(), self._state_type):
+        if _is_state_value(expression, set(), self._contract.state_type):
             return "state"
         if name in {"id", "type"} and expression.args:
             return "child" if self._origin(expression.args[0]) is not None else None
         if name in {"cast", "typing.cast"}:
             if len(expression.args) < _CAST_ARGUMENT_COUNT:
                 return None
-            if self._state_type in annotation_names(expression.args[0]):
+            if self._contract.state_type in annotation_names(expression.args[0]):
                 return "state"
             return self._origin(expression.args[1])
         if name in _REFLECTION_READERS and expression.args:
@@ -525,11 +542,14 @@ class _FunctionMutationAnalyzer:
                 self._facts,
                 node,
                 "QG189",
-                f"{detail}；{self._boundary_name} 必须保持 Profile 声明的只读/受控写边界。",
+                f"{detail}；{self._contract.boundary_name} 必须保持 Profile 声明的只读/受控写边界。",
                 symbol=_qualname(self._facts.module, self._owner, self._function.name),
                 severity="critical",
-                suggestion=self._suggestion,
-                evidence={"absolute_blocker": True, "profile": self._profile_name},
+                suggestion=self._contract.suggestion,
+                evidence={
+                    "absolute_blocker": True,
+                    "profile": self._contract.profile_name,
+                },
             )
         )
 

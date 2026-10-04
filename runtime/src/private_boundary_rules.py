@@ -6,7 +6,7 @@ import re
 from .ast_utils import dotted_name, enclosing_class_name
 from .config import is_test_path
 from .model import Finding
-from .policy_common import ParsedModule, direct_body_nodes, make_finding
+from .policy_common import ParsedModule, all_parameters, direct_body_nodes, make_finding
 
 UPPERCASE_CONSTANT_PATTERN = re.compile(r"^_?[A-Z][A-Z0-9_]*$")
 MIN_DUNDER_NAME_LENGTH = 5
@@ -231,27 +231,35 @@ def _reflection_member_name(
         ):
             base = _reflection_member_name(base_node, constant_lookup)
             values = [_reflection_member_name(item, constant_lookup) for item in args]
-            fields = list(re.finditer(r"\{(\d*)\}", base))
-            raw_indexes = [match.group(1) for match in fields]
-            indexes = [
-                int(raw)
-                if raw
-                else sum(not previous for previous in raw_indexes[:position])
-                for position, raw in enumerate(raw_indexes)
-            ]
-            valid_template = bool(fields) and "{" not in re.sub(r"\{\d*\}", "", base)
-            if (
-                base
-                and all(values)
-                and valid_template
-                and all(index < len(values) for index in indexes)
-            ):
-                rendered = base
-                for match, index in zip(fields, indexes, strict=True):
-                    rendered = rendered.replace(match.group(0), values[index], 1)
-                result = rendered
+            result = _render_reflection_format(base, values)
         case _:
             pass
+    return result
+
+
+def _render_reflection_format(base: str, values: list[str]) -> str:
+    """按反射成员名支持的空字段/数字字段语法求值 format 模板。
+
+    不执行任意 format 协议；不完整的参数或其他花括号语法返回未知名称。
+    """
+    result = ""
+    fields = list(re.finditer(r"\{(\d*)\}", base))
+    raw_indexes = [match.group(1) for match in fields]
+    indexes = [
+        int(raw) if raw else sum(not previous for previous in raw_indexes[:position])
+        for position, raw in enumerate(raw_indexes)
+    ]
+    valid_template = bool(fields) and "{" not in re.sub(r"\{\d*\}", "", base)
+    if (
+        base
+        and all(values)
+        and valid_template
+        and all(index < len(values) for index in indexes)
+    ):
+        rendered = base
+        for match, index in zip(fields, indexes, strict=True):
+            rendered = rendered.replace(match.group(0), values[index], 1)
+        result = rendered
     return result
 
 
@@ -276,23 +284,9 @@ def _fixed_contract_names(
     ):
         fixed_names = {
             argument.arg
-            for argument in (
-                *function.args.posonlyargs,
-                *function.args.args,
-                *function.args.kwonlyargs,
-            )
+            for argument in all_parameters(function)
             if argument.annotation is not None
         }
-        if (
-            function.args.vararg is not None
-            and function.args.vararg.annotation is not None
-        ):
-            fixed_names.add(function.args.vararg.arg)
-        if (
-            function.args.kwarg is not None
-            and function.args.kwarg.annotation is not None
-        ):
-            fixed_names.add(function.args.kwarg.arg)
         ancestor: ast.AST | None = function
         while ancestor in parents:
             ancestor = parents[ancestor]
@@ -300,27 +294,21 @@ def _fixed_contract_names(
                 fixed_names.update({"self", "cls"})
                 break
         for candidate in direct_body_nodes(function):
-            if isinstance(candidate, ast.AnnAssign) and isinstance(
-                candidate.target, ast.Name
-            ):
-                fixed_names.add(candidate.target.id)
-            elif isinstance(candidate, ast.Assign) and isinstance(
-                candidate.value, ast.Call
-            ):
-                constructor = dotted_name(candidate.value.func)
-                constructor_leaf = constructor.rsplit(".", 1)[-1]
-                is_cast = constructor in {"cast", "typing.cast"} and bool(
-                    candidate.value.args
-                )
-                if not constructor_leaf or not (
-                    constructor_leaf[:1].isupper() or is_cast
-                ):
-                    continue
-                fixed_names.update(
-                    target.id
-                    for target in candidate.targets
-                    if isinstance(target, ast.Name)
-                )
+            match candidate:
+                case ast.AnnAssign(target=ast.Name(id=name)):
+                    fixed_names.add(name)
+                case ast.Assign(value=ast.Call() as value, targets=targets):
+                    constructor = dotted_name(value.func)
+                    constructor_leaf = constructor.rsplit(".", 1)[-1]
+                    is_cast = constructor in {"cast", "typing.cast"} and bool(
+                        value.args
+                    )
+                    if constructor_leaf[:1].isupper() or is_cast:
+                        fixed_names.update(
+                            target.id
+                            for target in targets
+                            if isinstance(target, ast.Name)
+                        )
         fixed_names_by_scope[id(function)] = frozenset(fixed_names)
     return fixed_names_by_scope, frozenset(module_fixed_names)
 
@@ -355,14 +343,30 @@ def _reflection_context(
                 binding = dotted_name(target)
                 if not binding:
                     continue
-                current = bindings.setdefault(binding, [])
-                missing = [item for item in bindings[source] if item not in current]
+                missing = [
+                    item
+                    for item in bindings[source]
+                    if item not in bindings.get(binding, ())
+                ]
                 if missing:
-                    current.extend(missing)
+                    bindings.setdefault(binding, []).extend(missing)
                     propagated = True
 
     fixed_names_by_scope, patch_owners = _fixed_contract_names(parsed, parents)
 
+    invoked = _invoked_reflection_origins(parsed, parents, bindings)
+    return alias_lookup, invoked, constant_lookup, fixed_names_by_scope, patch_owners
+
+
+def _invoked_reflection_origins(
+    parsed: ParsedModule,
+    parents: dict[ast.AST, ast.AST],
+    bindings: dict[str, list[tuple[ast.AST | None, int]]],
+) -> set[int]:
+    """解析直接调用及回调注册中的反射来源，保持词法遮蔽规则。
+
+    别名闭包与调用使用分开解析；最近函数作用域的来源遮蔽更外层同名来源。
+    """
     invoked: set[int] = set()
     for call in (node for node in parsed.nodes if isinstance(node, ast.Call)):
         parent = parents.get(call)
@@ -408,7 +412,7 @@ def _reflection_context(
                 None,
             )
             invoked.update(owner_origins.get(visible_owner, ()))
-    return alias_lookup, invoked, constant_lookup, fixed_names_by_scope, patch_owners
+    return invoked
 
 
 def _reflection_call_facts(
@@ -439,20 +443,55 @@ def _reflection_call_facts(
             resolved_target = f"dynamic[{reflected_name}]"
 
     call_attribute = node.func.attr if isinstance(node.func, ast.Attribute) else ""
+    is_dunder_reflection = not REFLECTION_DUNDER_CALLS.isdisjoint(
+        (resolved_target.rsplit(".", 1)[-1], call_attribute)
+    )
     reflection_call = (
         resolved_target in REFLECTION_CALLS
-        or resolved_target.rsplit(".", 1)[-1] in REFLECTION_DUNDER_CALLS
-        or call_attribute in REFLECTION_DUNDER_CALLS
+        or is_dunder_reflection
         or reflected_subscript
     )
     if not reflection_call:
         return None
 
-    member_node: ast.AST | None = None
-    receiver_node: ast.AST | None = node.args[0] if node.args else None
     canonical_target = alias_lookup.get(raw_target, resolved_target)
     if call_attribute in REFLECTION_DUNDER_CALLS and not canonical_target:
         canonical_target = call_attribute
+    receiver_node, member_node = _reflection_member_nodes(
+        node, canonical_target, call_attribute
+    )
+
+    member_name = _reflection_member_name(member_node, constant_lookup)
+    private_member = single_private_name(member_name)
+    broad_reflection = bool(
+        canonical_target in REFLECTION_BROAD_CALLS
+        or reflected_subscript
+        or is_dunder_reflection
+    )
+    invoked = (
+        id(node) in invoked_reflections or canonical_target == "operator.methodcaller"
+    )
+    receiver = dotted_name(receiver_node) if receiver_node is not None else ""
+    return (
+        canonical_target,
+        receiver,
+        member_name,
+        private_member,
+        broad_reflection,
+        invoked,
+        receiver_node,
+    )
+
+
+def _reflection_member_nodes(
+    node: ast.Call, canonical_target: str, call_attribute: str
+) -> tuple[ast.AST | None, ast.AST | None]:
+    """按内置反射、绑定/非绑定 dunder 和 operator 协议定位参数。
+
+    返回原始 AST 接收者与成员名节点，未知或缺失参数保留 None。
+    """
+    member_node: ast.AST | None = None
+    receiver_node: ast.AST | None = node.args[0] if node.args else None
     if call_attribute in REFLECTION_DUNDER_CALLS:
         bound_receiver = (
             node.func.value if isinstance(node.func, ast.Attribute) else None
@@ -471,80 +510,62 @@ def _reflection_call_facts(
     elif len(node.args) >= MIN_REFLECTION_MEMBER_ARGS:
         member_node = node.args[1]
 
-    member_name = _reflection_member_name(member_node, constant_lookup)
-    private_member = bool(member_name and single_private_name(member_name))
-    broad_reflection = bool(
-        canonical_target in REFLECTION_BROAD_CALLS
-        or reflected_subscript
-        or canonical_target.rsplit(".", 1)[-1] in REFLECTION_DUNDER_CALLS
-        or call_attribute in REFLECTION_DUNDER_CALLS
-    )
-    invoked = (
-        id(node) in invoked_reflections or canonical_target == "operator.methodcaller"
-    )
-    receiver = dotted_name(receiver_node) if receiver_node is not None else ""
-    return (
-        canonical_target,
-        receiver,
-        member_name,
-        private_member,
-        broad_reflection,
-        invoked,
-        receiver_node,
-    )
+    return receiver_node, member_node
 
 
 def _module_constant_findings(parsed: ParsedModule) -> list[Finding]:
     """检查模块级字面量常量是否使用全大写命名。"""
     findings: list[Finding] = []
+    assignments: list[tuple[ast.expr, ast.expr]] = []
     for statement in parsed.tree.body:
-        if isinstance(statement, ast.Assign):
-            assignments = [(target, statement.value) for target in statement.targets]
-        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
-            assignments = [(statement.target, statement.value)]
-        else:
-            assignments = []
-        for target, value in assignments:
-            if not isinstance(target, ast.Name) or UPPERCASE_CONSTANT_PATTERN.match(
-                target.id
-            ):
-                continue
-            if target.id.startswith("__") and target.id.endswith("__"):
-                continue
-            pending = [value]
-            constant_value = True
-            while pending:
-                candidate = pending.pop()
-                if isinstance(candidate, ast.Tuple):
-                    pending.extend(candidate.elts)
-                elif not (
-                    isinstance(candidate, ast.Constant)
-                    and isinstance(candidate.value, SCALAR_CONSTANT_TYPES)
+        match statement:
+            case ast.Assign(targets=targets, value=value):
+                assignments.extend((target, value) for target in targets)
+            case ast.AnnAssign(target=target, value=ast.expr() as value):
+                assignments.append((target, value))
+    for target, value in assignments:
+        if not isinstance(target, ast.Name) or UPPERCASE_CONSTANT_PATTERN.match(
+            target.id
+        ):
+            continue
+        if target.id[:2] == target.id[-2:] == "__":
+            continue
+        pending = [value]
+        constant_value = True
+        while pending:
+            candidate = pending.pop()
+            match candidate:
+                case ast.Tuple(elts=elements):
+                    pending.extend(elements)
+                case ast.Constant(value=scalar) if isinstance(
+                    scalar, SCALAR_CONSTANT_TYPES
                 ):
+                    pass
+                case _:
                     constant_value = False
                     break
-            if not constant_value:
-                continue
-            findings.append(
-                make_finding(
-                    parsed.facts,
-                    target,
-                    "QG150",
-                    f"模块级常量 `{target.id}` 应使用全大写命名。",
-                    symbol=(
-                        f"{parsed.facts.module}.{target.id}"
-                        if parsed.facts.module
-                        else target.id
-                    ),
-                    severity="warning",
-                    confidence="high",
-                    suggestion=(
-                        "文件级字符串、数值或元组常量使用 REACT_SKILLS_PROMPT "
-                        "这类全大写名称；局部变量放入函数内部。"
-                    ),
-                    evidence={"name": target.id, "value_kind": type(value).__name__},
-                )
+        if not constant_value:
+            continue
+        findings.append(
+            make_finding(
+                parsed.facts,
+                target,
+                "QG150",
+                f"模块级常量 `{target.id}` 应使用全大写命名。",
+                symbol=(
+                    f"{parsed.facts.module}.{target.id}"
+                    if parsed.facts.module
+                    else target.id
+                ),
+                severity="warning",
+                confidence="high",
+                suggestion=(
+                    "文件级字符串、数值或元组常量使用 REACT_SKILLS_PROMPT "
+                    "这类全大写名称；局部变量放入函数内部。"
+                ),
+                evidence={"name": target.id, "value_kind": type(value).__name__},
             )
+        )
     return findings
 
 
@@ -653,10 +674,10 @@ def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
             )
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             findings.extend(check_private_import(parsed, node))
-        elif isinstance(node, ast.Attribute):
+            continue
+        finding = None
+        if isinstance(node, ast.Attribute):
             finding = check_private_attribute_access(parsed, node, parents)
-            if finding is not None:
-                findings.append(finding)
         elif isinstance(node, ast.Call):
             finding = check_dynamic_private_access(
                 parsed,
@@ -668,8 +689,8 @@ def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
                 fixed_names_by_scope,
                 patch_owners,
             )
-            if finding is not None:
-                findings.append(finding)
+        if finding is not None:
+            findings.append(finding)
 
     findings.extend(_module_constant_findings(parsed))
     return findings
@@ -837,27 +858,32 @@ def _is_frozen_dataclass_init_assignment(
     owner: ast.ClassDef | None = None
     while current in parents:
         current = parents[current]
-        if function is None and isinstance(
-            current, (ast.FunctionDef, ast.AsyncFunctionDef)
+        match current:
+            case ast.FunctionDef() | ast.AsyncFunctionDef() if function is None:
+                function = current
+                continue
+            case ast.ClassDef() if function is not None:
+                owner = current
+                break
+    match function, owner:
+        case (
+            (ast.FunctionDef(name="__init__") | ast.AsyncFunctionDef(name="__init__")),
+            ast.ClassDef(),
         ):
-            function = current
-            continue
-        if function is not None and isinstance(current, ast.ClassDef):
-            owner = current
-            break
-    if function is None or function.name != "__init__" or owner is None:
-        return False
+            pass
+        case _:
+            return False
     for decorator in owner.decorator_list:
-        if not isinstance(decorator, ast.Call):
-            continue
-        if dotted_name(decorator.func).rsplit(".", 1)[-1] != "dataclass":
-            continue
-        return any(
-            keyword.arg == "frozen"
-            and isinstance(keyword.value, ast.Constant)
-            and keyword.value.value is True
-            for keyword in decorator.keywords
-        )
+        match decorator:
+            case ast.Call(func=func, keywords=keywords) if (
+                dotted_name(func).rsplit(".", 1)[-1] == "dataclass"
+            ):
+                return any(
+                    keyword.arg == "frozen"
+                    and isinstance(keyword.value, ast.Constant)
+                    and keyword.value.value is True
+                    for keyword in keywords
+                )
     return False
 
 
@@ -935,6 +961,33 @@ def check_dynamic_private_access(
             },
         )
 
+    return _production_reflection_finding(
+        parsed, node, parents, facts, fixed_names_by_scope, patch_owners
+    )
+
+
+def _production_reflection_finding(
+    parsed: ParsedModule,
+    node: ast.Call,
+    parents: dict[ast.AST, ast.AST],
+    facts: tuple[str, str, str, bool, bool, bool, ast.AST | None],
+    fixed_names_by_scope: dict[int, frozenset[str]],
+    patch_owners: frozenset[str],
+) -> Finding | None:
+    """为生产反射选择最高优先级规则并记录静态接收者证据。
+
+    私有成员、调用、广域反射和动态契约修改均阻断；仅动态探测已知公开
+    契约使用 Error。没有静态契约证据的普通探测不生成发现。
+    """
+    (
+        target,
+        receiver,
+        member_name,
+        private_member,
+        broad_reflection,
+        invoked,
+        receiver_node,
+    ) = facts
     receiver_root = receiver.partition(".")[0]
     scope_names: set[str] = set()
     scope: ast.AST | None = node
@@ -958,7 +1011,6 @@ def check_dynamic_private_access(
             )
         )
     )
-    critical = private_member or broad_reflection or invoked
     variants = (
         (patch_owner, "QG186", f"生产代码通过 `{target}` 在运行时修改类或模块契约。"),
         (
@@ -984,20 +1036,21 @@ def check_dynamic_private_access(
     if selected is None:
         return None
     code, message = selected
+    is_critical = code != "QG184"
     return make_finding(
         parsed.facts,
         node,
         code,
         message,
         symbol=parsed.facts.module,
-        severity="critical" if critical or patch_owner else "error",
+        severity="critical" if is_critical else "error",
         confidence="high"
         if member_name or invoked or broad_reflection or statically_typed
         else "medium",
         suggestion=(
             "运行时改类/模块契约、反射调用和 private 反射不可解释保留；"
             "必须改为直接调用正式 public 接口，或将能力迁回正确所有者。"
-            if critical or patch_owner
+            if is_critical
             else "静态类型对象不得用反射猜测固定成员；请直接访问公开字段/方法，"
             "或用 Protocol、联合类型和显式 Optional 契约表达可选性。"
         ),

@@ -247,6 +247,26 @@ def body_without_docstring(
     return body[1:] if has_docstring else body
 
 
+def _property_private_target(statement: ast.stmt) -> str | None:
+    """识别 property getter/setter/deleter 直接暴露的 private 属性。"""
+    target: ast.expr | None = None
+    if isinstance(statement, ast.Return):
+        target = statement.value
+    if (
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and isinstance(statement.value, ast.Name)
+    ):
+        target = statement.targets[0]
+    if isinstance(statement, ast.AnnAssign) and isinstance(statement.value, ast.Name):
+        target = statement.target
+    if isinstance(statement, ast.Delete) and len(statement.targets) == 1:
+        target = statement.targets[0]
+    if isinstance(target, ast.Attribute) and target.attr.startswith("_"):
+        return dotted_name(target)
+    return None
+
+
 def _trivial_wrapper_value(
     body: list[ast.stmt],
     property_facade: bool,
@@ -254,30 +274,10 @@ def _trivial_wrapper_value(
     """提取薄包装调用表达式，或 property 直接暴露的 private 目标。"""
     if len(body) == 1:
         statement = body[0]
-        target: ast.expr | None = None
-        if property_facade and isinstance(statement, ast.Return):
-            target = statement.value
-        if (
-            property_facade
-            and isinstance(statement, ast.Assign)
-            and len(statement.targets) == 1
-            and isinstance(statement.value, ast.Name)
-        ):
-            target = statement.targets[0]
-        if (
-            property_facade
-            and isinstance(statement, ast.AnnAssign)
-            and isinstance(statement.value, ast.Name)
-        ):
-            target = statement.target
-        if (
-            property_facade
-            and isinstance(statement, ast.Delete)
-            and len(statement.targets) == 1
-        ):
-            target = statement.targets[0]
-        if isinstance(target, ast.Attribute) and target.attr.startswith("_"):
-            return None, dotted_name(target)
+        if property_facade:
+            direct_target = _property_private_target(statement)
+            if direct_target is not None:
+                return None, direct_target
         value = (
             statement.value if isinstance(statement, (ast.Return, ast.Expr)) else None
         )

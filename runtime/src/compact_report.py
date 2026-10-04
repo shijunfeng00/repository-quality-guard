@@ -1316,37 +1316,28 @@ def _question_issues(
         or facts.interface_removed_definitions
         or facts.protocol_findings
     )
-    if (
-        has_production_interface_changes
-        and "Q2" in questions
-        and questions["Q2"][0] == "NOT_APPLICABLE"
-    ):
-        issues.append(
-            "存在生产接口/协议变化时 Q2 不得 NOT_APPLICABLE；必须以 accepted design baseline 为默认契约，给出本轮明确需求授权与兼容性证据。"
-        )
-    if facts.additions and "Q3" in questions and questions["Q3"][0] == "NOT_APPLICABLE":
-        issues.append("存在 ADD 时 Q3 不得 NOT_APPLICABLE。")
-    if q6_required and "Q6" in questions and questions["Q6"][0] == "NOT_APPLICABLE":
-        issues.append("存在 Q6 语义候选时 Q6 不得 NOT_APPLICABLE。")
-    if (
-        "QG178" in rules
-        and "Q10" in questions
-        and questions["Q10"][0] == "NOT_APPLICABLE"
-    ):
-        issues.append("存在 QG178 时 Q10 不得 NOT_APPLICABLE。")
-    if (
-        "QG191" in rules
-        and "Q3" in questions
-        and questions["Q3"][0] == "NOT_APPLICABLE"
-    ):
-        issues.append("存在 QG191 手工协议构造时 Q3 不得 NOT_APPLICABLE。")
     q11_required = bool(
         facts.test_audits or has_production_interface_changes or facts.changed_files
     )
-    if q11_required and "Q11" in questions and questions["Q11"][0] == "NOT_APPLICABLE":
-        issues.append(
-            "存在生产或测试变化时 Q11 不得 NOT_APPLICABLE；必须说明稳定行为/接口契约的自动化回归覆盖，以及受影响既有测试是否先原样运行。"
-        )
+    obligations = (
+        (
+            has_production_interface_changes,
+            "Q2",
+            "存在生产接口/协议变化时 Q2 不得 NOT_APPLICABLE；必须以 accepted design baseline 为默认契约，给出本轮明确需求授权与兼容性证据。",
+        ),
+        (bool(facts.additions), "Q3", "存在 ADD 时 Q3 不得 NOT_APPLICABLE。"),
+        (q6_required, "Q6", "存在 Q6 语义候选时 Q6 不得 NOT_APPLICABLE。"),
+        ("QG178" in rules, "Q10", "存在 QG178 时 Q10 不得 NOT_APPLICABLE。"),
+        ("QG191" in rules, "Q3", "存在 QG191 手工协议构造时 Q3 不得 NOT_APPLICABLE。"),
+        (
+            q11_required,
+            "Q11",
+            "存在生产或测试变化时 Q11 不得 NOT_APPLICABLE；必须说明稳定行为/接口契约的自动化回归覆盖，以及受影响既有测试是否先原样运行。",
+        ),
+    )
+    for required, key, message in obligations:
+        if required and key in questions and questions[key][0] == "NOT_APPLICABLE":
+            issues.append(message)
     return issues, blocking
 
 

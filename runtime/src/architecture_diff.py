@@ -77,7 +77,11 @@ class ParentCallEdge:
 
 @dataclass(slots=True, frozen=True)
 class TypedReceiverCallEdge:
-    """表示显式类型接收者到公共方法的一条编排调用边。"""
+    """
+    表示显式类型接收者到公共方法的一条编排调用边。
+
+    记录编排方法的所有者、接收者类型、目标方法及源码位置。
+    """
 
     owner: str
     caller: str
@@ -167,44 +171,49 @@ class _MethodCollector(ast.NodeVisitor):
         Returns:
             None。
         """
+        self.generic_visit(node)
         if isinstance(node.func, ast.Name):
             self.call_names.add(node.func.id)
-        elif isinstance(node.func, ast.Attribute):
-            method_name = node.func.attr
-            receiver = node.func.value
-            self.call_names.add(method_name)
-            if isinstance(receiver, ast.Name) and receiver.id in self.typed_receivers:
+            return
+        if not isinstance(node.func, ast.Attribute):
+            return
+        method_name = node.func.attr
+        receiver = node.func.value
+        self.call_names.add(method_name)
+        if isinstance(receiver, ast.Name):
+            if receiver.id in self.typed_receivers:
                 self.typed_receiver_calls.update(
                     (receiver_type, method_name)
                     for receiver_type in self.typed_receivers[receiver.id]
                 )
-            if isinstance(receiver, ast.Name) and receiver.id in self.receiver_names:
+            if receiver.id in self.receiver_names:
                 self.receiver_call_names.add(method_name)
-            elif (
-                isinstance(receiver, ast.Name) and receiver.id in self.super_names
-            ) or (
-                isinstance(receiver, ast.Call)
-                and isinstance(receiver.func, ast.Name)
-                and receiver.func.id == "super"
-            ):
+                return
+            if receiver.id in self.super_names:
                 self.super_call_names.add(method_name)
-            else:
-                receiver_text = _render(receiver)
-                parent_names = (
-                    set(self.parent_names[receiver_text])
-                    if receiver_text in self.parent_names
-                    else set()
-                )
-                receiver_root = receiver_text.split(".", 1)[0]
-                if (
-                    receiver_root not in self.local_names
-                    and receiver_text in self.base_receivers
-                ):
-                    parent_names.add(self.base_receivers[receiver_text])
-                self.explicit_parent_calls.update(
-                    (parent_name, method_name) for parent_name in parent_names
-                )
-        self.generic_visit(node)
+                return
+        if (
+            isinstance(receiver, ast.Call)
+            and isinstance(receiver.func, ast.Name)
+            and receiver.func.id == "super"
+        ):
+            self.super_call_names.add(method_name)
+            return
+        receiver_text = _render(receiver)
+        parent_names = (
+            set(self.parent_names[receiver_text])
+            if receiver_text in self.parent_names
+            else set()
+        )
+        receiver_root = receiver_text.split(".", 1)[0]
+        if (
+            receiver_root not in self.local_names
+            and receiver_text in self.base_receivers
+        ):
+            parent_names.add(self.base_receivers[receiver_text])
+        self.explicit_parent_calls.update(
+            (parent_name, method_name) for parent_name in parent_names
+        )
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         """
@@ -232,33 +241,32 @@ def _render(node: ast.AST | None) -> str:
 
 def _receiver_annotation_names(annotation: ast.AST | None) -> frozenset[str]:
     """提取可直接充当接收者类型的简单类型名。"""
-    result: frozenset[str] = frozenset()
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
         try:
             parsed = ast.parse(annotation.value, mode="eval").body
         except SyntaxError:
-            parsed = None
-        result = _receiver_annotation_names(parsed)
-    elif isinstance(annotation, ast.Name):
-        result = frozenset({annotation.id})
-    elif isinstance(annotation, ast.Attribute):
-        result = frozenset({annotation.attr})
-    elif isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
-        result = _receiver_annotation_names(
-            annotation.left
-        ) | _receiver_annotation_names(annotation.right)
-    elif isinstance(annotation, ast.Subscript):
+            return frozenset()
+        return _receiver_annotation_names(parsed)
+    if isinstance(annotation, ast.Name):
+        return frozenset({annotation.id})
+    if isinstance(annotation, ast.Attribute):
+        return frozenset({annotation.attr})
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return _receiver_annotation_names(annotation.left) | _receiver_annotation_names(
+            annotation.right
+        )
+    if isinstance(annotation, ast.Subscript):
         wrapper = _render(annotation.value).split(".")[-1]
-        result = (
+        return (
             _receiver_annotation_names(annotation.slice)
             if wrapper in {"Optional", "Union", "Annotated"}
             else frozenset({wrapper})
         )
-    elif isinstance(annotation, (ast.Tuple, ast.List)):
-        result = frozenset().union(
+    if isinstance(annotation, (ast.Tuple, ast.List)):
+        return frozenset().union(
             *(_receiver_annotation_names(item) for item in annotation.elts)
         )
-    return result
+    return frozenset()
 
 
 def _method_fingerprint(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
@@ -274,46 +282,6 @@ def _method_fingerprint(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     normalized = ast.Module(body=body, type_ignores=[])
     payload = ast.dump(normalized, annotate_fields=True, include_attributes=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _name_parts(name: str) -> set[str]:
-    """把 snake/camel 名称拆成用于近似能力匹配的语义片段。"""
-    parts = {
-        item.lower()
-        for chunk in name.strip("_").split("_")
-        for item in _IDENTIFIER_PART.findall(chunk)
-    }
-    return parts - _IGNORED_NAME_PARTS
-
-
-def _behavior_similarity(left: MethodSnapshot, right: MethodSnapshot) -> float:
-    """根据调用和属性集合估算两个方法是否承载同一能力。"""
-    left_features = set(left.call_names) | set(left.attribute_names)
-    right_features = set(right.call_names) | set(right.attribute_names)
-    if not left_features or not right_features:
-        return 0.0
-    shared = left_features & right_features
-    if len(shared) < _MIN_SHARED_FEATURES:
-        return 0.0
-    return len(shared) / len(left_features | right_features)
-
-
-def _is_shared_state_source(source: str) -> bool:
-    """判断赋值来源是否可能表示父子类共享的同一外部状态。
-
-    Args:
-        source: 由 AST 稳定渲染得到的赋值右值文本。
-
-    Returns:
-        名称、属性或下标访问这类外部引用返回 True；字面量和新建对象返回 False。
-    """
-    if not source:
-        return False
-    try:
-        expression = ast.parse(source, mode="eval").body
-    except SyntaxError:
-        return False
-    return isinstance(expression, (ast.Name, ast.Attribute, ast.Subscript))
 
 
 def _collect_assignments(
@@ -343,6 +311,75 @@ def _collect_assignments(
             ):
                 result[target.attr] = _render(value)
     return result
+
+
+def _receiver_aliases(
+    assignments: list[tuple[str, ast.expr]],
+    receiver_names: frozenset[str],
+    local_names: set[str],
+    base_receivers: dict[str, str],
+) -> tuple[frozenset[str], frozenset[str], dict[str, frozenset[str]]]:
+    """固定点解析方法当前作用域中的接收者别名。
+
+    Args:
+        assignments: 方法体顶层简单名称赋值。
+        receiver_names: 当前实例或类形参的初始名称。
+        local_names: 当前作用域的局部名称，排除显式 global。
+        base_receivers: 当前类可显式引用的父类接收者。
+
+    Returns:
+        实例别名、super 别名，以及显式父类别名到父类名称集合的映射。
+    """
+    receiver_aliases = set(receiver_names)
+    super_aliases: set[str] = set()
+    parent_aliases: dict[str, set[str]] = {}
+    for _pass in range(len(assignments) + 1):
+        before = (
+            len(receiver_aliases),
+            len(super_aliases),
+            sum(len(parents) for parents in parent_aliases.values()),
+        )
+        receiver_aliases.update(
+            target
+            for target, value in assignments
+            if isinstance(value, ast.Name) and value.id in receiver_aliases
+        )
+        super_aliases.update(
+            target
+            for target, value in assignments
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "super"
+            )
+            or (isinstance(value, ast.Name) and value.id in super_aliases)
+        )
+        for target, value in assignments:
+            value_text = _render(value)
+            value_root = value_text.split(".", 1)[0]
+            parent_names = (
+                {base_receivers[value_text]}
+                if value_root not in local_names and value_text in base_receivers
+                else set(parent_aliases[value.id])
+                if isinstance(value, ast.Name) and value.id in parent_aliases
+                else set()
+            )
+            if parent_names:
+                existing = parent_aliases[target] if target in parent_aliases else set()
+                existing.update(parent_names)
+                parent_aliases[target] = existing
+        after = (
+            len(receiver_aliases),
+            len(super_aliases),
+            sum(len(parents) for parents in parent_aliases.values()),
+        )
+        if after == before:
+            break
+    return (
+        frozenset(receiver_aliases),
+        frozenset(super_aliases),
+        {name: frozenset(parents) for name, parents in parent_aliases.items()},
+    )
 
 
 def _collect_class(
@@ -398,62 +435,14 @@ def _collect_class(
                 {argument.arg for argument in arguments}
                 | {target for target, _value in assignments}
             ) - global_names
-            receiver_aliases = set(receiver_names)
-            super_aliases: set[str] = set()
-            parent_aliases: dict[str, set[str]] = {}
-            for _pass in range(len(assignments) + 1):
-                before = (
-                    len(receiver_aliases),
-                    len(super_aliases),
-                    sum(len(parents) for parents in parent_aliases.values()),
-                )
-                receiver_aliases.update(
-                    target
-                    for target, value in assignments
-                    if isinstance(value, ast.Name) and value.id in receiver_aliases
-                )
-                super_aliases.update(
-                    target
-                    for target, value in assignments
-                    if (
-                        isinstance(value, ast.Call)
-                        and isinstance(value.func, ast.Name)
-                        and value.func.id == "super"
-                    )
-                    or (isinstance(value, ast.Name) and value.id in super_aliases)
-                )
-                for target, value in assignments:
-                    value_text = _render(value)
-                    value_root = value_text.split(".", 1)[0]
-                    parent_names = (
-                        {base_receivers[value_text]}
-                        if value_root not in local_names
-                        and value_text in base_receivers
-                        else set(parent_aliases[value.id])
-                        if isinstance(value, ast.Name) and value.id in parent_aliases
-                        else set()
-                    )
-                    if parent_names:
-                        existing = (
-                            parent_aliases[target]
-                            if target in parent_aliases
-                            else set()
-                        )
-                        existing.update(parent_names)
-                        parent_aliases[target] = existing
-                after = (
-                    len(receiver_aliases),
-                    len(super_aliases),
-                    sum(len(parents) for parents in parent_aliases.values()),
-                )
-                if after == before:
-                    break
             collector = _MethodCollector()
-            collector.receiver_names = frozenset(receiver_aliases)
-            collector.super_names = frozenset(super_aliases)
-            collector.parent_names = {
-                name: frozenset(parents) for name, parents in parent_aliases.items()
-            }
+            (
+                collector.receiver_names,
+                collector.super_names,
+                collector.parent_names,
+            ) = _receiver_aliases(
+                assignments, receiver_names, local_names, base_receivers
+            )
             collector.local_names = frozenset(local_names)
             collector.base_receivers = base_receivers
             collector.typed_receivers = {
@@ -520,51 +509,66 @@ def _classes_from_sources(
     return classes, {name: tuple(keys) for name, keys in simple.items()}
 
 
+def _unique_parent_classes(
+    classes: dict[str, ClassSnapshot],
+    simple_names: dict[str, tuple[str, ...]],
+) -> Iterable[tuple[str, ClassSnapshot, str, ClassSnapshot]]:
+    """按当前快照的唯一简单名称解析直接父类。
+
+    Args:
+        classes: 路径与限定名索引的类快照。
+        simple_names: 简单类名到全部候选类键的索引。
+
+    Yields:
+        子类键、子类快照、父类键及父类快照；顺序遵循类和父类声明。
+        缺少候选或同名候选不唯一时，不推断继承所有者。
+    """
+    for key, child in classes.items():
+        for base_name in child.bases:
+            if base_name not in simple_names:
+                continue
+            parent_keys = simple_names[base_name]
+            if len(parent_keys) != 1:
+                continue
+            parent_key = parent_keys[0]
+            yield key, child, parent_key, classes[parent_key]
+
+
 def _parent_call_edges(
     classes: dict[str, ClassSnapshot],
     simple_names: dict[str, tuple[str, ...]],
 ) -> set[ParentCallEdge]:
     """根据类索引建立子类方法到唯一父类方法的调用边。"""
     parent_calls: set[ParentCallEdge] = set()
-    for key, item in classes.items():
-        for base_name in item.bases:
-            if base_name not in simple_names:
-                continue
-            base_keys = simple_names[base_name]
-            if len(base_keys) != 1:
-                continue
-            parent_key = base_keys[0]
-            parent = classes[parent_key]
-            for caller in item.methods.values():
-                explicit_names = {
-                    method_name
-                    for owner_name, method_name in caller.explicit_parent_calls
-                    if owner_name == base_name
-                }
-                candidate_names = (
-                    caller.receiver_call_names
-                    | caller.super_call_names
-                    | explicit_names
+    for key, item, parent_key, parent in _unique_parent_classes(classes, simple_names):
+        for caller in item.methods.values():
+            explicit_names = {
+                method_name
+                for owner_name, method_name in caller.explicit_parent_calls
+                if owner_name == parent.name
+            }
+            candidate_names = (
+                caller.receiver_call_names | caller.super_call_names | explicit_names
+            )
+            for method_name in candidate_names:
+                is_direct_parent_call = (
+                    method_name in caller.super_call_names
+                    or method_name in explicit_names
                 )
-                for method_name in candidate_names:
-                    is_direct_parent_call = (
-                        method_name in caller.super_call_names
-                        or method_name in explicit_names
+                if (
+                    not is_direct_parent_call and method_name in item.methods
+                ) or method_name not in parent.methods:
+                    continue
+                parent_calls.add(
+                    ParentCallEdge(
+                        child=key,
+                        caller=caller.name,
+                        parent=parent_key,
+                        method=method_name,
+                        path=item.path,
+                        line=caller.line,
                     )
-                    if (
-                        not is_direct_parent_call and method_name in item.methods
-                    ) or method_name not in parent.methods:
-                        continue
-                    parent_calls.add(
-                        ParentCallEdge(
-                            child=key,
-                            caller=caller.name,
-                            parent=parent_key,
-                            method=method_name,
-                            path=item.path,
-                            line=caller.line,
-                        )
-                    )
+                )
     return parent_calls
 
 
@@ -639,11 +643,6 @@ def _worktree_sources(root: Path, config: GuardConfig) -> dict[str, str]:
     return result
 
 
-def _same_class(base_key: str, target: ArchitectureSnapshot) -> ClassSnapshot | None:
-    """按路径和限定名称寻找目标快照中的同一个类。"""
-    return target.classes.get(base_key)
-
-
 def _removed_inheritance_findings(
     base: ArchitectureSnapshot,
     target: ArchitectureSnapshot,
@@ -651,7 +650,7 @@ def _removed_inheritance_findings(
     """报告仍存在类上的继承边删除。"""
     findings: list[Finding] = []
     for key, before in base.classes.items():
-        after = _same_class(key, target)
+        after = target.classes.get(key)
         if after is None:
             continue
         for base_name in sorted(set(before.bases) - set(after.bases)):
@@ -695,8 +694,25 @@ def _replacement_finding(
         if name not in child_before.methods
     ]
     for candidate in new_methods:
-        name_overlap = _name_parts(edge.method) & _name_parts(candidate.name)
-        similarity = _behavior_similarity(parent_method, candidate)
+        parent_parts = {
+            part.lower()
+            for chunk in edge.method.strip("_").split("_")
+            for part in _IDENTIFIER_PART.findall(chunk)
+        } - _IGNORED_NAME_PARTS
+        candidate_parts = {
+            part.lower()
+            for chunk in candidate.name.strip("_").split("_")
+            for part in _IDENTIFIER_PART.findall(chunk)
+        } - _IGNORED_NAME_PARTS
+        name_overlap = parent_parts & candidate_parts
+        parent_features = parent_method.call_names | parent_method.attribute_names
+        candidate_features = candidate.call_names | candidate.attribute_names
+        shared = parent_features & candidate_features
+        similarity = (
+            len(shared) / len(parent_features | candidate_features)
+            if len(shared) >= _MIN_SHARED_FEATURES
+            else 0.0
+        )
         if not name_overlap or similarity < _CAPABILITY_SIMILARITY_THRESHOLD:
             continue
         return Finding(
@@ -757,30 +773,17 @@ def _lost_parent_call_findings(
             continue
         direct_callers = capability_callers[(edge.child, edge.parent, edge.method)]
         caller_survives = edge.caller in child_after.methods
-        if not caller_survives and direct_callers:
-            # The historical caller itself no longer exists, so preserving its edge identity
-            # would force a dead compatibility wrapper to remain. The exact child -> exact
-            # parent capability still has a target caller, which proves caller consolidation
-            # rather than capability loss.
-            continue
-        pending = [edge.caller] if caller_survives else []
+        # 调用者被合并时，从现存直接调用者出发即可证明同一父类能力仍可达。
+        pending = {edge.caller} if caller_survives else set(direct_callers)
         visited: set[str] = set()
-        capability_reachable = False
         while pending:
             caller = pending.pop()
-            if caller in visited:
-                continue
             visited.add(caller)
-            if caller in direct_callers:
-                capability_reachable = True
-                break
             method = child_after.methods[caller]
-            pending.extend(
-                name
-                for name in method.receiver_call_names
-                if name in child_after.methods and name not in visited
+            pending.update(
+                (method.receiver_call_names & child_after.methods.keys()) - visited
             )
-        if capability_reachable:
+        if visited & direct_callers:
             continue
         parent_before = base.classes[edge.parent]
         explicit_owner_migration = any(
@@ -831,39 +834,34 @@ def _duplicate_override_findings(
 ) -> list[Finding]:
     """识别子类新增的完全重复 override。"""
     findings: list[Finding] = []
-    for key, child in target.classes.items():
+    for key, child, _parent_key, parent in _unique_parent_classes(
+        target.classes, target.simple_names
+    ):
         before_child = base.classes.get(key)
         if before_child is None:
             continue
-        for base_name in child.bases:
-            if base_name not in target.simple_names:
+        for name, method in child.methods.items():
+            if name not in parent.methods:
                 continue
-            parent_keys = target.simple_names[base_name]
-            if len(parent_keys) != 1:
-                continue
-            parent = target.classes[parent_keys[0]]
-            for name, method in child.methods.items():
-                if name not in parent.methods:
-                    continue
-                parent_method = parent.methods[name]
-                if (
-                    name not in before_child.methods
-                    and method.fingerprint == parent_method.fingerprint
-                ):
-                    findings.append(
-                        Finding(
-                            code="QG165",
-                            severity="critical",
-                            confidence="high",
-                            path=child.path,
-                            line=method.line,
-                            column=1,
-                            symbol=f"{child.qualname}.{name}",
-                            message=f"子类新增方法与父类 `{parent.name}.{name}` 的实现完全重复。",
-                            suggestion="删除重复 override，直接复用父类实现；确需覆盖时提供真实行为差异。",
-                            evidence={"parent": parent.name, "method": name},
-                        )
+            parent_method = parent.methods[name]
+            if (
+                name not in before_child.methods
+                and method.fingerprint == parent_method.fingerprint
+            ):
+                findings.append(
+                    Finding(
+                        code="QG165",
+                        severity="critical",
+                        confidence="high",
+                        path=child.path,
+                        line=method.line,
+                        column=1,
+                        symbol=f"{child.qualname}.{name}",
+                        message=f"子类新增方法与父类 `{parent.name}.{name}` 的实现完全重复。",
+                        suggestion="删除重复 override，直接复用父类实现；确需覆盖时提供真实行为差异。",
+                        evidence={"parent": parent.name, "method": name},
                     )
+                )
     return findings
 
 
@@ -873,55 +871,54 @@ def _shadow_state_findings(
 ) -> list[Finding]:
     """识别子类新增且与父类同源的影子状态。"""
     findings: list[Finding] = []
-    for key, child in target.classes.items():
+    for key, child, _parent_key, parent in _unique_parent_classes(
+        target.classes, target.simple_names
+    ):
         before_child = base.classes.get(key)
         if before_child is None:
             continue
-        for base_name in child.bases:
-            if base_name not in target.simple_names:
+        for attr, source in child.assignments.items():
+            if (
+                attr in before_child.assignments
+                and before_child.assignments[attr] == source
+            ):
                 continue
-            parent_keys = target.simple_names[base_name]
-            if len(parent_keys) != 1:
+            if not source:
                 continue
-            parent = target.classes[parent_keys[0]]
-            for attr, source in child.assignments.items():
-                if (
-                    attr in before_child.assignments
-                    and before_child.assignments[attr] == source
-                ):
+            try:
+                expression = ast.parse(source, mode="eval").body
+            except SyntaxError:
+                continue
+            if not isinstance(expression, (ast.Name, ast.Attribute, ast.Subscript)):
+                continue
+            for parent_attr, parent_source in parent.assignments.items():
+                if attr == parent_attr or source != parent_source:
                     continue
-                for parent_attr, parent_source in parent.assignments.items():
-                    if (
-                        attr == parent_attr
-                        or source != parent_source
-                        or not _is_shared_state_source(source)
-                    ):
-                        continue
-                    init_method = child.methods.get("__init__")
-                    findings.append(
-                        Finding(
-                            code="QG167",
-                            severity="critical",
-                            confidence="high",
-                            path=child.path,
-                            line=init_method.line
-                            if init_method is not None
-                            else child.line,
-                            column=1,
-                            symbol=f"{child.qualname}.{attr}",
-                            message=(
-                                f"子类新增字段 `{attr}` 与父类 `{parent.name}.{parent_attr}` "
-                                f"保存同一来源 `{source}`，疑似形成影子状态。"
-                            ),
-                            suggestion="复用父类状态或明确唯一所有者，避免两套状态发生漂移。",
-                            evidence={
-                                "child_field": attr,
-                                "parent_field": parent_attr,
-                                "source": source,
-                            },
-                        )
+                init_method = child.methods.get("__init__")
+                findings.append(
+                    Finding(
+                        code="QG167",
+                        severity="critical",
+                        confidence="high",
+                        path=child.path,
+                        line=init_method.line
+                        if init_method is not None
+                        else child.line,
+                        column=1,
+                        symbol=f"{child.qualname}.{attr}",
+                        message=(
+                            f"子类新增字段 `{attr}` 与父类 `{parent.name}.{parent_attr}` "
+                            f"保存同一来源 `{source}`，疑似形成影子状态。"
+                        ),
+                        suggestion="复用父类状态或明确唯一所有者，避免两套状态发生漂移。",
+                        evidence={
+                            "child_field": attr,
+                            "parent_field": parent_attr,
+                            "source": source,
+                        },
                     )
-                    break
+                )
+                break
     return findings
 
 

@@ -1041,13 +1041,14 @@ def _risk_findings(
         reason = row.group("reason")
         proposal = row.group("proposal")
         object_min = 4 if severity == "NONE" else report_schema.MIN_RISK_TEXT
-        if (
-            report_schema.contains_placeholder(object_text)
-            or len(object_text.strip()) < object_min
-            or report_schema.contains_placeholder(reason)
-            or len(reason.strip()) < report_schema.MIN_RISK_TEXT
-            or report_schema.contains_placeholder(proposal)
-            or len(proposal.strip()) < report_schema.MIN_RISK_TEXT
+        required_text = (
+            (object_text, object_min),
+            (reason, report_schema.MIN_RISK_TEXT),
+            (proposal, report_schema.MIN_RISK_TEXT),
+        )
+        if any(
+            report_schema.contains_placeholder(value) or len(value.strip()) < minimum
+            for value, minimum in required_text
         ):
             findings.append(
                 _report_finding("QG982", "剩余风险表仍包含占位或空泛说明。")

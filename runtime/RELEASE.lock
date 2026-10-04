@@ -1,5 +1,5 @@
 schema=repository-quality-guard/release-v1
 version=0.21.4
 distribution=skill
-manifest_sha256=a59fa7615fa51ee40537ef8252037b0c622cc4acac4f3ee2896ff54cbf10ef4d
+manifest_sha256=b9c44f170ea6a4559b0b1080b4d858ba507c32904a5a4f55fb75cbb12b87d7ae
 protected_file_count=84

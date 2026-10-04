@@ -14,6 +14,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
+from .cpp_build_contract import (
+    CompilerFamily,
+    TranslationUnitBuildSpec,
+    repository_path,
+    load_compilation_database,
+)
 from .bootstrap_settings import node_parser_environment
 from .config import GuardConfig
 from .graph_utils import strongly_connected_components
@@ -776,16 +782,20 @@ def _cpp_changed_findings(
     changed = _changed_cpp_paths(base, target)
     if not changed:
         return []
-    clang = shutil.which("clang++") or shutil.which("clang")
-    if clang is None:
-        raise RuntimeError(
-            "检测到 C++ 变更但缺少 clang；拒绝在没有 AST 事实时静默通过。"
-        )
-
-    base_metrics = _cpp_metrics(base, changed, clang)
-    target_metrics = _cpp_metrics(target, changed, clang)
+    fallback_clang = shutil.which("clang++") or shutil.which("clang")
+    target_metrics, target_available = _cpp_metrics(target, changed, fallback_clang)
+    if not target_available:
+        return []
+    comparable_paths = [path for path in changed if path in target_available]
+    base_metrics, base_available = _cpp_metrics(base, comparable_paths, fallback_clang)
+    base_available.update(
+        path for path in comparable_paths if path not in base.language_units
+    )
     findings: list[Finding] = []
     for key, current in target_metrics.items():
+        path = current["path"]
+        if path not in target_available or path not in base_available:
+            continue
         baseline = base_metrics[key] if key in base_metrics else None
         crossed = (
             current["lines"] > config.max_function_lines
@@ -1004,130 +1014,345 @@ def _ast_node_column(text: str, kinds: tuple[str, ...] | set[str]) -> int:
     return min(valid, default=-1)
 
 
+_CLANG_PATH_VALUE_FLAGS = {
+    "-I",
+    "-isystem",
+    "-iquote",
+    "-include",
+    "-isysroot",
+    "--sysroot",
+}
+_CLANG_OUTPUT_VALUE_FLAGS = {"-o", "-MF", "-MT", "-MQ", "-MJ"}
+_CLANG_DROP_FLAGS = {"-c", "-M", "-MM", "-MD", "-MMD", "-MP"}
+
+
+def _remap_build_path(
+    spec: TranslationUnitBuildSpec,
+    materialized_root: Path,
+    value: str,
+) -> str:
+    """Remap repository-owned compile paths into the immutable materialized snapshot."""
+    relative = repository_path(spec.repository_root, spec.directory, value)
+    if relative is None:
+        return value
+    return str((materialized_root / relative).resolve())
+
+
+def _clang_semantic_arguments(
+    spec: TranslationUnitBuildSpec,
+    materialized_root: Path,
+    relative_path: str,
+    compiler_index: int,
+) -> list[str]:
+    """Normalize one authored Clang command for AST dumping in a materialized snapshot."""
+    command: list[str] = []
+    arguments = spec.arguments[compiler_index + 1 :]
+    index = 0
+    source_added = False
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in _CLANG_DROP_FLAGS:
+            index += 1
+            continue
+        if argument in _CLANG_OUTPUT_VALUE_FLAGS:
+            index += 2
+            continue
+        if any(
+            argument.startswith(prefix) for prefix in ("-o", "-MF", "-MT", "-MQ", "-MJ")
+        ):
+            index += 1
+            continue
+        if argument in _CLANG_PATH_VALUE_FLAGS and index + 1 < len(arguments):
+            command.extend(
+                [
+                    argument,
+                    _remap_build_path(spec, materialized_root, arguments[index + 1]),
+                ]
+            )
+            index += 2
+            continue
+        if argument.startswith("-I") and len(argument) > 2:
+            command.append(
+                "-I" + _remap_build_path(spec, materialized_root, argument[2:])
+            )
+            index += 1
+            continue
+        authored_path = repository_path(spec.repository_root, spec.directory, argument)
+        if authored_path == relative_path:
+            command.append(str((materialized_root / relative_path).resolve()))
+            source_added = True
+        elif Path(argument).is_absolute():
+            command.append(_remap_build_path(spec, materialized_root, argument))
+        else:
+            command.append(argument)
+        index += 1
+    if not source_added:
+        command.append(str((materialized_root / relative_path).resolve()))
+    command.extend(["-fsyntax-only", "-Xclang", "-ast-dump"])
+    return command
+
+
+def clang_ast_invocation(
+    spec: TranslationUnitBuildSpec,
+    materialized_root: Path,
+    relative_path: str,
+) -> tuple[list[str], Path] | None:
+    """Build a semantic AST invocation from a native-Clang build contract.
+
+    Args:
+        spec: Authoritative translation-unit build contract.
+        materialized_root: Immutable source snapshot used for semantic extraction.
+        relative_path: Repository-relative translation-unit source path.
+
+    Returns:
+        Clang AST command and working directory, or ``None`` when the authored build
+        contract is not native Clang or the compiler is unavailable.
+    """
+    if spec.family is not CompilerFamily.CLANG:
+        return None
+    compiler_index = next(
+        (
+            index
+            for index, argument in enumerate(spec.arguments)
+            if argument == spec.compiler
+        ),
+        None,
+    )
+    if compiler_index is None:
+        return None
+    resolved_compiler = (
+        shutil.which(spec.compiler)
+        if not Path(spec.compiler).is_absolute()
+        else spec.compiler
+    )
+    if resolved_compiler is None or not Path(resolved_compiler).exists():
+        return None
+    command = [
+        str(resolved_compiler),
+        *_clang_semantic_arguments(
+            spec, materialized_root, relative_path, compiler_index
+        ),
+    ]
+    try:
+        relative_cwd = spec.directory.resolve().relative_to(
+            spec.repository_root.resolve()
+        )
+    except ValueError:
+        cwd = spec.directory
+    else:
+        cwd = (materialized_root / relative_cwd).resolve()
+        cwd.mkdir(parents=True, exist_ok=True)
+    return command, cwd
+
+
+def _fallback_clang_invocation(
+    clang: str | None,
+    source: Path,
+    root: Path,
+    include_args: tuple[str, ...] | list[str],
+) -> tuple[list[str], Path] | None:
+    """Build the legacy best-effort Clang invocation when no build contract exists."""
+    if clang is None:
+        return None
+    return (
+        [
+            clang,
+            "-std=c++20",
+            "-fsyntax-only",
+            "-Xclang",
+            "-ast-dump",
+            *include_args,
+            str(source),
+        ],
+        root,
+    )
+
+
+def cpp_semantic_invocation(
+    relative_path: str,
+    materialized_root: Path,
+    build_specs: dict[str, TranslationUnitBuildSpec],
+    fallback_clang: str | None,
+    fallback_include_args: tuple[str, ...] | list[str],
+) -> tuple[list[str], Path] | None:
+    """Resolve one TU semantic-provider command without changing native build truth.
+
+    Args:
+        relative_path: Repository-relative translation-unit path.
+        materialized_root: Immutable source snapshot used by the provider.
+        build_specs: Authoritative compilation-database contracts keyed by TU path.
+        fallback_clang: Legacy best-effort Clang executable used only without a build contract.
+        fallback_include_args: Legacy include arguments paired with the best-effort fallback.
+
+    Returns:
+        Semantic-provider command and working directory, or ``None`` when authoritative
+        build truth exists but no compatible provider is available.
+    """
+    if relative_path in build_specs:
+        return clang_ast_invocation(
+            build_specs[relative_path], materialized_root, relative_path
+        )
+    return _fallback_clang_invocation(
+        fallback_clang,
+        (materialized_root / relative_path).resolve(),
+        materialized_root,
+        fallback_include_args,
+    )
+
+
+def _cpp_metric_declaration(
+    text: str,
+    location_file: Path | None,
+    source_path: Path,
+    relative_path: str,
+) -> tuple[Path | None, dict[str, Any] | None] | None:
+    """Decode one Clang function declaration line into a metric record when relevant."""
+    declaration = _FUNC_RE.search(text)
+    declaration_column = _ast_node_column(text, _CPP_DECL_KINDS)
+    if declaration is None or declaration_column < 0:
+        return None
+    location_file, start, end = clang_line_range(
+        declaration.group("range"), location_file
+    )
+    if location_file != source_path or start is None or end is None:
+        return location_file, None
+    symbol = f"{declaration.group('name')} {declaration.group('sig')}"
+    return location_file, {
+        "path": relative_path,
+        "line": start,
+        "end_line": end,
+        "lines": end - start + 1,
+        "branches": 0,
+        "max_nesting": 0,
+        "depth": declaration_column,
+        "symbol": symbol,
+    }
+
+
+def _update_cpp_metric_structure(
+    text: str, current: dict[str, Any], controls: list[int]
+) -> bool:
+    """Consume one structural AST line and report whether the current function remains active."""
+    structural_kinds = _BRANCH_NODES | _NEST_NODES | {"BinaryOperator"}
+    node_column = _ast_node_column(text, structural_kinds)
+    if node_column < 0:
+        return True
+    if node_column <= current["depth"]:
+        return False
+    while controls and controls[-1] >= node_column:
+        controls.pop()
+    kind = next(
+        (
+            candidate
+            for candidate in structural_kinds
+            if text.find(candidate) == node_column
+        ),
+        "",
+    )
+    if kind in _BRANCH_NODES or (
+        kind == "BinaryOperator" and ("'&&'" in text or "'||'" in text)
+    ):
+        current["branches"] += 1
+    if kind in _NEST_NODES:
+        controls.append(node_column)
+        current["max_nesting"] = max(current["max_nesting"], len(controls))
+    return True
+
+
+def _collect_cpp_metric_stream(
+    stream: Any,
+    relative_path: str,
+    source_path: Path,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Collect function metrics from one successful Clang text-AST stream."""
+    metrics: dict[tuple[str, str], dict[str, Any]] = {}
+    current: dict[str, Any] | None = None
+    controls: list[int] = []
+    location_file: Path | None = None
+    for raw_line in stream:
+        text = raw_line.rstrip("\n")
+        declaration = _cpp_metric_declaration(
+            text, location_file, source_path, relative_path
+        )
+        if declaration is not None:
+            location_file, current = declaration
+            controls = []
+            if current is not None:
+                metrics[(relative_path, current["symbol"])] = current
+            continue
+        if current is not None and not _update_cpp_metric_structure(
+            text, current, controls
+        ):
+            current = None
+            controls = []
+    return metrics
+
+
+def _cpp_metric_invocation(
+    command: list[str],
+    cwd: Path,
+    relative_path: str,
+    source_path: Path,
+) -> dict[tuple[str, str], dict[str, Any]] | None:
+    """Run one semantic-provider command and return atomic metrics for a successful TU."""
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    stream = process.stdout
+    if stream is None:
+        process.kill()
+        process.wait()
+        return None
+    with stream:
+        metrics = _collect_cpp_metric_stream(
+            stream, relative_path, source_path.resolve()
+        )
+    return metrics if process.wait() == 0 else None
+
+
 def _cpp_metrics(
     snapshot: RepositoryAnalysisSnapshot,
     paths: list[str],
-    clang: str,
-) -> dict[tuple[str, str], dict[str, Any]]:
-    """用流式 Clang 文本 AST 提取变化 C++ definition 的结构指标。"""
+    fallback_clang: str | None,
+) -> tuple[dict[tuple[str, str], dict[str, Any]], set[str]]:
+    """提取 C++ 结构指标，并显式返回语义 provider 可用的 TU。"""
     metrics: dict[tuple[str, str], dict[str, Any]] = {}
+    available_paths: set[str] = set()
     with tempfile.TemporaryDirectory(prefix="rqg-cpp-") as directory:
         root = Path(directory)
         for path, unit in snapshot.language_units.items():
-            if unit.language != "cpp":
-                continue
-            destination = root / path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(unit.source, encoding="utf-8")
+            if unit.language == "cpp":
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(unit.source, encoding="utf-8")
         include_args_by_path = clang_include_args(snapshot, root, paths)
-
+        build_specs = load_compilation_database(snapshot)
         for relative_path in paths:
             source = root / relative_path
             if not source.is_file():
                 continue
-            command = [
-                clang,
-                "-std=c++20",
-                "-fsyntax-only",
-                "-Xclang",
-                "-ast-dump",
-                *include_args_by_path[relative_path],
-                str(source),
-            ]
-            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as error_stream:
-                process = subprocess.Popen(
-                    command,
-                    cwd=root,
-                    text=True,
-                    encoding="utf-8",
-                    errors="surrogateescape",
-                    stdout=subprocess.PIPE,
-                    stderr=error_stream,
-                )
-                if process.stdout is None:
-                    process.kill()
-                    raise RuntimeError(f"无法读取 C++ AST 输出：{relative_path}")
-
-                current: dict[str, Any] | None = None
-                controls: list[int] = []
-                location_file: Path | None = None
-                source_path = source.resolve()
-                with process.stdout:
-                    for raw_line in process.stdout:
-                        text = raw_line.rstrip("\n")
-                        declaration = _FUNC_RE.search(text)
-                        declaration_column = _ast_node_column(text, _CPP_DECL_KINDS)
-                        if declaration and declaration_column >= 0:
-                            location_file, start, end = clang_line_range(
-                                declaration.group("range"), location_file
-                            )
-                            if (
-                                location_file == source_path
-                                and start is not None
-                                and end is not None
-                            ):
-                                symbol = (
-                                    f"{declaration.group('name')} "
-                                    f"{declaration.group('sig')}"
-                                )
-                                current = {
-                                    "path": relative_path,
-                                    "line": start,
-                                    "end_line": end,
-                                    "lines": end - start + 1,
-                                    "branches": 0,
-                                    "max_nesting": 0,
-                                    "depth": declaration_column,
-                                    "symbol": symbol,
-                                }
-                                controls = []
-                                metrics[(relative_path, symbol)] = current
-                            else:
-                                current = None
-                                controls = []
-                            continue
-                        if current is None:
-                            continue
-
-                        structural_kinds = (
-                            _BRANCH_NODES | _NEST_NODES | {"BinaryOperator"}
-                        )
-                        node_column = _ast_node_column(text, structural_kinds)
-                        if node_column < 0:
-                            continue
-                        if node_column <= current["depth"]:
-                            current = None
-                            controls = []
-                            continue
-                        while controls and controls[-1] >= node_column:
-                            controls.pop()
-                        kind = next(
-                            (
-                                candidate
-                                for candidate in structural_kinds
-                                if text.find(candidate) == node_column
-                            ),
-                            "",
-                        )
-                        is_branch = kind in _BRANCH_NODES or (
-                            kind == "BinaryOperator"
-                            and ("'&&'" in text or "'||'" in text)
-                        )
-                        if is_branch:
-                            current["branches"] += 1
-                        if kind in _NEST_NODES:
-                            controls.append(node_column)
-                            current["max_nesting"] = max(
-                                current["max_nesting"], len(controls)
-                            )
-
-                return_code = process.wait()
-                error_stream.seek(0)
-                stderr = error_stream.read()
-                if return_code != 0:
-                    detail = clang_error_detail(stderr)
-                    raise RuntimeError(f"C++ AST 解析失败 `{relative_path}`：{detail}")
-    return metrics
+            invocation = cpp_semantic_invocation(
+                relative_path,
+                root,
+                build_specs,
+                fallback_clang,
+                include_args_by_path[relative_path],
+            )
+            if invocation is None:
+                continue
+            command, cwd = invocation
+            collected = _cpp_metric_invocation(command, cwd, relative_path, source)
+            if collected is None:
+                continue
+            metrics.update(collected)
+            available_paths.add(relative_path)
+    return metrics, available_paths
 
 
 def multilang_findings(
@@ -1167,12 +1392,16 @@ def multilang_findings(
         )
     )
     counts = Counter(unit.language for unit in target.language_units.values())
+    cpp_build_specs = load_compilation_database(target)
+    compiler_families = Counter(spec.family.value for spec in cpp_build_specs.values())
     summary = {
         "files": dict(sorted(counts.items())),
         "total_files": sum(counts.values()),
         "findings": len(findings),
         "parser": (
-            "bundled TypeScript/PostCSS + HTMLParser; changed C++ via Clang AST"
+            "bundled TypeScript/PostCSS + HTMLParser; C++ build contract + optional Clang AST"
         ),
+        "cpp_build_contracts": len(cpp_build_specs),
+        "cpp_compiler_families": dict(sorted(compiler_families.items())),
     }
     return findings, summary

@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
-from .multilang import clang_error_detail, clang_include_args, clang_line_range
+from .cpp_build_contract import load_compilation_database
+from .multilang import (
+    clang_error_detail,
+    clang_include_args,
+    clang_line_range,
+    cpp_semantic_invocation,
+)
 from .topology_facts import (
     OwnerFact,
     OwnerKind,
@@ -911,26 +917,17 @@ def _consume_cpp_translation_unit(
     facts: _CppTopologyFacts,
     root: Path,
     relative_path: str,
-    clang: str,
-    include_args: list[str],
+    command: list[str],
+    cwd: Path,
 ) -> None:
-    """Run Clang for one authored translation unit and consume its AST evidence."""
+    """Run one resolved Clang semantic-provider command and consume its AST evidence."""
     source = (root / relative_path).resolve()
     if source not in facts.authored_paths or not source.is_file():
         return
-    command = [
-        clang,
-        "-std=c++20",
-        "-fsyntax-only",
-        "-Xclang",
-        "-ast-dump",
-        *include_args,
-        str(source),
-    ]
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as error_stream:
         process = subprocess.Popen(
             command,
-            cwd=root,
+            cwd=cwd,
             text=True,
             encoding="utf-8",
             errors="surrogateescape",
@@ -984,7 +981,7 @@ def _consume_cpp_pending_relations(facts: _CppTopologyFacts) -> None:
 def cpp_topology(
     snapshot: RepositoryAnalysisSnapshot,
     paths: list[str],
-    clang: str,
+    fallback_clang: str | None,
 ) -> RepositoryTopology:
     """Project compiler-proven C++ owner/reuse facts into normalized topology.
 
@@ -995,7 +992,7 @@ def cpp_topology(
     Args:
         snapshot: Shared repository source snapshot.
         paths: Repository-relative C++ translation units to inspect.
-        clang: Resolved Clang compiler executable.
+        fallback_clang: Best-effort Clang executable used only when no authoritative build contract exists.
 
     Returns:
         Normalized C++ symbols, owners, and typed usage edges.
@@ -1006,15 +1003,26 @@ def cpp_topology(
         _populate_cpp_sources(facts, snapshot, root)
         requested_paths = sorted(dict.fromkeys(paths))
         include_args_by_path = clang_include_args(snapshot, root, requested_paths)
+        build_specs = load_compilation_database(snapshot)
         for relative_path in requested_paths:
+            invocation = cpp_semantic_invocation(
+                relative_path,
+                root,
+                build_specs,
+                fallback_clang,
+                include_args_by_path[relative_path],
+            )
+            if invocation is None:
+                continue
+            command, cwd = invocation
             unit_facts = _CppTopologyFacts(authored_paths=facts.authored_paths)
             try:
                 _consume_cpp_translation_unit(
                     unit_facts,
                     root,
                     relative_path,
-                    clang,
-                    list(include_args_by_path[relative_path]),
+                    command,
+                    cwd,
                 )
             except RuntimeError:
                 continue

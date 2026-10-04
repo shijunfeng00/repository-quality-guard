@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import shlex
 from dataclasses import dataclass
 from enum import StrEnum
@@ -12,12 +14,62 @@ from .analysis_snapshot import RepositoryAnalysisSnapshot
 
 
 class CompilerFamily(StrEnum):
-    """Compiler family declared by an authored translation-unit command."""
+    """Compiler family declared by an authored translation-unit command.
+
+    Values preserve the native build-tool identity used by one translation unit; they
+    never select or imply a semantic-analysis frontend.
+    """
 
     GCC = "gcc"
     CLANG = "clang"
     MSVC = "msvc"
     UNKNOWN = "unknown"
+
+    @classmethod
+    def from_executable(cls, executable: str) -> "CompilerFamily":
+        """Classify one authored compiler executable without changing build semantics.
+
+        Args:
+            executable: Compiler executable token from the authored build command.
+
+        Returns:
+            The recognized native compiler family, or ``UNKNOWN`` when the executable
+            does not identify a supported family.
+        """
+        name = Path(executable).name.lower()
+        if name in {"cl", "cl.exe"}:
+            return cls.MSVC
+        if "clang" in name:
+            return cls.CLANG
+        if name in {"c++", "g++", "gcc"} or name.startswith(("g++-", "gcc-")):
+            return cls.GCC
+        return cls.UNKNOWN
+
+
+class NativeSyntaxState(StrEnum):
+    """Outcome of a no-output check executed by the authored native compiler.
+
+    ``UNAVAILABLE`` means the authored compiler cannot be executed in the current
+    environment; it is deliberately distinct from a native syntax failure.
+    """
+
+    PASS = "pass"
+    FAIL = "fail"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(slots=True, frozen=True)
+class NativeSyntaxResult:
+    """Native compiler validation evidence kept separate from semantic-provider facts.
+
+    The result records the exact no-output command and native compiler outcome without
+    making any claim about Clang or another optional semantic provider.
+    """
+
+    state: NativeSyntaxState
+    command: tuple[str, ...]
+    returncode: int | None = None
+    stderr: str = ""
 
 
 _WRAPPERS = {"ccache", "sccache"}
@@ -50,9 +102,12 @@ class TranslationUnitBuildSpec:
     def native_syntax_command(self, source: Path | None = None) -> tuple[str, ...]:
         """Return a no-output syntax validation command for the native compiler.
 
-        This preserves the compiler and semantic flags from the compilation database.
-        It removes object/dependency-output switches and replaces the source path only
-        when an explicit materialized source is supplied.
+        Args:
+            source: Optional replacement source path used for an immutable materialized TU.
+
+        Returns:
+            Native compiler arguments with output/dependency generation disabled. Unknown
+            compiler families return an empty tuple rather than being translated.
         """
         if self.family in {CompilerFamily.GCC, CompilerFamily.CLANG}:
             return _gnu_syntax_command(self, source)
@@ -71,31 +126,18 @@ def _compiler_index(arguments: tuple[str, ...]) -> int | None:
     return index if index < len(arguments) else None
 
 
-def _compiler_family(compiler: str) -> CompilerFamily:
-    """Classify a compiler executable without changing its identity."""
-    name = Path(compiler).name.lower()
-    if name in {"cl", "cl.exe"}:
-        return CompilerFamily.MSVC
-    if "clang" in name:
-        return CompilerFamily.CLANG
-    if name in {"c++", "g++", "gcc"} or name.startswith(("g++-", "gcc-")):
-        return CompilerFamily.GCC
-    return CompilerFamily.UNKNOWN
+def repository_path(root: Path, directory: Path, value: str) -> str | None:
+    """Map an authored compile-command path into repository-relative identity.
 
+    Args:
+        root: Repository root owning the compilation database.
+        directory: Authored working directory for the translation-unit command.
+        value: Source or path-bearing argument from the authored command.
 
-def _entry_arguments(entry: dict[str, object]) -> tuple[str, ...]:
-    """Decode one compilation-database entry without executing shell syntax."""
-    raw = entry.get("arguments")
-    if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
-        return tuple(raw)
-    command = entry.get("command")
-    if isinstance(command, str):
-        return tuple(shlex.split(command, posix=True))
-    return ()
-
-
-def _repository_path(root: Path, directory: Path, value: str) -> str | None:
-    """Map an authored source path back into the repository when it belongs there."""
+    Returns:
+        Repository-relative POSIX path when the argument belongs to the repository;
+        otherwise ``None``.
+    """
     candidate = Path(value)
     if not candidate.is_absolute():
         candidate = directory / candidate
@@ -106,20 +148,81 @@ def _repository_path(root: Path, directory: Path, value: str) -> str | None:
 
 
 def _database_candidates(root: Path) -> tuple[Path, ...]:
-    """Return stable conventional compilation-database candidates.
+    """Return stable repository-owned compilation databases.
 
-    We intentionally do not recursively guess through vendored build trees. An
-    existing root/build database is authoritative; otherwise a unique direct child
-    database is accepted.
+    A root database represents the whole repository and takes precedence. Otherwise
+    independent subprojects may each own one database. Vendored/tool-managed trees are
+    excluded; conflicting commands for the same TU are handled by the loader rather
+    than resolved by path-order guessing.
     """
-    fixed = [root / "compile_commands.json", root / "build" / "compile_commands.json"]
-    present = [path for path in fixed if path.is_file()]
-    if present:
-        return tuple(present)
-    children = sorted(
-        path for path in root.glob("*/compile_commands.json") if path.is_file()
+    primary = root / "compile_commands.json"
+    if primary.is_file():
+        return (primary,)
+    excluded_parts = {
+        ".git",
+        ".agents",
+        ".venv",
+        "venv",
+        "node_modules",
+        "3rd_party",
+        "third_party",
+        "vendor",
+    }
+    candidates = []
+    for path in root.rglob("compile_commands.json"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        if any(part in excluded_parts for part in relative.parts[:-1]):
+            continue
+        candidates.append(path)
+    return tuple(sorted(candidates))
+
+
+def _translation_unit_spec(
+    snapshot: RepositoryAnalysisSnapshot, database: Path, entry: dict[str, object]
+) -> TranslationUnitBuildSpec | None:
+    """Adapt one external compilation-database entry to the fixed internal contract."""
+    if "directory" not in entry or "file" not in entry:
+        return None
+    raw_directory = entry["directory"]
+    raw_file = entry["file"]
+    if not isinstance(raw_directory, str) or not isinstance(raw_file, str):
+        return None
+
+    if "arguments" in entry:
+        raw_arguments = entry["arguments"]
+        if not isinstance(raw_arguments, list) or not all(
+            isinstance(item, str) for item in raw_arguments
+        ):
+            return None
+        arguments = tuple(raw_arguments)
+    else:
+        if "command" not in entry:
+            return None
+        command = entry["command"]
+        if not isinstance(command, str):
+            return None
+        arguments = tuple(shlex.split(command, posix=True))
+
+    compiler_index = _compiler_index(arguments)
+    if compiler_index is None:
+        return None
+    compiler = arguments[compiler_index]
+    family = CompilerFamily.from_executable(compiler)
+    directory = Path(raw_directory).resolve()
+    path = repository_path(snapshot.root, directory, raw_file)
+    if path is None or path not in snapshot.language_units:
+        return None
+    return TranslationUnitBuildSpec(
+        path=path,
+        directory=directory,
+        compiler=compiler,
+        arguments=arguments,
+        family=family,
+        database=database,
+        repository_root=snapshot.root.resolve(),
     )
-    return tuple(children) if len(children) == 1 else ()
 
 
 def load_compilation_database(
@@ -127,61 +230,53 @@ def load_compilation_database(
 ) -> dict[str, TranslationUnitBuildSpec]:
     """Load authoritative TU build contracts for a filesystem-backed snapshot.
 
-    Immutable Git-revision snapshots deliberately do not borrow a worktree-generated
-    compilation database. If the snapshot has no matching authoritative database, the
-    result is empty and callers must treat build truth as unavailable.
+    Args:
+        snapshot: Repository snapshot whose authored build contracts should be loaded.
+
+    Returns:
+        Stable TU-path mapping of unambiguous build contracts. Immutable Git revisions
+        deliberately return an empty mapping rather than borrowing worktree metadata.
     """
     if snapshot.label not in {"WORKTREE", "DIRECTORY"}:
         return {}
-    candidates = _database_candidates(snapshot.root)
-    if len(candidates) != 1:
-        return {}
-    database = candidates[0]
-    try:
-        payload = json.loads(database.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {}
-    if not isinstance(payload, list):
-        return {}
-
     specs: dict[str, TranslationUnitBuildSpec] = {}
-    for entry in payload:
-        if not isinstance(entry, dict):
+    ambiguous: set[str] = set()
+    for database in _database_candidates(snapshot.root):
+        try:
+            payload = json.loads(database.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
-        raw_directory = entry.get("directory")
-        raw_file = entry.get("file")
-        if not isinstance(raw_directory, str) or not isinstance(raw_file, str):
+        if type(payload) is not list:
             continue
-        directory = Path(raw_directory).resolve()
-        path = _repository_path(snapshot.root, directory, raw_file)
-        if path is None or path not in snapshot.language_units:
-            continue
-        arguments = _entry_arguments(entry)
-        compiler_index = _compiler_index(arguments)
-        if compiler_index is None:
-            continue
-        compiler = arguments[compiler_index]
-        specs[path] = TranslationUnitBuildSpec(
-            path=path,
-            directory=directory,
-            compiler=compiler,
-            arguments=arguments,
-            family=_compiler_family(compiler),
-            database=database,
-            repository_root=snapshot.root.resolve(),
-        )
+        for entry in payload:
+            if type(entry) is not dict:
+                continue
+            candidate = _translation_unit_spec(snapshot, database, entry)
+            if candidate is None or candidate.path in ambiguous:
+                continue
+            if candidate.path not in specs:
+                specs[candidate.path] = candidate
+                continue
+            existing = specs[candidate.path]
+            if (
+                existing.arguments != candidate.arguments
+                or existing.directory != candidate.directory
+            ):
+                del specs[candidate.path]
+                ambiguous.add(candidate.path)
     return dict(sorted(specs.items()))
 
 
 def _source_argument(spec: TranslationUnitBuildSpec, argument: str) -> bool:
     """Return whether an argument names the authored translation-unit source."""
-    path = _repository_path(spec.repository_root, spec.directory, argument)
+    path = repository_path(spec.repository_root, spec.directory, argument)
     return path == spec.path
 
 
 def _gnu_syntax_command(
     spec: TranslationUnitBuildSpec, source: Path | None
 ) -> tuple[str, ...]:
+    """Build a no-output GCC/Clang command while preserving authored semantic flags."""
     compiler_index = _compiler_index(spec.arguments)
     if compiler_index is None:
         return ()
@@ -196,7 +291,9 @@ def _gnu_syntax_command(
         if argument in _GNU_VALUE_FLAGS:
             index += 2
             continue
-        if any(argument.startswith(prefix) for prefix in ("-o", "-MF", "-MT", "-MQ", "-MJ")):
+        if any(
+            argument.startswith(prefix) for prefix in ("-o", "-MF", "-MT", "-MQ", "-MJ")
+        ):
             index += 1
             continue
         if _source_argument(spec, argument):
@@ -214,6 +311,7 @@ def _gnu_syntax_command(
 def _msvc_syntax_command(
     spec: TranslationUnitBuildSpec, source: Path | None
 ) -> tuple[str, ...]:
+    """Build a no-output MSVC command while preserving authored semantic flags."""
     compiler_index = _compiler_index(spec.arguments)
     if compiler_index is None:
         return ()
@@ -232,3 +330,50 @@ def _msvc_syntax_command(
         output.append(str(source))
     output.append("/Zs")
     return tuple(output)
+
+
+def check_native_syntax(
+    spec: TranslationUnitBuildSpec,
+    timeout: float = 30.0,
+) -> NativeSyntaxResult:
+    """Execute the authored compiler in no-output syntax mode.
+
+    Args:
+        spec: Authoritative translation-unit build contract from the compilation database.
+        timeout: Maximum native compiler execution time in seconds.
+
+    Returns:
+        Native syntax evidence. Missing compilers and timeouts remain ``UNAVAILABLE``;
+        semantic providers do not reinterpret this result.
+    """
+    command = spec.native_syntax_command()
+    if not command:
+        return NativeSyntaxResult(NativeSyntaxState.UNAVAILABLE, ())
+    executable = command[0]
+    resolved = (
+        shutil.which(executable) if not Path(executable).is_absolute() else executable
+    )
+    if resolved is None or not Path(resolved).exists():
+        return NativeSyntaxResult(NativeSyntaxState.UNAVAILABLE, command)
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=spec.directory,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return NativeSyntaxResult(
+            NativeSyntaxState.UNAVAILABLE, command, stderr=str(error)
+        )
+    return NativeSyntaxResult(
+        NativeSyntaxState.PASS if completed.returncode == 0 else NativeSyntaxState.FAIL,
+        command,
+        completed.returncode,
+        completed.stderr.strip(),
+    )

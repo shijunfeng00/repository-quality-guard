@@ -19,8 +19,8 @@ def normalized_multilang_topology(
 ) -> RepositoryTopology:
     """Build normalized JS/TS/C++ topology from one shared analysis snapshot.
 
-    CSS/HTML intentionally emit no callable/owner topology. Missing compiler evidence
-    is N/A: C++ facts are produced only through Clang and are never guessed from regex.
+    CSS/HTML intentionally emit no callable/owner topology. C++ build contracts remain
+    distinct from optional Clang semantic facts; unavailable provider evidence is N/A.
 
     Args:
         snapshot: Shared repository source snapshot.
@@ -45,8 +45,6 @@ def normalized_multilang_topology(
     )
     if not requested_cpp:
         return script_graph
-    clang = shutil.which("clang++") or shutil.which("clang")
-    if clang is None:
-        return script_graph
-    cpp_graph = cpp_topology(snapshot, requested_cpp, clang)
+    fallback_clang = shutil.which("clang++") or shutil.which("clang")
+    cpp_graph = cpp_topology(snapshot, requested_cpp, fallback_clang)
     return merge_topologies((script_graph, cpp_graph))

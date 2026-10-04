@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import shutil
 import unittest
 from pathlib import Path
@@ -339,6 +341,126 @@ void bump(T& value) {
         names = {item.name for item in topology.symbols}
         self.assertIn("good", names)
         self.assertNotIn("should_not_leak", names)
+
+    def test_gcc_compile_database_is_build_truth_not_clang_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "build").mkdir()
+            source_path = root / "src" / "sample.cpp"
+            source = "int run() { return 1; }\n"
+            source_path.write_text(source, encoding="utf-8")
+            (root / "build" / "compile_commands.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "directory": str(root / "build"),
+                            "file": str(source_path),
+                            "arguments": [
+                                "g++",
+                                "-std=gnu++20",
+                                "-c",
+                                str(source_path),
+                            ],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            snapshot = RepositoryAnalysisSnapshot(
+                root=root,
+                label="DIRECTORY",
+                units={},
+                language_units={
+                    "src/sample.cpp": LanguageUnit("src/sample.cpp", "cpp", source)
+                },
+            )
+            topology = normalized_multilang_topology(snapshot, script_facts=[])
+            self.assertEqual(topology.symbols, ())
+            self.assertEqual(topology.edges, ())
+
+    def test_clang_compile_database_preserves_macro_standard_and_cwd(self) -> None:
+        clang = shutil.which("clang++") or shutil.which("clang")
+        self.assertIsNotNone(clang)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "build").mkdir()
+            source_path = root / "src" / "sample.cpp"
+            source = (
+                "#ifndef REQUIRED_VALUE\n#error missing compile definition\n#endif\n"
+                "int run() { return REQUIRED_VALUE; }\n"
+            )
+            source_path.write_text(source, encoding="utf-8")
+            (root / "build" / "compile_commands.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "directory": str(root / "build"),
+                            "file": str(source_path),
+                            "arguments": [
+                                str(clang),
+                                "-DREQUIRED_VALUE=7",
+                                "-std=c++20",
+                                "-c",
+                                str(source_path),
+                                "-o",
+                                "sample.o",
+                            ],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            snapshot = RepositoryAnalysisSnapshot(
+                root=root,
+                label="DIRECTORY",
+                units={},
+                language_units={
+                    "src/sample.cpp": LanguageUnit("src/sample.cpp", "cpp", source)
+                },
+            )
+            topology = normalized_multilang_topology(snapshot, script_facts=[])
+            run = next(item for item in topology.symbols if item.name == "run")
+            self.assertEqual(run.path, Path("src/sample.cpp"))
+
+    def test_clang_compile_database_failure_is_per_tu_na(self) -> None:
+        clang = shutil.which("clang++") or shutil.which("clang")
+        self.assertIsNotNone(clang)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            (root / "build").mkdir()
+            source_path = root / "src" / "sample.cpp"
+            source = "#error provider unavailable for this TU\nint should_not_leak() { return 1; }\n"
+            source_path.write_text(source, encoding="utf-8")
+            (root / "build" / "compile_commands.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "directory": str(root / "build"),
+                            "file": str(source_path),
+                            "arguments": [
+                                str(clang),
+                                "-std=c++20",
+                                "-c",
+                                str(source_path),
+                            ],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            snapshot = RepositoryAnalysisSnapshot(
+                root=root,
+                label="DIRECTORY",
+                units={},
+                language_units={
+                    "src/sample.cpp": LanguageUnit("src/sample.cpp", "cpp", source)
+                },
+            )
+            topology = normalized_multilang_topology(snapshot, script_facts=[])
+            self.assertEqual(topology.symbols, ())
 
     def test_missing_clang_keeps_cpp_semantics_na_instead_of_guessing(self) -> None:
         snapshot = RepositoryAnalysisSnapshot(

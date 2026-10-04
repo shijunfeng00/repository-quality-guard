@@ -65,18 +65,22 @@ def _collect_module_constant_signals(
     for statement in parsed.tree.body:
         if isinstance(statement, (ast.Assign, ast.AnnAssign)):
             for name in assignment_names(statement):
-                if name.isupper() and not (
-                    name.startswith("__") and name.endswith("__")
+                if all(
+                    (
+                        name.isupper(),
+                        not all((name.startswith("__"), name.endswith("__"))),
+                    )
                 ):
                     signals.module_constants[name].append(
                         (parsed.facts.path, statement.lineno, parsed.facts.module)
                     )
     for node in parsed.nodes:
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-            signals.referenced_names.add(node.id)
-        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-            signals.referenced_names.add(node.attr)
-        elif isinstance(node, ast.ImportFrom):
+        loaded_name = ""
+        if isinstance(getattr(node, "ctx", None), ast.Load):
+            loaded_name = getattr(node, "id", getattr(node, "attr", ""))
+        if loaded_name:
+            signals.referenced_names.add(loaded_name)
+        if isinstance(node, ast.ImportFrom):
             signals.referenced_names.update(
                 alias.name for alias in node.names if alias.name != "*"
             )
@@ -90,7 +94,9 @@ def _collect_module_constant_signals(
             signals.referenced_names.update(
                 element.value
                 for element in value.elts
-                if isinstance(element, ast.Constant) and isinstance(element.value, str)
+                if all(
+                    (isinstance(element, ast.Constant), isinstance(element.value, str))
+                )
             )
 
 

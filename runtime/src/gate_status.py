@@ -28,20 +28,26 @@ def code_status(report: ScanReport) -> str:
         ``ACCEPT``、``REVIEW_REQUIRED`` 或 ``REJECT``。
     """
     interface_diff = report.interface_diff
-    if (
-        report.baseline_error
-        or any(
-            "absolute_blocker" in finding.evidence
-            and finding.evidence["absolute_blocker"] is True
-            for finding in report.findings
+    absolute_evidence = any(
+        all(
+            (
+                "absolute_blocker" in finding.evidence,
+                finding.evidence.get("absolute_blocker") is True,
+            )
         )
-        or any(
-            finding.code in _ABSOLUTE_BLOCKERS
-            and not is_test_path(finding.path, report.project_name)
-            for finding in report.findings
+        for finding in report.findings
+    )
+    absolute_code = any(
+        all(
+            (
+                finding.code in _ABSOLUTE_BLOCKERS,
+                not is_test_path(finding.path, report.project_name),
+            )
         )
-        or (interface_diff is not None and interface_diff.errors)
-    ):
+        for finding in report.findings
+    )
+    interface_errors = bool(interface_diff is not None and interface_diff.errors)
+    if any((report.baseline_error, absolute_evidence, absolute_code, interface_errors)):
         return "REJECT"
     review_changes = ()
     protocol_review = False
@@ -49,22 +55,34 @@ def code_status(report: ScanReport) -> str:
         review_changes = tuple(
             change
             for change in interface_diff.changes
-            if not is_test_path(change.path, report.project_name)
-            and change.change != "removed"
-            and change.kind != "file"
+            if all(
+                (
+                    not is_test_path(change.path, report.project_name),
+                    change.change != "removed",
+                    change.kind != "file",
+                )
+            )
         )
         protocol_review = any(
-            finding.code == "QG182"
-            and not is_test_path(finding.path, report.project_name)
+            all(
+                (
+                    finding.code == "QG182",
+                    not is_test_path(finding.path, report.project_name),
+                )
+            )
             for finding in interface_diff.contract_findings
         )
     has_review = bool(review_changes or protocol_review)
     current_quality = any(
-        finding.severity in SEVERITY_RANK
-        and not finding.code.startswith(("QG98", "QG99"))
-        and finding.code not in BASELINE_GATE_EXEMPT_CODES
+        all(
+            (
+                finding.severity in SEVERITY_RANK,
+                not finding.code.startswith(("QG98", "QG99")),
+                finding.code not in BASELINE_GATE_EXEMPT_CODES,
+            )
+        )
         for finding in report.findings
     )
-    if report.baseline is None and (current_quality or has_review):
+    if all((report.baseline is None, any((current_quality, has_review)))):
         return "REJECT"
     return "REVIEW_REQUIRED" if has_review else "ACCEPT"

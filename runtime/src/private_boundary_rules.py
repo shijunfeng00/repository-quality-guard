@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import re
+from dataclasses import dataclass
 
 from .ast_utils import dotted_name, enclosing_class_name
 from .config import is_test_path
@@ -354,31 +355,11 @@ def _reflection_context(
 
     fixed_names_by_scope, patch_owners = _fixed_contract_names(parsed, parents)
 
-    invoked = _invoked_reflection_origins(parsed, parents, bindings)
-    return alias_lookup, invoked, constant_lookup, fixed_names_by_scope, patch_owners
-
-
-def _invoked_reflection_origins(
-    parsed: ParsedModule,
-    parents: dict[ast.AST, ast.AST],
-    bindings: dict[str, list[tuple[ast.AST | None, int]]],
-) -> set[int]:
-    """解析直接调用及回调注册中的反射来源，保持词法遮蔽规则。
-
-    别名闭包与调用使用分开解析；最近函数作用域的来源遮蔽更外层同名来源。
-    """
     invoked: set[int] = set()
     for call in (node for node in parsed.nodes if isinstance(node, ast.Call)):
         parent = parents.get(call)
         if isinstance(parent, ast.Call) and parent.func is call:
             invoked.add(id(call))
-
-        scope_chain: list[ast.AST] = []
-        scope: ast.AST | None = call
-        while scope in parents:
-            scope = parents[scope]
-            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                scope_chain.append(scope)
 
         raw_target = dotted_name(call.func)
         root, separator, suffix = raw_target.partition(".")
@@ -395,24 +376,59 @@ def _invoked_reflection_origins(
             for keyword in call.keywords
             if keyword.arg in REFLECTION_CALLABLE_KEYWORDS
         )
-        for binding in dict.fromkeys(
-            item for item in callable_bindings if item and item in bindings
-        ):
-            origins = bindings[binding]
-            owner_origins = {
-                owner: [
-                    origin
-                    for candidate_owner, origin in origins
-                    if candidate_owner is owner
-                ]
-                for owner in (*scope_chain, None)
-            }
-            visible_owner = next(
-                (owner for owner in scope_chain if owner_origins.get(owner)),
-                None,
+        invoked.update(
+            _invoked_reflection_origins_for_call(
+                call, parents, bindings, callable_bindings
             )
-            invoked.update(owner_origins.get(visible_owner, ()))
+        )
+    return alias_lookup, invoked, constant_lookup, fixed_names_by_scope, patch_owners
+
+
+def _invoked_reflection_origins_for_call(
+    call: ast.Call,
+    parents: dict[ast.AST, ast.AST],
+    bindings: dict[str, list[tuple[ast.AST | None, int]]],
+    callable_bindings: list[str],
+) -> set[int]:
+    """解析一次调用中按词法作用域可见的反射来源。"""
+    scope_chain: list[ast.AST] = []
+    scope: ast.AST | None = call
+    while scope in parents:
+        scope = parents[scope]
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            scope_chain.append(scope)
+
+    invoked: set[int] = set()
+    for binding in dict.fromkeys(
+        item for item in callable_bindings if item and item in bindings
+    ):
+        origins = bindings[binding]
+        owner_origins = {
+            owner: [
+                origin
+                for candidate_owner, origin in origins
+                if candidate_owner is owner
+            ]
+            for owner in (*scope_chain, None)
+        }
+        visible_owner = next(
+            (owner for owner in scope_chain if owner_origins[owner]), None
+        )
+        invoked.update(owner_origins[visible_owner])
     return invoked
+
+
+@dataclass(slots=True, frozen=True)
+class _ReflectionCallFacts:
+    """一次反射调用已经解析出的稳定静态事实。"""
+
+    target: str
+    receiver: str
+    member_name: str
+    private_member: bool
+    broad_reflection: bool
+    invoked: bool
+    receiver_node: ast.AST | None
 
 
 def _reflection_call_facts(
@@ -421,7 +437,7 @@ def _reflection_call_facts(
     alias_lookup: dict[str, str],
     invoked_reflections: set[int],
     constant_lookup: dict[str, str],
-) -> tuple[str, str, str, bool, bool, bool, ast.AST | None] | None:
+) -> _ReflectionCallFacts | None:
     """解析一次反射调用的目标、接收者、成员名和严重性事实。"""
     raw_target = dotted_name(node.func)
     root, separator, suffix = raw_target.partition(".")
@@ -472,14 +488,14 @@ def _reflection_call_facts(
         id(node) in invoked_reflections or canonical_target == "operator.methodcaller"
     )
     receiver = dotted_name(receiver_node) if receiver_node is not None else ""
-    return (
-        canonical_target,
-        receiver,
-        member_name,
-        private_member,
-        broad_reflection,
-        invoked,
-        receiver_node,
+    return _ReflectionCallFacts(
+        target=canonical_target,
+        receiver=receiver,
+        member_name=member_name,
+        private_member=private_member,
+        broad_reflection=broad_reflection,
+        invoked=invoked,
+        receiver_node=receiver_node,
     )
 
 
@@ -917,15 +933,10 @@ def check_dynamic_private_access(
     )
     if facts is None:
         return None
-    (
-        target,
-        receiver,
-        member_name,
-        private_member,
-        broad_reflection,
-        invoked,
-        receiver_node,
-    ) = facts
+    target = facts.target
+    receiver = facts.receiver
+    member_name = facts.member_name
+    private_member = facts.private_member
     if _is_frozen_dataclass_init_assignment(
         node,
         parents,
@@ -970,7 +981,7 @@ def _production_reflection_finding(
     parsed: ParsedModule,
     node: ast.Call,
     parents: dict[ast.AST, ast.AST],
-    facts: tuple[str, str, str, bool, bool, bool, ast.AST | None],
+    facts: _ReflectionCallFacts,
     fixed_names_by_scope: dict[int, frozenset[str]],
     patch_owners: frozenset[str],
 ) -> Finding | None:
@@ -979,15 +990,13 @@ def _production_reflection_finding(
     私有成员、调用、广域反射和动态契约修改均阻断；仅动态探测已知公开
     契约使用 Error。没有静态契约证据的普通探测不生成发现。
     """
-    (
-        target,
-        receiver,
-        member_name,
-        private_member,
-        broad_reflection,
-        invoked,
-        receiver_node,
-    ) = facts
+    target = facts.target
+    receiver = facts.receiver
+    member_name = facts.member_name
+    private_member = facts.private_member
+    broad_reflection = facts.broad_reflection
+    invoked = facts.invoked
+    receiver_node = facts.receiver_node
     receiver_root = receiver.partition(".")[0]
     scope_names: set[str] = set()
     scope: ast.AST | None = node

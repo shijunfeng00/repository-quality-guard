@@ -332,7 +332,7 @@ def _receiver_aliases(
     """
     receiver_aliases = set(receiver_names)
     super_aliases: set[str] = set()
-    parent_aliases: dict[str, set[str]] = {}
+    parent_aliases: defaultdict[str, set[str]] = defaultdict(set)
     for _pass in range(len(assignments) + 1):
         before = (
             len(receiver_aliases),
@@ -365,9 +365,7 @@ def _receiver_aliases(
                 else set()
             )
             if parent_names:
-                existing = parent_aliases[target] if target in parent_aliases else set()
-                existing.update(parent_names)
-                parent_aliases[target] = existing
+                parent_aliases[target].update(parent_names)
         after = (
             len(receiver_aliases),
             len(super_aliases),

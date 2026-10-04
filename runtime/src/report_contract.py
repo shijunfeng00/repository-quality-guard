@@ -313,12 +313,14 @@ def _addition_row_findings(
             findings.append(
                 _report_finding("QG982", f"{item_id} 的符号与自动事实不一致。")
             )
-        if (
-            report_schema.contains_placeholder(reason)
-            or len(reason.strip()) < report_schema.MIN_ADDITION_FACT_TEXT
-            or any(
-                marker not in reason
-                for marker in report_schema.REQUIRED_ADDITION_REASON_MARKERS
+        if any(
+            (
+                report_schema.contains_placeholder(reason),
+                len(reason.strip()) < report_schema.MIN_ADDITION_FACT_TEXT,
+                any(
+                    marker not in reason
+                    for marker in report_schema.REQUIRED_ADDITION_REASON_MARKERS
+                ),
             )
         ):
             findings.append(
@@ -327,12 +329,14 @@ def _addition_row_findings(
                     f"{item_id} 必须分别填写 `失败=`、`职责=`、`边界=`、`绝对必要性=` 与 `不可替代=`：给出不新增时的可观察失败、唯一职责所有者、相邻层边界，以及为何绝对不能复用或保持原接口。",
                 )
             )
-        if (
-            report_schema.contains_placeholder(existing_check)
-            or len(existing_check.strip()) < report_schema.MIN_ADDITION_FACT_TEXT
-            or any(
-                marker not in existing_check
-                for marker in report_schema.REQUIRED_EXISTING_MARKERS
+        if any(
+            (
+                report_schema.contains_placeholder(existing_check),
+                len(existing_check.strip()) < report_schema.MIN_ADDITION_FACT_TEXT,
+                any(
+                    marker not in existing_check
+                    for marker in report_schema.REQUIRED_EXISTING_MARKERS
+                ),
             )
         ):
             findings.append(
@@ -341,12 +345,14 @@ def _addition_row_findings(
                     f"{item_id} 必须逐项披露 `接口目录=`、`查询=`、`候选=`、`源码=`、`HEAD=`、`父类=`、`MRO=`、`兄弟类=`、`公共能力=`；BM25 只召回候选，必须继续阅读候选源码后才能认定不可复用。",
                 )
             )
-        if (
-            report_schema.contains_placeholder(alternative)
-            or len(alternative.strip()) < report_schema.MIN_ADDITION_ALTERNATIVE_TEXT
-            or any(
-                marker not in alternative
-                for marker in report_schema.REQUIRED_ALTERNATIVE_MARKERS
+        if any(
+            (
+                report_schema.contains_placeholder(alternative),
+                len(alternative.strip()) < report_schema.MIN_ADDITION_ALTERNATIVE_TEXT,
+                any(
+                    marker not in alternative
+                    for marker in report_schema.REQUIRED_ALTERNATIVE_MARKERS
+                ),
             )
         ):
             findings.append(
@@ -366,26 +372,30 @@ def _addition_row_findings(
             if "语义裁决=" in evidence
             else ""
         )
-        has_chain_shape = (
-            "→" in call_chain
-            or "->" in call_chain
-            or call_chain
-            in {
-                "无调用方",
-                "入口协议直接调用",
-                "模块常量无调用链",
-            }
-        )
-        if (
-            report_schema.contains_placeholder(evidence)
-            or len(evidence.strip()) < report_schema.MIN_ADDITION_FACT_TEXT
-            or any(
-                marker not in evidence
-                for marker in report_schema.REQUIRED_ADDITION_EVIDENCE_MARKERS
+        has_chain_shape = any(
+            (
+                "→" in call_chain,
+                "->" in call_chain,
+                call_chain
+                in {
+                    "无调用方",
+                    "入口协议直接调用",
+                    "模块常量无调用链",
+                },
             )
-            or not has_chain_shape
-            or len(verification) < report_schema.MIN_ADDITION_VERIFICATION_TEXT
-            or len(semantic_decision) < report_schema.MIN_ADDITION_VERIFICATION_TEXT
+        )
+        if any(
+            (
+                report_schema.contains_placeholder(evidence),
+                len(evidence.strip()) < report_schema.MIN_ADDITION_FACT_TEXT,
+                any(
+                    marker not in evidence
+                    for marker in report_schema.REQUIRED_ADDITION_EVIDENCE_MARKERS
+                ),
+                not has_chain_shape,
+                len(verification) < report_schema.MIN_ADDITION_VERIFICATION_TEXT,
+                len(semantic_decision) < report_schema.MIN_ADDITION_VERIFICATION_TEXT,
+            )
         ):
             findings.append(
                 _report_finding(
@@ -858,18 +868,18 @@ def _semantic_heuristic_question_findings(
         for item in candidates
         if not bool(item.evidence.get("authorized_by_baseline", False))
     ]
-    if candidates and status == "NOT_APPLICABLE":
+    if all((candidates, status == "NOT_APPLICABLE")):
         findings.append(
             _report_finding("QG982", "存在 QG178 候选时，Q10 不得标记 NOT_APPLICABLE。")
         )
-    if candidates and status == "FIXED":
+    if all((candidates, status == "FIXED")):
         findings.append(
             _report_finding(
                 "QG982",
                 "当前仍存在 QG178 候选时，Q10 不得标记 FIXED；必须删除对应代码后重新扫描。",
             )
         )
-    if unauthorized and status != "BLOCKING":
+    if all((unauthorized, status != "BLOCKING")):
         locations = ", ".join(f"{item.path}:{item.line}" for item in unauthorized)
         findings.append(
             _report_finding(
@@ -877,11 +887,13 @@ def _semantic_heuristic_question_findings(
                 "以下 QG178 候选未获 Git 基线授权，只能 BLOCKING：" + locations,
             )
         )
-    if (
-        candidates
-        and not unauthorized
-        and status == "JUSTIFIED"
-        and "授权证据=BASELINE_LEDGER" not in fact
+    if all(
+        (
+            candidates,
+            not unauthorized,
+            status == "JUSTIFIED",
+            "授权证据=BASELINE_LEDGER" not in fact,
+        )
     ):
         findings.append(
             _report_finding(
@@ -890,7 +902,13 @@ def _semantic_heuristic_question_findings(
                 "`授权证据=BASELINE_LEDGER`。",
             )
         )
-    if not candidates and status == "NOT_APPLICABLE" and "候选=NONE" not in fact:
+    if all(
+        (
+            not candidates,
+            status == "NOT_APPLICABLE",
+            "候选=NONE" not in fact,
+        )
+    ):
         findings.append(
             _report_finding(
                 "QG982", "Q10 标记 NOT_APPLICABLE 时必须明确填写 `候选=NONE`。"
@@ -1146,9 +1164,11 @@ def validate_modification_report(
     facts = build_report_facts(report, revision)
     findings: list[Finding] = []
     headings = [line for line in text.splitlines() if line.startswith("## ")]
-    if (
-        text.count(report_schema.REPORT_TITLE) != 1
-        or tuple(headings) != report_schema.REQUIRED_SECTIONS
+    if any(
+        (
+            text.count(report_schema.REPORT_TITLE) != 1,
+            tuple(headings) != report_schema.REQUIRED_SECTIONS,
+        )
     ):
         findings.append(
             _report_finding(
@@ -1164,10 +1184,12 @@ def validate_modification_report(
     front = report_schema.front_matter(text)
     tool_status = code_status(report)
     final_status = front.get("final_status", "")
-    if (
-        front.get("report_schema") != report_schema.REPORT_SCHEMA
-        or front.get("change_digest") != facts.digest
-        or front.get("tool_status") != tool_status
+    if any(
+        (
+            front.get("report_schema") != report_schema.REPORT_SCHEMA,
+            front.get("change_digest") != facts.digest,
+            front.get("tool_status") != tool_status,
+        )
     ):
         findings.append(
             _report_finding(
@@ -1175,9 +1197,11 @@ def validate_modification_report(
                 "schema、change_digest 或 tool_status 与当前 Git/接口/架构静态事实不一致。",
             )
         )
-    if (
-        final_status not in report_schema.VALID_FINAL_STATUSES
-        or not status_can_be_downgraded(tool_status, final_status)
+    if any(
+        (
+            final_status not in report_schema.VALID_FINAL_STATUSES,
+            not status_can_be_downgraded(tool_status, final_status),
+        )
     ):
         findings.append(
             _report_finding(
@@ -1191,7 +1215,7 @@ def validate_modification_report(
     }
     actual_matches = list(report_schema.AUTO_BLOCK.finditer(text))
     actual_auto = {match.group("name"): match.group("body") for match in actual_matches}
-    if len(actual_matches) != len(actual_auto) or actual_auto != expected_auto:
+    if any((len(actual_matches) != len(actual_auto), actual_auto != expected_auto)):
         findings.append(_report_finding("QG981", "自动事实区块缺失、重复或被改写。"))
     findings.extend(_manual_row_findings(text, facts))
     findings.extend(_question_findings(text, report))
@@ -1210,10 +1234,12 @@ def validate_modification_report(
     for marker in manual_markers:
         line = next((item for item in text.splitlines() if marker in item), "")
         value = line.split(marker, 1)[-1].strip() if line else ""
-        if (
-            not value
-            or report_schema.contains_placeholder(value)
-            or len(value) < report_schema.MIN_SUMMARY_TEXT
+        if any(
+            (
+                not value,
+                report_schema.contains_placeholder(value),
+                len(value) < report_schema.MIN_SUMMARY_TEXT,
+            )
         ):
             findings.append(
                 _report_finding("QG982", f"必填结论缺失或仍是占位：{marker}")
@@ -1223,9 +1249,11 @@ def validate_modification_report(
         "",
     )
     manual_final_status = final_line.split("：", 1)[-1].strip() if final_line else ""
-    if (
-        manual_final_status not in report_schema.VALID_FINAL_STATUSES
-        or manual_final_status != final_status
+    if any(
+        (
+            manual_final_status not in report_schema.VALID_FINAL_STATUSES,
+            manual_final_status != final_status,
+        )
     ):
         findings.append(
             _report_finding(
@@ -1276,14 +1304,14 @@ def validate_modification_report(
         ),
     ]
     has_blocking = "BLOCKING" in item_statuses
-    if has_blocking and final_status != "REJECT":
+    if all((has_blocking, final_status != "REJECT")):
         findings.append(
             _report_finding(
                 "QG982",
                 "存在 BLOCKING 项时 final_status 和最终人工结论必须为 REJECT。",
             )
         )
-    if final_status == "REJECT" and not has_blocking:
+    if all((final_status == "REJECT", not has_blocking)):
         findings.append(
             _report_finding(
                 "QG982",

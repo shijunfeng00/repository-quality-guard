@@ -23,7 +23,7 @@ Evidence: `f3269ee`; 153/153 PASS; ordinary C/E/W delta 0; 7 touched historical 
 
 - [ ] Real build contract is preferred over guessed compiler flags.
 - [ ] Existing `compile_commands.json` can be consumed without rewriting compiler identity/semantic flags.
-- [ ] Mature tooling alternatives are evaluated before adding compiler-specific AST code.
+- [x] Mature tooling alternatives are evaluated before adding compiler-specific AST code.
 - [ ] Native compiler validity and semantic-provider availability are distinct facts.
 - [ ] Semantic-provider failure yields `UNKNOWN/N/A`, not an audit-wide source-invalid error.
 - [ ] BASE parse/provider failure cannot abort unrelated TARGET/rules.

@@ -117,6 +117,18 @@ The chosen design and rejected alternatives must be recorded before implementati
 - Python/JS/TS behavior and v0.21.3 topology regressions remain unchanged.
 - Full real-project regressions, lifecycle gates, deterministic package and final v0.21.4 release pass.
 
+### 2.6 Investigation decision
+
+Phase B will **not** embed GCC/MSVC-specific AST frontends or a new universal C++ AST system. The first v0.21.4 implementation uses three layers:
+
+1. `compile_commands.json` is the authoritative translation-unit build contract when available. Compiler executable, cwd, standard, defines, include paths, target and semantic flags are preserved rather than replaced by fixed defaults.
+2. Native compiler identity/availability is recorded separately from semantic-provider availability. GCC/Clang/MSVC build truth is not rewritten into a different compiler invocation.
+3. Existing Clang AST extraction remains an optional semantic enrichment provider. Native-Clang compile commands may feed it directly; non-Clang commands remain valid build evidence but do not become Clang commands by guesswork. Provider failure is per-TU `UNKNOWN/N/A` and never an audit-wide source-invalid verdict.
+
+Mature alternatives were evaluated before implementation: compilation databases are the portable build-contract protocol; clangd/LibTooling consume them and can query GCC-compatible drivers, while SCIP-clang also consumes compilation databases but remains Clang-frontend-based and adds a heavier platform/package dependency. Tree-sitter C++ is a suitable future compiler-neutral syntax-floor provider, but adding a new grammar/wheel matrix is deliberately deferred from v0.21.4. The normalized topology boundary remains unchanged so such providers can be added later without compiler-specific QG families.
+
+Empirical fixtures: SlowJSON and geek-ai-agent sandbox are both GCC/G++ CMake projects. Therefore compiler-family diversity is covered by explicit Clang/MSVC-style compilation-database contract tests in this release; native Windows/MSVC validity remains `UNKNOWN` when no Windows toolchain exists rather than being simulated.
+
 ## 3. Non-goals
 
 - Do not redesign SlowJSON in this release.

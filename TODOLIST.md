@@ -24,8 +24,8 @@ Evidence: implementation `f3269ee`; 153/153 tests PASS; Ruff/format/compileall/d
 
 ## Phase B — C++ build truth / semantic provider
 
-- [ ] Inspect SlowJSON build contract and geek-ai-agent sandbox C++ toolchain without modifying RQG production code.
-- [ ] Evaluate mature compilation-database / indexer / semantic-provider options; record decision and rejected alternatives.
+- [x] Inspect SlowJSON build contract and geek-ai-agent sandbox C++ toolchain without modifying RQG production code.
+- [x] Evaluate mature compilation-database / indexer / semantic-provider options; record decision and rejected alternatives.
 - [ ] Implement build-contract acquisition with `compile_commands.json` first.
 - [ ] Separate native compiler validity from auxiliary semantic-provider availability.
 - [ ] Make per-TU and BASE/TARGET semantic unavailability graceful rather than audit-fatal.

@@ -64,3 +64,7 @@ Build system / compile_commands / captured commands
 - Prefer existing compilation database/indexing ecosystems to a custom universal AST framework.
 
 Phase B does not begin production implementation until the provider/tooling investigation is recorded after the Phase A checkpoint.
+
+### Phase B provider decision
+
+`TranslationUnitBuildSpec` is the only build-contract owner. It preserves authored compilation-database commands and classifies compiler family without changing compiler identity. Semantic providers consume a build spec only when they can do so faithfully; otherwise facts remain unavailable for that TU. v0.21.4 keeps the existing Clang AST provider as optional enrichment and does not add GCC/MSVC AST adapters.

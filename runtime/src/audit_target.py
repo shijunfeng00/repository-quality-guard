@@ -246,36 +246,8 @@ def git_stdout(root: Path, arguments: tuple[str, ...]) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
-    """定位最后一次可证明的远端批次基线。
-
-    优先采用远端跟踪 reflog 中明确标记为 push 的祖先提交；本机 reflog
-    不可用时只读查询远端分支头，最后才采用 upstream 或其共同祖先。
-
-    Args:
-        root: Git 仓库根目录。
-
-    Returns:
-        ``(commit, source)``；无法可靠定位时返回 None。
-    """
-    push_ref = git_stdout(
-        root,
-        ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{push}"),
-    )
-    upstream = git_stdout(
-        root,
-        ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"),
-    )
-    refs = list(dict.fromkeys(ref for ref in (push_ref, upstream) if ref))
-    if not refs:
-        refs = [
-            ref
-            for ref in git_stdout(
-                root,
-                ("for-each-ref", "--format=%(refname:short)", "refs/remotes"),
-            ).splitlines()
-            if ref and not ref.endswith("/HEAD")
-        ]
+def _reflog_push_revision(root: Path, refs: list[str]) -> tuple[str, str] | None:
+    """Return the newest pushed ancestor proven by a tracking-ref reflog."""
     for ref in refs:
         reflog = git_stdout(root, ("reflog", "show", "--format=%H%x09%gs", ref))
         for line in reflog.splitlines():
@@ -296,6 +268,11 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
                 == 0
             ):
                 return verified, f"{ref} reflog"
+    return None
+
+
+def _remote_head_revision(root: Path, refs: list[str]) -> tuple[str, str] | None:
+    """Return a local ancestor matching one of the current remote branch heads."""
     for ref in refs:
         normalized = ref.removeprefix("refs/remotes/")
         remote, separator, branch = normalized.partition("/")
@@ -331,6 +308,45 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
             == 0
         ):
             return verified, f"remote {remote}/{branch}"
+    return None
+
+
+def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
+    """定位最后一次可证明的远端批次基线。
+
+    优先采用远端跟踪 reflog 中明确标记为 push 的祖先提交；本机 reflog
+    不可用时只读查询远端分支头，最后才采用 upstream 或其共同祖先。
+
+    Args:
+        root: Git 仓库根目录。
+
+    Returns:
+        ``(commit, source)``；无法可靠定位时返回 None。
+    """
+    push_ref = git_stdout(
+        root,
+        ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{push}"),
+    )
+    upstream = git_stdout(
+        root,
+        ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"),
+    )
+    refs = list(dict.fromkeys(ref for ref in (push_ref, upstream) if ref))
+    if not refs:
+        refs = [
+            ref
+            for ref in git_stdout(
+                root,
+                ("for-each-ref", "--format=%(refname:short)", "refs/remotes"),
+            ).splitlines()
+            if ref and not ref.endswith("/HEAD")
+        ]
+    pushed = _reflog_push_revision(root, refs)
+    if pushed is not None:
+        return pushed
+    remote_head = _remote_head_revision(root, refs)
+    if remote_head is not None:
+        return remote_head
     upstream_commit = (
         git_stdout(root, ("rev-parse", "--verify", f"{upstream}^{{commit}}"))
         if upstream
@@ -351,6 +367,31 @@ def _last_pushed_revision(root: Path) -> tuple[str, str] | None:
         if common
         else None
     )
+
+
+def _relevant_worktree_changes(status_output: str) -> list[str]:
+    """Extract non-audit-only paths from ``git status --porcelain=v1`` output."""
+    relevant_changes: list[str] = []
+    for raw_line in status_output.splitlines():
+        path_text = (
+            raw_line[_PORCELAIN_STATUS_PREFIX_LENGTH:].strip()
+            if len(raw_line) > _PORCELAIN_STATUS_PREFIX_LENGTH
+            else ""
+        )
+        if " -> " in path_text:
+            path_text = path_text.rsplit(" -> ", 1)[-1]
+        normalized = Path(path_text).as_posix()
+        lowered = normalized.lower()
+        audit_only = (
+            normalized == MODIFICATION_REPORT_NAME
+            or is_tool_generated_path(normalized)
+            or normalized.startswith(_AUDIT_ONLY_PREFIXES)
+            or "/__pycache__/" in f"/{normalized}/"
+            or any(lowered.endswith(suffix) for suffix in _AUDIT_ONLY_SUFFIXES)
+        )
+        if normalized and not audit_only:
+            relevant_changes.append(normalized)
+    return relevant_changes
 
 
 def git_comparison_plan(
@@ -382,26 +423,7 @@ def git_comparison_plan(
     if status.returncode != 0:
         detail = status.stderr.strip() or f"exit={status.returncode}"
         raise RuntimeError(f"无法判断 Git dirty/clean 状态：{detail}")
-    relevant_changes: list[str] = []
-    for raw_line in status.stdout.splitlines():
-        path_text = (
-            raw_line[_PORCELAIN_STATUS_PREFIX_LENGTH:].strip()
-            if len(raw_line) > _PORCELAIN_STATUS_PREFIX_LENGTH
-            else ""
-        )
-        if " -> " in path_text:
-            path_text = path_text.rsplit(" -> ", 1)[-1]
-        normalized = Path(path_text).as_posix()
-        lowered = normalized.lower()
-        audit_only = (
-            normalized == MODIFICATION_REPORT_NAME
-            or is_tool_generated_path(normalized)
-            or normalized.startswith(_AUDIT_ONLY_PREFIXES)
-            or "/__pycache__/" in f"/{normalized}/"
-            or any(lowered.endswith(suffix) for suffix in _AUDIT_ONLY_SUFFIXES)
-        )
-        if normalized and not audit_only:
-            relevant_changes.append(normalized)
+    relevant_changes = _relevant_worktree_changes(status.stdout)
     effective_target = requested_target if args.staged or relevant_changes else "HEAD"
     pushed = _last_pushed_revision(target.root)
     if pushed is not None:
@@ -431,6 +453,60 @@ def git_comparison_plan(
     )
 
 
+def _resolve_files_target(raw_files: str) -> AuditTarget:
+    """Resolve the ``--files`` selection and its shared Git ownership, if any."""
+    files: list[Path] = []
+    seen: set[Path] = set()
+    for item in raw_files.split(","):
+        if not item.strip():
+            continue
+        path = Path(item.strip()).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError(f"指定文件不存在: {path}")
+        if path not in seen:
+            files.append(path)
+            seen.add(path)
+    if not files:
+        raise ValueError("--files 没有解析到任何文件")
+    lookups = [_git_root(path) for path in files]
+    git_roots = {lookup.root for lookup in lookups if lookup.root is not None}
+    if len(git_roots) == 1 and all(lookup.root is not None for lookup in lookups):
+        root = next(iter(git_roots))
+        return AuditTarget(
+            root=root,
+            focus_files=frozenset(files),
+            focus_roots=(),
+            notes=("按 Git 根目录全仓库解析调用关系；报告输出聚焦 --files 指定文件。",),
+            git_enabled=True,
+        )
+    root = Path(os.path.commonpath(str(path.parent) for path in files)).resolve()
+    issue_messages = tuple(
+        lookup.issue_message for lookup in lookups if lookup.issue_message
+    )
+    issue_suggestions = tuple(
+        lookup.issue_suggestion for lookup in lookups if lookup.issue_suggestion
+    )
+    git_issue_message = (
+        issue_messages[0]
+        if issue_messages
+        else "指定文件不属于同一个 Git 仓库；接口 diff 已跳过。"
+    )
+    git_issue_suggestion = (
+        issue_suggestions[0]
+        if issue_suggestions
+        else "确认这是预期的非 Git/跨仓库输入，而不是路径传错。"
+    )
+    return AuditTarget(
+        root=root,
+        focus_files=frozenset(files),
+        focus_roots=(),
+        notes=(git_issue_message, git_issue_suggestion),
+        git_enabled=False,
+        git_issue_message=git_issue_message,
+        git_issue_suggestion=git_issue_suggestion,
+    )
+
+
 def resolve_target(args: argparse.Namespace) -> AuditTarget:
     """
     根据命令行参数解析审计根目录与输出聚焦范围。
@@ -444,58 +520,7 @@ def resolve_target(args: argparse.Namespace) -> AuditTarget:
     if args.files and (args.path or args.project):
         raise ValueError("--files 不能和位置目录或 --project 同时使用")
     if args.files:
-        files: list[Path] = []
-        seen: set[Path] = set()
-        for item in args.files.split(","):
-            if not item.strip():
-                continue
-            path = Path(item.strip()).expanduser().resolve()
-            if not path.is_file():
-                raise ValueError(f"指定文件不存在: {path}")
-            if path not in seen:
-                files.append(path)
-                seen.add(path)
-        if not files:
-            raise ValueError("--files 没有解析到任何文件")
-        lookups = [_git_root(path) for path in files]
-        git_roots = {lookup.root for lookup in lookups if lookup.root is not None}
-        if len(git_roots) == 1 and all(lookup.root is not None for lookup in lookups):
-            root = next(iter(git_roots))
-            return AuditTarget(
-                root=root,
-                focus_files=frozenset(files),
-                focus_roots=(),
-                notes=(
-                    "按 Git 根目录全仓库解析调用关系；报告输出聚焦 --files 指定文件。",
-                ),
-                git_enabled=True,
-            )
-        root = Path(os.path.commonpath(str(path.parent) for path in files)).resolve()
-        issue_messages = tuple(
-            lookup.issue_message for lookup in lookups if lookup.issue_message
-        )
-        issue_suggestions = tuple(
-            lookup.issue_suggestion for lookup in lookups if lookup.issue_suggestion
-        )
-        git_issue_message = (
-            issue_messages[0]
-            if issue_messages
-            else ("指定文件不属于同一个 Git 仓库；接口 diff 已跳过。")
-        )
-        git_issue_suggestion = (
-            issue_suggestions[0]
-            if issue_suggestions
-            else ("确认这是预期的非 Git/跨仓库输入，而不是路径传错。")
-        )
-        return AuditTarget(
-            root=root,
-            focus_files=frozenset(files),
-            focus_roots=(),
-            notes=(git_issue_message, git_issue_suggestion),
-            git_enabled=False,
-            git_issue_message=git_issue_message,
-            git_issue_suggestion=git_issue_suggestion,
-        )
+        return _resolve_files_target(args.files)
     raw_target = args.project or args.path or "."
     target = Path(raw_target).expanduser().resolve()
     if target.is_file():

@@ -348,19 +348,21 @@ class _ReturnMappingAnalyzer:
     @staticmethod
     def _collect_callables(
         tree: ast.Module,
-    ) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
-        """收集模块顶层函数和类的直接成员函数。"""
-        callables: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    ) -> tuple[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef], ...]:
+        """收集可被稳定契约查询的模块顶层函数和类直接成员。"""
+        callables: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                callables[node.name] = node
+                callables.append((node.name, node))
                 continue
             if not isinstance(node, ast.ClassDef):
                 continue
-            for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    callables[f"{node.name}.{child.name}"] = child
-        return callables
+            callables.extend(
+                (f"{node.name}.{child.name}", child)
+                for child in node.body
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            )
+        return tuple(callables)
 
     def analyze(self, qualname: str, channel: str) -> _MappingShape:
         """分析指定函数或方法的映射结构。
@@ -374,10 +376,19 @@ class _ReturnMappingAnalyzer:
         """
         if channel == "state_keys":
             return self.state_shape
-        node = self.callables.get(qualname)
+        node = self._find_callable(qualname)
         if node is None:
             return _MappingShape()
         return self._analyze_callable(qualname, node, channel, set())
+
+    def _find_callable(
+        self, qualname: str
+    ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+        """按限定名查询当前 AST 声明；未声明是稳定契约分析的合法结果。"""
+        for callable_name, node in self.callables:
+            if callable_name == qualname:
+                return node
+        return None
 
     def _analyze_callable(
         self,
@@ -606,14 +617,10 @@ class _ReturnMappingAnalyzer:
         target = (
             f"{owner}.{expression.func.attr}" if separator else expression.func.attr
         )
-        if target not in self.callables:
+        node = self._find_callable(target)
+        if node is None:
             return _MappingShape()
-        return self._analyze_callable(
-            target,
-            self.callables[target],
-            channel,
-            stack,
-        )
+        return self._analyze_callable(target, node, channel, stack)
 
     def _dict_shape(
         self,

@@ -23,7 +23,6 @@ from .policy_common import (
     is_bool_name,
     is_boundary_module,
     literal_value,
-    make_finding,
     parameter_defaults,
 )
 
@@ -85,8 +84,7 @@ def check_parameter_defaults(
             or (type(value) is int and value in BOOL_INT_VALUES)
         ):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     argument,
                     "QG031",
                     f"布尔参数 `{argument.arg}` 使用非 bool 默认值 {value!r}。",
@@ -98,8 +96,7 @@ def check_parameter_defaults(
             )
         if "bool" in names and names & {"str", "int"}:
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     argument,
                     "QG032",
                     f"布尔参数 `{argument.arg}` 同时允许 {sorted(names & {'str', 'int'})}。",
@@ -134,8 +131,7 @@ def check_single_default(
     findings: list[Finding] = []
     if default is not None and isinstance(default, (ast.List, ast.Dict, ast.Set)):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 default,
                 "QG039",
                 f"参数 `{argument.arg}` 使用可变默认值。",
@@ -152,8 +148,7 @@ def check_single_default(
         and not annotation_allows_none(argument.annotation)
     ):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 argument,
                 "QG040",
                 f"参数 `{argument.arg}` 默认 None，但类型标注未声明可空。",
@@ -207,8 +202,7 @@ def check_star_signature(
     argument = node.args.vararg
     if argument is not None:
         return [
-            make_finding(
-                facts,
+            facts.make_finding(
                 argument,
                 "QG034",
                 f"`{qualname}` 使用 *{argument.arg} 接受未逐项声明的可变位置参数。",
@@ -225,8 +219,7 @@ def check_star_signature(
         return []
     keyword_names = [argument.arg for argument in node.args.kwonlyargs]
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG034",
             f"`{qualname}` 使用 bare `*` 引入 keyword-only 特殊调用契约：{keyword_names}。",
@@ -279,8 +272,7 @@ def check_kwargs_contract(
         )
         reason = "bounded-but-not-forward-only"
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             argument,
             "QG042",
             message,
@@ -419,8 +411,7 @@ def check_deleted_parameters(
         if not deleted:
             continue
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 statement,
                 "QG145",
                 f"`{qualname}` 通过 del 丢弃接口参数：{deleted}。",
@@ -477,8 +468,7 @@ def check_boolean_coercion(
             target = dotted_name(item.args[0])
             if target in parameters:
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         item,
                         "QG033",
                         f"内部函数对参数 `{target}` 调用 bool()；字符串 'False' 仍会得到 True。",
@@ -493,8 +483,7 @@ def check_boolean_coercion(
             and compare_contains_bool_representations(item)
         ):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG033",
                     "内部函数同时识别 0/1 或 True/False 字符串等多种布尔表示。",
@@ -561,8 +550,7 @@ def check_call_safety_rules(
         keyword_names = {keyword.arg for keyword in item.keywords}
         if name == "subprocess.run" and "check" not in keyword_names:
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG053",
                     "subprocess.run() 未显式设置 check=True。",
@@ -573,8 +561,7 @@ def check_call_safety_rules(
             )
         if name.startswith(NETWORK_CALL_PREFIXES) and "timeout" not in keyword_names:
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG054",
                     f"网络调用 `{name}` 未显式设置 timeout。",
@@ -587,8 +574,7 @@ def check_call_safety_rules(
             BLOCKING_CALL_PREFIXES
         ):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG055",
                     f"异步函数中直接调用同步阻塞 API `{name}`。",
@@ -599,8 +585,7 @@ def check_call_safety_rules(
             )
         if name in {"eval", "exec", "compile"}:
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG056",
                     f"使用动态代码执行 `{name}()`。",
@@ -666,8 +651,7 @@ def check_positional_boolean_calls(
             if not bad_positions:
                 continue
             findings.append(
-                make_finding(
-                    module.facts,
+                module.facts.make_finding(
                     item,
                     "QG041",
                     f"调用 `{target}` 时以位置参数传递布尔值或兼容表示，语义不可读。",

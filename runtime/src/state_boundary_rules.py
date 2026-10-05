@@ -8,7 +8,7 @@ from .ast_utils import dotted_name, enclosing_class_name
 from .config import GuardConfig
 from .facts import ModuleFacts
 from .model import Finding
-from .policy_common import ParsedModule, all_parameters, annotation_names, make_finding
+from .policy_common import ParsedModule, all_parameters, annotation_names
 
 _CAST_ARGUMENT_COUNT = 2
 
@@ -549,8 +549,7 @@ class _FunctionMutationAnalyzer:
             return
         self._reported_nodes.add(identity)
         self._findings.append(
-            make_finding(
-                self._facts,
+            self._facts.make_finding(
                 node,
                 "QG189",
                 f"{detail}；{self._contract.boundary_name} 必须保持 Profile 声明的只读/受控写边界。",
@@ -659,8 +658,7 @@ def _dynamic_execution_findings(
                 break
             current = parents[current] if current in parents else None
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG190",
                 f"检测到动态执行或动态导入入口 `{name}()`。",

@@ -432,6 +432,45 @@ class ModuleFacts:
     mapping_names: set[str] = field(default_factory=set)
     contracts: list[ContractFact] = field(default_factory=list)
 
+    def make_finding(
+        self,
+        node: ast.AST,
+        code: str,
+        message: str,
+        symbol: str,
+        severity: Severity = "warning",
+        confidence: Confidence = "high",
+        suggestion: str = "",
+        evidence: dict[str, object] | None = None,
+    ) -> Finding:
+        """构造属于当前模块与源码节点的质量发现。
+
+        Args:
+            node: 问题对应的 AST 节点。
+            code: 规则编号。
+            message: 问题说明。
+            symbol: 所属符号名称。
+            severity: 严重级别。
+            confidence: 静态判断置信度。
+            suggestion: 修复或人工审查方向。
+            evidence: 附加结构化证据。
+
+        Returns:
+            完整质量发现对象。
+        """
+        return Finding(
+            code=code,
+            severity=severity,
+            confidence=confidence,
+            path=str(self.path),
+            line=node.lineno,
+            column=node.col_offset + 1,
+            message=message,
+            symbol=symbol,
+            suggestion=suggestion,
+            evidence={} if evidence is None else evidence,
+        )
+
 
 @dataclass(slots=True, frozen=True)
 class _MappingCallContext:

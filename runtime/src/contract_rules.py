@@ -13,7 +13,6 @@ from .policy_common import (
     annotation_names,
     call_name,
     direct_body_nodes,
-    make_finding,
 )
 
 PAIR_ARGUMENT_COUNT = 2
@@ -100,8 +99,7 @@ def check_type_probe_rules(
                     "Union",
                 }
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         item,
                         "QG060",
                         f"对契约候选对象 `{checked}` 使用 isinstance() 猜测返回形态。",
@@ -122,8 +120,7 @@ def check_type_probe_rules(
                 )
         if isinstance(item, ast.IfExp) and wraps_by_type_probe(item):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG061",
                     "根据 isinstance() 把内部值临时包装为列表或字典。",
@@ -186,8 +183,7 @@ def check_length_contract_rules(
                 and not guarded
             ):
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         item,
                         "QG062",
                         "zip() 未指定 strict=True，长度不一致时可能静默截断。",
@@ -200,8 +196,7 @@ def check_length_contract_rules(
                 )
         if is_length_repair(item):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG063",
                     "使用 min(len(...)) 或交叉长度切片静默修复列表长度。",
@@ -332,8 +327,7 @@ def check_field_contract_rules(
     for item in nodes:
         if is_alias_field_compatibility(item):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG064",
                     "同一位置兼容多个字段名，形成永久字段别名层。",
@@ -355,8 +349,7 @@ def check_field_contract_rules(
     for base, modes in accesses.items():
         if modes == {"mapping", "attribute"} and contract_like_name(base):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     node,
                     "QG065",
                     f"`{base}` 在同一函数中同时按对象属性和字典结构访问。",
@@ -391,8 +384,7 @@ def check_runtime_contract_rules(
     for item in nodes:
         if isinstance(item, ast.BoolOp) and is_contract_default_substitution(item):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG066",
                     "内部契约值通过 `or` 回退为空容器、空字符串或固定默认值。",
@@ -409,8 +401,7 @@ def check_runtime_contract_rules(
                 if isinstance(child, ast.Name) and child.id in parameters
             }
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG069",
                     (
@@ -429,8 +420,7 @@ def check_runtime_contract_rules(
             immutable_name = ignored_immutable_result(item.value, facts)
             if immutable_name:
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         item,
                         "QG070",
                         f"调用不可变对象方法 `{immutable_name}` 后丢弃返回值。",
@@ -699,8 +689,7 @@ def check_parameter_mutation(
         if isinstance(item, (ast.Global, ast.Nonlocal)):
             is_global = isinstance(item, ast.Global)
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG051",
                     (
@@ -721,8 +710,7 @@ def check_parameter_mutation(
         mutated.update(mutated_parameter_names(item, parameter_names))
     for name in sorted(mutated):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG050",
                 f"`{qualname}` 原地修改输入参数 `{name}`。",
@@ -755,8 +743,7 @@ def check_exception_flow(
             continue
         if handler_logs_without_raising(item):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG048",
                     "异常被记录后继续运行，失败状态可能被伪装成成功路径。",
@@ -767,8 +754,7 @@ def check_exception_flow(
             )
         if translates_exception_without_cause(item):
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     item,
                     "QG049",
                     "捕获异常后重新包装，但没有使用 `raise ... from error`。",
@@ -800,8 +786,7 @@ def check_dynamic_attribute_access(
             target = dotted_name(item.args[0]) if item.args else ""
             if contract_like_name(target):
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         item,
                         "QG057",
                         f"对契约对象 `{target}` 使用动态属性修改。",
@@ -814,8 +799,7 @@ def check_dynamic_attribute_access(
             target = dotted_name(item.value)
             if contract_like_name(target):
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         item,
                         "QG057",
                         f"直接访问契约对象 `{target}.__dict__`。",
@@ -842,8 +826,7 @@ def check_print_calls(
         print() 调用发现列表。
     """
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             item,
             "QG052",
             "生产代码中使用 print()，输出无法进入统一日志和 Trace。",

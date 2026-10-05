@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .ast_utils import dotted_name, enclosing_class_name
 from .config import is_test_path
 from .model import Finding
-from .policy_common import ParsedModule, all_parameters, direct_body_nodes, make_finding
+from .policy_common import ParsedModule, all_parameters, direct_body_nodes
 
 UPPERCASE_CONSTANT_PATTERN = re.compile(r"^_?[A-Z][A-Z0-9_]*$")
 MIN_DUNDER_NAME_LENGTH = 5
@@ -563,8 +563,7 @@ def _module_constant_findings(parsed: ParsedModule) -> list[Finding]:
         if not constant_value:
             continue
         findings.append(
-            make_finding(
-                parsed.facts,
+            parsed.facts.make_finding(
                 target,
                 "QG150",
                 f"模块级常量 `{target.id}` 应使用全大写命名。",
@@ -601,8 +600,7 @@ def _runtime_contract_patch_findings(
         ):
             return []
         return [
-            make_finding(
-                parsed.facts,
+            parsed.facts.make_finding(
                 node,
                 "QG186",
                 f"生产代码通过 `{call_target}` 安装运行时补丁。",
@@ -641,8 +639,7 @@ def _runtime_contract_patch_findings(
         if not runtime_patch:
             continue
         findings.append(
-            make_finding(
-                parsed.facts,
+            parsed.facts.make_finding(
                 target_node,
                 "QG186",
                 f"生产代码在运行时修改类或模块契约 `{receiver}.{target_node.attr}`。",
@@ -747,8 +744,7 @@ def check_private_import(
             continue
         test_context = is_test_path(parsed.facts.path)
         findings.append(
-            make_finding(
-                parsed.facts,
+            parsed.facts.make_finding(
                 node,
                 "QG149",
                 f"跨模块导入私有符号 `{alias.name}`。",
@@ -798,8 +794,7 @@ def check_private_attribute_access(
             return None
         if test_context:
             return None
-        return make_finding(
-            parsed.facts,
+        return parsed.facts.make_finding(
             node,
             "QG183",
             f"生产代码通过 `{node.attr}` 绕过静态成员契约。",
@@ -824,8 +819,7 @@ def check_private_attribute_access(
     )
     if allowed:
         return None
-    return make_finding(
-        parsed.facts,
+    return parsed.facts.make_finding(
         node,
         "QG149",
         f"外部访问私有成员 `{receiver}.{node.attr}`。",
@@ -953,8 +947,7 @@ def check_dynamic_private_access(
     if test_context:
         if not private_member or allowed_private:
             return None
-        return make_finding(
-            parsed.facts,
+        return parsed.facts.make_finding(
             node,
             "QG149",
             f"测试代码通过 `{target}` 动态访问私有符号 `{receiver}.{member_name}`。",
@@ -1046,8 +1039,7 @@ def _production_reflection_finding(
         return None
     code, message = selected
     is_critical = code != "QG184"
-    return make_finding(
-        parsed.facts,
+    return parsed.facts.make_finding(
         node,
         code,
         message,

@@ -9,7 +9,6 @@ from .policy_common import (
     call_name,
     direct_body_nodes,
     function_returns,
-    make_finding,
 )
 
 
@@ -83,8 +82,7 @@ def incompatible_return_finding(
     )
     if len(top_level_shapes) <= 1 or flexible_annotation:
         return None
-    return make_finding(
-        facts,
+    return facts.make_finding(
         returns[0] if returns else node,
         "QG045",
         f"`{qualname}` 存在不兼容返回类型：{sorted(top_level_shapes)}。",
@@ -120,8 +118,7 @@ def dictionary_shape_finding(
     }
     if len(dictionary_shapes) <= 1:
         return None
-    return make_finding(
-        facts,
+    return facts.make_finding(
         returns[0] if returns else node,
         "QG144",
         f"`{qualname}` 的字典返回字段集合存在 {len(dictionary_shapes)} 种形态。",
@@ -165,8 +162,7 @@ def implicit_none_finding(
     )
     if not valid_contract or is_generator_function(node) or block_terminates(node.body):
         return None
-    return make_finding(
-        facts,
+    return facts.make_finding(
         node,
         "QG046",
         f"`{qualname}` 部分路径返回值，其他路径可能隐式返回 None。",
@@ -205,8 +201,7 @@ def protocol_text_findings(
     ):
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             return_node,
             "QG047",
             f"`{qualname}` 直接返回 str()/repr()，可能以展示文本替代正式协议。",

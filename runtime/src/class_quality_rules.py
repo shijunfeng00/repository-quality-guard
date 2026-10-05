@@ -12,7 +12,6 @@ from .policy_common import (
     class_is_abstract,
     direct_body_nodes,
     is_compatibility_name,
-    make_finding,
 )
 
 MIN_CLASS_METHODS_FOR_FIELD_LOCALITY = 5
@@ -48,8 +47,7 @@ def check_class_rules(
     register_class_relationships(facts, node, qualname, signals)
     if is_compatibility_name(node.name.lower()):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG094",
                 f"类名 `{node.name}` 表明存在兼容、旧版或回退实现。",
@@ -113,8 +111,7 @@ def check_class_method_shape(
     findings: list[Finding] = []
     if len(public) == 1 and len(methods) <= config.single_method_class_max_methods:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG080",
                 f"类 `{qualname}` 只有一个公开方法，可能只是函数包装。",
@@ -125,8 +122,7 @@ def check_class_method_shape(
         )
     if public and len(private) >= config.private_helper_ratio * len(public):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG081",
                 f"类 `{qualname}` 有 {len(private)} 个私有 helper，仅 {len(public)} 个公开方法。",
@@ -137,8 +133,7 @@ def check_class_method_shape(
         )
     if methods and len(static_like) / len(methods) >= config.static_method_ratio:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG082",
                 f"类 `{qualname}` 的大部分方法是 staticmethod/classmethod。",
@@ -149,8 +144,7 @@ def check_class_method_shape(
         )
     if methods and len(no_self) / len(methods) >= config.no_self_method_ratio:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG083",
                 f"类 `{qualname}` 中 {len(no_self)}/{len(methods)} 个实例方法不使用实例状态。",
@@ -161,8 +155,7 @@ def check_class_method_shape(
         )
     if is_single_field_dataclass(node):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG084",
                 f"dataclass `{qualname}` 只有一个字段，可能只是再次包装已有值。",
@@ -191,8 +184,7 @@ def check_passthrough_members(
         无价值中间层候选列表。
     """
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             method,
             "QG085",
             f"`{qualname}.{method.name}` 只转发另一个对象的属性或方法。",
@@ -387,8 +379,7 @@ def check_constructor_shape(
     if len(parameters) <= config.max_constructor_dependencies:
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG086",
             f"`{qualname}.__init__` 接收 {len(parameters)} 个依赖，并保存其中 {len(stored)} 个。",
@@ -435,8 +426,7 @@ def check_field_locality(
     if len(local_fields) < config.single_use_field_threshold:
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG087",
             f"类 `{qualname}` 有 {len(local_fields)} 个构造字段只在单个方法中使用。",

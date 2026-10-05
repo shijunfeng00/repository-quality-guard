@@ -21,7 +21,6 @@ from .policy_common import (
     call_name,
     direct_body_nodes,
     expression_type,
-    make_finding,
 )
 from .return_rules import return_shape
 
@@ -486,8 +485,7 @@ def check_declared_state_read(
     if contract is None or field_name in contract.fields:
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG125",
             f"读取状态类型 `{contract.name}` 未声明字段 `{field_name}`。",
@@ -531,8 +529,7 @@ def record_state_write(
     findings = check_declared_state_write(facts, node, qualname, contract, field_name)
     if is_tool:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG120",
                 f"Tool `{qualname}` 直接修改状态 `{parameter}.{field_name}`。",
@@ -578,8 +575,7 @@ def check_declared_state_write(
     if contract is None or field_name in contract.fields or field_name.startswith("<"):
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG124",
             f"写入状态类型 `{contract.name}` 未声明字段 `{field_name}`。",
@@ -624,8 +620,7 @@ def check_sequence_state_write(
     ):
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG127",
             f"序列状态字段 `{field_name}` 使用 append() 追加整个 {value_type}。",
@@ -970,8 +965,7 @@ def check_state_scope(
             and not _state_parameter_escapes(node, parameter)
         )
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG128",
                 f"`{qualname}` 接收完整状态 `{parameter}`，但只读取字段 `{next(iter(fields))}`。",
@@ -1029,8 +1023,7 @@ def check_state_update_entry(
     if not writes:
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             writes[0],
             "QG134",
             f"`{qualname}` 在非状态更新入口中直接写入配置的状态对象。",
@@ -1066,8 +1059,7 @@ def check_state_merge_methods(
     for (_, field_name), method_names in methods.items():
         if {"append", "extend"} <= method_names:
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     node,
                     "QG135",
                     f"状态字段 `{field_name}` 在同一函数中混用 append() 和 extend()。",
@@ -1102,8 +1094,7 @@ def check_tool_contract(
     shapes = {return_shape(item.value) for item in returns}
     if len(shapes) > 1:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG121",
                 f"Tool `{qualname}` 存在多种返回结构：{sorted(shapes)}。",
@@ -1114,8 +1105,7 @@ def check_tool_contract(
         )
     if any(shape in {"str", "call:str", "call:repr"} for shape in shapes):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG122",
                 f"Tool `{qualname}` 返回裸字符串而不是稳定结构。",
@@ -1132,8 +1122,7 @@ def check_tool_contract(
     ]
     if node.name.lower().startswith(READ_ONLY_NAME_PREFIXES) and write_calls:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 write_calls[0],
                 "QG123",
                 f"读取型 Tool `{qualname}` 调用了写操作 `{call_name(write_calls[0])}`。",
@@ -1147,8 +1136,7 @@ def check_tool_contract(
     undocumented = sorted(key for key in dict_keys if key not in docstring)
     if dict_keys and undocumented:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG131",
                 f"Tool `{qualname}` 的 docstring 未说明返回字段：{undocumented}。",
@@ -1219,8 +1207,7 @@ def check_history_trace_rules(
     findings: list[Finding] = []
     if uses_history and uses_trace:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG129",
                 f"`{qualname}` 同时处理 History 与 Trace。",
@@ -1243,8 +1230,7 @@ def check_history_trace_rules(
         ]
         if history_calls:
             findings.append(
-                make_finding(
-                    facts,
+                facts.make_finding(
                     history_calls[0],
                     "QG130",
                     "异常处理路径把失败步骤写入 History。",

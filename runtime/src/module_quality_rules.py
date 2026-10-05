@@ -18,7 +18,6 @@ from .policy_common import (
     call_name,
     is_boundary_module,
     is_compatibility_name,
-    make_finding,
 )
 
 MIN_CONFIG_SOURCES_FOR_FALLBACK = 2
@@ -181,8 +180,7 @@ def check_config_ast_node(
         and config_source_fallback_count(node) >= MIN_CONFIG_SOURCES_FOR_FALLBACK
     ):
         return [
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG106",
                 "同一表达式在多个配置来源之间回退。",
@@ -217,8 +215,7 @@ def check_config_call(
         return check_environment_read(facts, node, name, is_config_boundary, signals)
     if name in CONFIG_FILE_CALLS and not is_config_boundary:
         return [
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG100",
                 f"非配置模块直接调用 `{name}` 读取配置文件。",
@@ -265,8 +262,7 @@ def check_environment_read(
     if default is not None:
         signals.config_defaults[(key, default)].append((facts.path, node.lineno))
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG103",
                 f"读取配置 `{key}` 时提供默认值 {default}。",
@@ -280,8 +276,7 @@ def check_environment_read(
         )
     if key == "<dynamic>":
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG104",
                 "配置键由动态表达式生成，无法静态确认权威来源。",
@@ -292,8 +287,7 @@ def check_environment_read(
         )
     if not is_config_boundary:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 node,
                 "QG100",
                 f"非配置模块直接读取 `{name}({key!r})`。",
@@ -337,8 +331,7 @@ def check_hardcoded_endpoint(facts: ModuleFacts, node: ast.Constant) -> list[Fin
     if not looks_like_service_endpoint(node.value):
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             node,
             "QG102",
             f"源码中硬编码服务地址或端口：{node.value!r}。",
@@ -462,8 +455,7 @@ def check_prompt_rules(
             )
             if negative_count >= config.prompt_constraint_threshold:
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         statement,
                         "QG110",
                         f"Prompt 中累计 {negative_count} 个禁止/必须类约束。",
@@ -475,8 +467,7 @@ def check_prompt_rules(
             fragment_count = count_string_fragments(value)
             if fragment_count >= config.prompt_fragment_threshold:
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         statement,
                         "QG111",
                         f"Prompt 由 {fragment_count} 个字符串碎片拼接。",
@@ -509,8 +500,7 @@ def check_prompt_rules(
             ]
             if len(strings) >= config.case_literal_threshold:
                 findings.append(
-                    make_finding(
-                        facts,
+                    facts.make_finding(
                         statement,
                         "QG112",
                         f"常量集合枚举 {len(strings)} 个字符串案例，可能是失败样例特判表。",
@@ -610,8 +600,7 @@ def check_module_statement(facts: ModuleFacts, statement: ast.stmt) -> list[Find
         alias.name == "*" for alias in statement.names
     ):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 statement,
                 "QG093",
                 "使用 `from ... import *`，符号来源和覆盖关系不透明。",
@@ -644,8 +633,7 @@ def check_module_mutable_state(
     if not any(not name.isupper() and not name.startswith("__") for name in names):
         return []
     return [
-        make_finding(
-            facts,
+        facts.make_finding(
             statement,
             "QG092",
             "模块级可变容器可能形成隐式共享状态。",
@@ -673,8 +661,7 @@ def check_module_definition(facts: ModuleFacts, statement: ast.stmt) -> list[Fin
     findings: list[Finding] = []
     if is_compatibility_name(lowered):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 statement,
                 "QG094",
                 f"定义名 `{statement.name}` 表明存在兼容、旧版或回退路径。",
@@ -685,8 +672,7 @@ def check_module_definition(facts: ModuleFacts, statement: ast.stmt) -> list[Fin
         )
     if any(marker in lowered for marker in ("migrate", "migration", "backfill")):
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 statement,
                 "QG095",
                 f"运行时模块包含迁移/回填入口 `{statement.name}`。",
@@ -697,8 +683,7 @@ def check_module_definition(facts: ModuleFacts, statement: ast.stmt) -> list[Fin
         )
     if lowered in GENERIC_FUNCTION_NAMES:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 statement,
                 "QG096",
                 f"定义名 `{statement.name}` 过于宽泛，无法表达具体职责。",
@@ -710,8 +695,7 @@ def check_module_definition(facts: ModuleFacts, statement: ast.stmt) -> list[Fin
     nested = nested_definitions(statement)
     if nested:
         findings.append(
-            make_finding(
-                facts,
+            facts.make_finding(
                 nested[0],
                 "QG097",
                 f"`{statement.name}` 内部定义了 {len(nested)} 个嵌套函数或类。",

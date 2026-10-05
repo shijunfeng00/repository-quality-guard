@@ -5,11 +5,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
-from typing import cast
 
 from .ast_utils import decorator_names, dotted_name
 from .facts import ModuleFacts
-from .model import Confidence, Definition, Finding, Severity
+from .model import Definition
 
 BOOL_TEXT_VALUES = {"0", "1", "false", "true", "False", "True", "FALSE", "TRUE"}
 BOOL_INT_VALUES = {0, 1}
@@ -307,48 +306,6 @@ def iter_scoped_definitions(
 
     walk(tree.body, [], "")
     return result
-
-
-def make_finding(
-    facts: ModuleFacts,
-    node: ast.AST,
-    code: str,
-    message: str,
-    symbol: str,
-    severity: str = "warning",
-    confidence: str = "high",
-    suggestion: str = "",
-    evidence: dict[str, object] | None = None,
-) -> Finding:
-    """
-    构造带源码位置和结构化证据的发现。
-
-    Args:
-        facts: 当前模块事实。
-        node: 问题对应的 AST 节点。
-        code: 规则编号。
-        message: 问题说明。
-        symbol: 所属符号名称。
-        severity: 严重级别。
-        confidence: 静态判断置信度。
-        suggestion: 修复或人工审查方向。
-        evidence: 附加结构化证据。
-
-    Returns:
-        完整质量发现对象。
-    """
-    return Finding(
-        code=code,
-        severity=cast(Severity, severity),
-        confidence=cast(Confidence, confidence),
-        path=str(facts.path),
-        line=node.lineno,
-        column=node.col_offset + 1,
-        message=message,
-        symbol=symbol,
-        suggestion=suggestion,
-        evidence={} if evidence is None else evidence,
-    )
 
 
 def all_parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:

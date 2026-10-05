@@ -120,6 +120,57 @@ class ReportFacts:
     digest: str
 
 
+def _numstat_changes(root: Path, revision: str) -> dict[str, tuple[int, int]]:
+    """Parse ``git diff --numstat -z`` into target-path line deltas."""
+    result = run_readonly_git(root, ("diff", "--numstat", "-z", revision, "--"))
+    if result.returncode != 0:
+        return {}
+    numbers: dict[str, tuple[int, int]] = {}
+    tokens = result.stdout.split("\0")
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if not token:
+            continue
+        parts = token.split("\t")
+        if len(parts) < report_schema.NUMSTAT_FIELDS:
+            continue
+        added_raw, removed_raw, path = parts[0], parts[1], parts[2]
+        if path == "" and index + 1 < len(tokens):
+            index += 1  # old path
+            path = tokens[index]
+            index += 1
+        numbers[path] = (
+            int(added_raw) if added_raw.isdigit() else 0,
+            int(removed_raw) if removed_raw.isdigit() else 0,
+        )
+    return numbers
+
+
+def _name_status_changes(root: Path, revision: str) -> dict[str, str]:
+    """Parse ``git diff --name-status -z`` into target-path status codes."""
+    result = run_readonly_git(root, ("diff", "--name-status", "-z", revision, "--"))
+    if result.returncode != 0:
+        return {}
+    statuses: dict[str, str] = {}
+    tokens = result.stdout.split("\0")
+    index = 0
+    while index < len(tokens):
+        status = tokens[index]
+        index += 1
+        if not status or index >= len(tokens):
+            continue
+        path = tokens[index]
+        index += 1
+        if status.startswith(("R", "C")) and index < len(tokens):
+            path = tokens[index]
+            index += 1
+        if path:
+            statuses[path] = status
+    return statuses
+
+
 def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
     """读取含 rename/untracked 的完整 Git 文件变化，并排除工具产物。
 
@@ -134,53 +185,13 @@ def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
     Returns:
         已规范化并排除工具产物的文件变化元组。
     """
-    numstat = run_readonly_git(root, ("diff", "--numstat", "-z", revision, "--"))
-    name_status = run_readonly_git(
-        root, ("diff", "--name-status", "-z", revision, "--")
-    )
-    numbers: dict[str, tuple[int, int]] = {}
-    statuses: dict[str, str] = {}
-    if numstat.returncode == 0:
-        tokens = numstat.stdout.split("\0")
-        index = 0
-        while index < len(tokens):
-            token = tokens[index]
-            index += 1
-            if not token:
-                continue
-            parts = token.split("\t")
-            if len(parts) < report_schema.NUMSTAT_FIELDS:
-                continue
-            added_raw, removed_raw, path = parts[0], parts[1], parts[2]
-            if path == "" and index + 1 < len(tokens):
-                index += 1  # old path
-                path = tokens[index]
-                index += 1
-            numbers[path] = (
-                int(added_raw) if added_raw.isdigit() else 0,
-                int(removed_raw) if removed_raw.isdigit() else 0,
-            )
-    if name_status.returncode == 0:
-        tokens = name_status.stdout.split("\0")
-        index = 0
-        while index < len(tokens):
-            status = tokens[index]
-            index += 1
-            if not status or index >= len(tokens):
-                continue
-            path = tokens[index]
-            index += 1
-            if status.startswith(("R", "C")) and index < len(tokens):
-                path = tokens[index]
-                index += 1
-            if path:
-                statuses[path] = status
+    numbers = _numstat_changes(root, revision)
+    statuses = _name_status_changes(root, revision)
     untracked = run_readonly_git(root, ("ls-files", "--others", "--exclude-standard"))
     if untracked.returncode == 0:
-        for path in untracked.stdout.splitlines():
-            if path:
-                statuses[path] = "A?"
-                numbers[path] = (report_schema.line_count(root / path), 0)
+        for path in filter(None, untracked.stdout.splitlines()):
+            statuses[path] = "A?"
+            numbers[path] = (report_schema.line_count(root / path), 0)
     excluded = {report_schema.REPORT_FILENAME, "修改说明报告.md"}
     generated_parts = {"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
     paths = sorted(

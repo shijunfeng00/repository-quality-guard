@@ -659,11 +659,12 @@ def _compute_git_baseline(
                 if is_test_path(item.path, config.project_name)
             ),
         )
-        ruff_findings = RuffRunner(
+        ruff_runner = RuffRunner(
             baseline_root,
             cache_root=_cache_root(),
             environment=os.environ,
-        ).run(check_format=True)
+        )
+        ruff_findings = ruff_runner.run(check_format=True)
         merge_findings(
             production_report,
             (
@@ -1605,11 +1606,12 @@ def scan_target(
     ):
         report.findings.append(readme_finding)
 
-    ruff_findings = RuffRunner(
+    ruff_runner = RuffRunner(
         target.root,
         cache_root=_cache_root(),
         environment=os.environ,
-    ).run(check_format=True)
+    )
+    ruff_findings = ruff_runner.run(check_format=True)
     merge_findings(
         report,
         (

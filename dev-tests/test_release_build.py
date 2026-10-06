@@ -362,6 +362,30 @@ class TestReleaseBuild(unittest.TestCase):
                     )
                 )
 
+    def test_canonical_zip_keeps_gitignored_local_working_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    ".qg-work", ".pytest_cache", ".ruff_cache", "__pycache__"
+                ),
+            )
+            (source / "AGENTS.md").write_text(
+                "local agent guidance\n", encoding="utf-8"
+            )
+            (source / "PLAN.md").write_text("temporary task plan\n", encoding="utf-8")
+            self._seed_release_media(source)
+            out = root / "canonical.zip"
+            self._build(out, source=source)
+            with zipfile.ZipFile(out) as archive:
+                names = set(archive.namelist())
+                prefix = "repository-quality-guard/"
+                self.assertIn(prefix + "AGENTS.md", names)
+                self.assertIn(prefix + "PLAN.md", names)
+
     def test_canonical_zip_extracts_to_a_real_git_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "canonical.zip"

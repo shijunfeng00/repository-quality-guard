@@ -129,6 +129,15 @@ class TestHostAgentsContract(unittest.TestCase):
         self.assertIn("/profiles/*", ignore)
         self.assertIn("!/profiles/qg-example-profile/", ignore)
         self.assertIn("!/profiles/qg-example-profile/**", ignore)
+        for local_only in (
+            "/AGENTS.md",
+            "/PLAN.md",
+            "/TODOLIST.md",
+            "/CHECKLIST.md",
+            "/ARCH.md",
+            "/references/STRUCTURE_TOPOLOGY_BASELINE.md",
+        ):
+            self.assertIn(local_only, ignore)
 
     def test_managed_pre_push_gate_is_part_of_agent_contract(self) -> None:
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")

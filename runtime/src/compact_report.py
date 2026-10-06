@@ -1370,12 +1370,13 @@ def _commit_issues(text: str) -> list[str]:
     bullets = [line for line in lines[1:] if line.startswith("- ")]
     subject_ok = bool(
         re.search(
-            r'^git commit -m "[a-z]+(?:\([^)]+\))?!?:\s*.*[\u4e00-\u9fff]', subject
+            r'^git commit -m "(?:修复|重构|功能|测试|文档|维护|发布|合并|性能|构建|安全|回退)(?:（[^）]+）)?：.*[\u4e00-\u9fff]',
+            subject,
         )
     )
     if not subject_ok:
         return [
-            "QG984：提交主题必须采用 `type(scope): 中文主题`（scope 可省略）的可执行 `git commit -m` 形式。"
+            "QG984：提交主题必须采用统一中文分类（例如 `修复：`、`重构：`、`发布：`）的可执行 `git commit -m` 形式。"
         ]
     if len(bullets) < _MIN_COMMIT_BULLETS:
         return [

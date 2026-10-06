@@ -752,7 +752,7 @@ def _closing_lines() -> list[str]:
         report_schema.REQUIRED_SECTIONS[9],
         "",
         "```bash",
-        'git commit -m "refactor: 完成仓库质量门禁与架构审计',
+        'git commit -m "重构：完成仓库质量门禁与架构审计',
         "",
         "- 强制披露全部新增接口及其事实依据",
         "- 校验父类子类边界、验证证据与修改说明完整性",

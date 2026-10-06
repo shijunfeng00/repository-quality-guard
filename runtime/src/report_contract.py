@@ -1104,7 +1104,8 @@ def _commit_findings(text: str) -> list[Finding]:
     bullets = [line for line in lines[1:] if line.startswith("- ")]
     subject_ok = bool(
         re.search(
-            r'^git commit -m "[a-z]+(?:\([^)]+\))?!?:\s*.*[\u4e00-\u9fff]', subject
+            r'^git commit -m "(?:修复|重构|功能|测试|文档|维护|发布|合并|性能|构建|安全|回退)(?:（[^）]+）)?：.*[\u4e00-\u9fff]',
+            subject,
         )
     )
     valid = (

@@ -60,7 +60,7 @@ class TestInstalledProfilePayload(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "scripts" / "quality_guard.py").write_text(
-                'RELEASE_SEAL = "' + "0" * 64 + '"\n',
+                'seal = "' + "0" * 64 + '"\n',
                 encoding="utf-8",
             )
             profile = root / "installed" / "profile" / "profile.json"

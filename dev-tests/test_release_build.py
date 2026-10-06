@@ -229,6 +229,51 @@ class TestReleaseBuild(unittest.TestCase):
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
 
+    def test_builder_refuses_bundled_profile_that_cannot_build(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"
+                ),
+            )
+            self._seed_release_media(source)
+            extension = source / "profiles" / "qg-example-profile" / "extension.py"
+            extension.write_text(
+                extension.read_text(encoding="utf-8")
+                + "\nraise RuntimeError('profile-build-gate-fixture')\n",
+                encoding="utf-8",
+            )
+            sys.path.insert(0, str(source))
+            try:
+                from runtime.src import integrity
+
+                integrity.seal_release_tree(source, "skill")
+            finally:
+                sys.path.pop(0)
+                for name in tuple(sys.modules):
+                    if name == "runtime" or name.startswith("runtime."):
+                        sys.modules.pop(name, None)
+            output = Path(temp) / "bad-profile.zip"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(source / "tools" / "build_release.py"),
+                    str(source),
+                    str(output),
+                ],
+                cwd=source,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("profile-build-gate-fixture", result.stderr + result.stdout)
+            self.assertFalse(output.exists())
+
     def test_builder_can_import_integrity_on_current_python(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "one.zip"

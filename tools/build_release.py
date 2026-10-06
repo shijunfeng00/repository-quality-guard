@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -99,8 +101,25 @@ def _validate_source(source: Path) -> None:
         raise RuntimeError(
             "canonical full-repository ZIP requires source .git metadata"
         )
-    if not (source / "profiles" / "qg-example-profile" / "profile.json").is_file():
+    profiles = source / "profiles"
+    if not (profiles / "qg-example-profile" / "profile.json").is_file():
         raise RuntimeError("canonical full-repository ZIP requires the Profile catalog")
+    validation = (
+        "import sys; "
+        "from runtime.src.project_profiles import load_quality_profile; "
+        "profile = load_quality_profile(sys.argv[1]); "
+        "assert profile is not None; "
+        "profile.build()"
+    )
+    for profile_dir in sorted(path for path in profiles.iterdir() if path.is_dir()):
+        if not (profile_dir / "profile.json").is_file():
+            continue
+        subprocess.run(
+            [sys.executable, "-c", validation, str(profile_dir)],
+            cwd=source,
+            check=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
     _validate_offline_payload(source)
 
     integrity = _load_integrity(source)

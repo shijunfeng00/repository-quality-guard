@@ -13,8 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-RELEASE_SEAL = "d3e984fbf655a56417edbf68fe0881225d34bcbe01edd5e2a419ff07ad26fee0"
-
 
 def _prepare_dependencies() -> None:
     """验证锁定依赖；fresh clone 缺依赖时在线安装，离线包安装时可用本地介质。"""
@@ -47,7 +45,8 @@ def main() -> int:
         print(f"[QG] 环境准备失败：{error}", file=sys.stderr, flush=True)
         return 2
     os.environ["REPO_QUALITY_GUARD_HOME"] = str(ROOT)
-    os.environ["REPO_QUALITY_GUARD_RELEASE_SEAL"] = RELEASE_SEAL
+    seal = "52fd8065038229a29c43376ad6b21ef78ff0385129ed22bcc02878ce9d5327a9"
+    os.environ["REPO_QUALITY_GUARD_RELEASE_SEAL"] = seal
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     from runtime.src import workflow
 

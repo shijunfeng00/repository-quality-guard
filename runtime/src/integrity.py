@@ -83,8 +83,8 @@ def _protected_sha256(path: Path, relative: str) -> str:
     content = path.read_bytes()
     if relative == "scripts/quality_guard.py":
         content = re.sub(
-            rb'RELEASE_SEAL = "[0-9a-f]{64}"',
-            b'RELEASE_SEAL = "' + (b"0" * _SHA256_HEX_LENGTH) + b'"',
+            rb'seal = "[0-9a-f]{64}"',
+            b'seal = "' + (b"0" * _SHA256_HEX_LENGTH) + b'"',
             content,
         )
     elif relative == RELEASE_LOCK_NAME:
@@ -228,7 +228,7 @@ def seal_release_tree(root: Path, distribution: str) -> str:
 
     Raises:
         ValueError: distribution 非法或现有 RELEASE.lock 缺少版本。
-        RuntimeError: 启动器缺少唯一 RELEASE_SEAL 字段。
+        RuntimeError: 启动器缺少唯一 release seal 赋值。
     """
     if distribution != "skill" and distribution != "agents":
         raise ValueError("distribution 只能是 skill 或 agents。")
@@ -265,11 +265,11 @@ def seal_release_tree(root: Path, distribution: str) -> str:
     seal = _sha256(manifest)
 
     launcher_text = launcher.read_bytes()
-    marker = b'RELEASE_SEAL = "'
+    marker = b'seal = "'
     start = launcher_text.index(marker) + len(marker)
     end = start + _SHA256_HEX_LENGTH
     if launcher_text[end : end + 1] != b'"':
-        raise RuntimeError("scripts/quality_guard.py 的 RELEASE_SEAL 结构非法。")
+        raise RuntimeError("scripts/quality_guard.py 的 release seal 结构非法。")
     launcher.write_bytes(
         launcher_text[:start] + seal.encode("ascii") + launcher_text[end:]
     )

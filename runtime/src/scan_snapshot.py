@@ -316,16 +316,27 @@ def _acquire_single_flight(
 
 
 def _cleanup_stale_worker_dirs(worker_dir: Path) -> None:
-    """Remove abandoned worker IPC directories whose recorded worker no longer exists."""
+    """Remove abandoned worker IPC directories without racing a starting worker."""
+    now = time.time()
     for candidate in worker_dir.glob("scan-*"):
         if not candidate.is_dir():
             continue
-        status = (
-            _worker_status(candidate / "status.json")
-            if (candidate / "status.json").is_file()
-            else {}
-        )
-        pid = status["pid"]
+        try:
+            age_seconds = max(0.0, now - candidate.stat().st_mtime)
+        except FileNotFoundError:
+            continue
+        status_path = candidate / "status.json"
+        if not status_path.is_file():
+            if age_seconds < 60.0:
+                continue
+            pid = 0
+        else:
+            try:
+                pid = int(_worker_status(status_path)["pid"])
+            except RuntimeError:
+                if age_seconds < 60.0:
+                    continue
+                pid = 0
         if pid > 0 and process_alive(pid):
             continue
         try:

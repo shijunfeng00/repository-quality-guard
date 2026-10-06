@@ -98,6 +98,28 @@ class TestWorkerLifecycle(unittest.TestCase):
         elapsed, _ = self._run_sleeping_worker(kill_after=0.5, deadline="10")
         self.assertLess(elapsed, 5)
 
+    def test_cleanup_preserves_recent_worker_directory_without_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            worker_dir = Path(temp) / "scan-worker"
+            candidate = worker_dir / "scan-starting"
+            candidate.mkdir(parents=True)
+
+            scan_snapshot._cleanup_stale_worker_dirs(worker_dir)
+
+            self.assertTrue(candidate.is_dir())
+
+    def test_cleanup_removes_old_worker_directory_without_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            worker_dir = Path(temp) / "scan-worker"
+            candidate = worker_dir / "scan-abandoned"
+            candidate.mkdir(parents=True)
+            old = time.time() - 120
+            os.utime(candidate, (old, old))
+
+            scan_snapshot._cleanup_stale_worker_dirs(worker_dir)
+
+            self.assertFalse(candidate.exists())
+
     def test_timeout_kills_worker_and_cleans_ipc(self) -> None:
         elapsed, _ = self._run_sleeping_worker(kill_after=None, deadline="0.6")
         self.assertLess(elapsed, 5)

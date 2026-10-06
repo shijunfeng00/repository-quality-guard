@@ -18,6 +18,9 @@ class TestInstalledProfilePayload(unittest.TestCase):
             bundle.mkdir()
             (bundle / "README.md").write_text("English docs\n", encoding="utf-8")
             (bundle / "README_zh.md").write_text("中文文档\n", encoding="utf-8")
+            (bundle / "AGENTS.md").write_text(
+                "local repository guidance\n", encoding="utf-8"
+            )
             (bundle / "SKILL.md").write_text("skill\n", encoding="utf-8")
             (bundle / "scripts").mkdir()
             (bundle / "scripts" / "quality_guard.py").write_text(
@@ -43,6 +46,7 @@ class TestInstalledProfilePayload(unittest.TestCase):
 
             self.assertFalse((installed / "README.md").exists())
             self.assertFalse((installed / "README_zh.md").exists())
+            self.assertFalse((installed / "AGENTS.md").exists())
 
     def test_installed_profile_mutation_breaks_release_integrity(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

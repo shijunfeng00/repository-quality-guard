@@ -2,13 +2,13 @@
 name: repository-quality-guard
 description: 对 Git 仓库执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
 metadata:
-  version: "0.22.2"
+  version: "0.22.3"
   status: stable
 ---
 
 # Repository Quality Guard
 
-**Version:** 0.22.2
+**Version:** 0.22.3
 **Status:** Stable
 **Distribution:** canonical full-repository ZIP / repository-installed `.agents`
 
@@ -246,6 +246,8 @@ python runtime/install_dependencies.py
 Canonical full-repository ZIP 与 `.agents` 安装态使用同一个入口。Agent 不得自行决定 pip/npm 安装步骤，也不得因为环境准备失败而跳过审计；只运行 `python runtime/install_dependencies.py`。安装器固定按“精确宿主环境 → 本地/用户缓存离线介质 → 网络探测 → 有界在线安装”的顺序处理。完整 canonical ZIP 自带 wheel 与 Node parser payload，并会把可复用介质种入仓库外的 QG 用户缓存；`.agents` 默认不复制这些大文件，但同一个 CLI 会自动发现用户缓存或本地 `offline/`。只有本地介质不可用时才探测 PyPI/npm registry；各最多 3 次、每次 3 秒，并明确打印正在使用离线还是网络安装、失败原因和补救办法，禁止静默联网。`RQG_OFFLINE_ONLY=1` 时完全禁止网络。命令失败后不得把 QG 标记为通过或直接继续交付。
 
 扫描生命周期同样不得由 Agent 猜测处理：同一仓库已有 cold scan 时，后续审计必须 single-flight 排队并打印等待日志，不得再启动第二份重扫描；worker 每 5 秒发布心跳，父进程定期打印 phase；worker 异常退出、心跳失联、Node parser 超时或父进程收到 TERM 时必须清理本次运行拥有的完整子进程树并 fail-loud。调用 RQG 的宿主进程消失时，顶层 QG 也必须退出，避免遗留后台审计抢占后续任务资源。
+
+如果宿主 Agent/Harness **明确支持**可持续的后台/异步任务或受控 session polling，并且完整 cold scan 预计会超过宿主单次同步调用窗口，Agent 可以优先只启动一份受监督的长审计并周期轮询其 heartbeat、phase、日志和最终退出码；这只是宿主执行策略建议，不是 RQG 的运行前提。宿主不支持时不得假定存在该能力，也不得使用 `disown`/fire-and-forget 脱离 ownership，更不得因一次调用窗口结束就并发启动第二份 scan。
 
 `audit` / `verify` 的扫描 worker 每 15 秒向外层报告存活阶段；正常审计没有自动截断时间。仅在诊断故障时可显式设置 `RQG_SCAN_TIMEOUT_SECONDS`，到时只能中止并保留失败证据，绝不产生不完整的通过结论。worker 失败或父进程中断时，审计失败并清理 worker 进程树及一次性 IPC；必须修复原因后重新完整审计。
 

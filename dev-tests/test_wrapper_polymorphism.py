@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-import ast
 import tempfile
 import unittest
 from pathlib import Path
 
-from runtime.src.agent_rules import _protocol_like_method
 from runtime.src.analysis_snapshot import directory_analysis_snapshot
 from runtime.src.config import GuardConfig
 from runtime.src.relation_graph import RepositoryRelationGraph, normalized_topology
 from runtime.src.scanner import RepositoryScanner
-from runtime.src.topology_facts import OwnerKind, SymbolFact, Visibility
-from runtime.src.topology_policy import symbol_is_externally_invoked
 
 
 class TestWrapperPolymorphism(unittest.TestCase):
-    def _wrapper_symbols(self, source: str) -> set[str]:
+    def _findings(self, source: str, *, state_types: tuple[str, ...] = ()):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -24,10 +20,11 @@ class TestWrapperPolymorphism(unittest.TestCase):
             require_docstrings=False,
             require_docstring_sections=False,
             include_tests=True,
+            state_types=state_types,
         )
         snapshot = directory_analysis_snapshot(root, config)
         topology = normalized_topology(RepositoryRelationGraph(snapshot))
-        findings = (
+        return (
             RepositoryScanner(
                 root,
                 config,
@@ -37,7 +34,9 @@ class TestWrapperPolymorphism(unittest.TestCase):
             .scan()
             .findings
         )
-        return {item.symbol for item in findings if item.code == "QG010"}
+
+    def _wrapper_symbols(self, source: str) -> set[str]:
+        return {item.symbol for item in self._findings(source) if item.code == "QG010"}
 
     def test_explicit_abstractmethod_is_exempt_but_similar_name_is_not(self) -> None:
         abstract_symbols = self._wrapper_symbols(
@@ -60,42 +59,27 @@ class TestWrapperPolymorphism(unittest.TestCase):
         self.assertNotIn("sample.Base.get_value", abstract_symbols)
         self.assertIn("sample.Base.get_value", lookalike_symbols)
 
-    def test_protocol_marker_helpers_require_exact_abstractmethod_leaf(self) -> None:
-        explicit = SymbolFact(
-            symbol_id="sample.Base.get_value",
-            language="python",
-            kind="method",
-            owner_id="sample.Base",
-            owner_kind=OwnerKind.CLASS,
-            visibility=Visibility.PUBLIC,
-            path=Path("sample.py"),
-            line=1,
-            end_line=2,
-            lines=2,
-            name="get_value",
-            decorators=("abc.abstractmethod",),
+    def test_dependency_scope_uses_exact_abstractmethod_contract(self) -> None:
+        state = "class State:\n    value: int\n    other: int\n"
+        explicit = self._findings(
+            "from abc import abstractmethod\n" + state + "class Base:\n"
+            "    @abstractmethod\n"
+            "    def read(self, state: State):\n"
+            "        return state.value\n",
+            state_types=("State",),
         )
-        lookalike = SymbolFact(
-            symbol_id="sample.Base.other",
-            language="python",
-            kind="method",
-            owner_id="sample.Base",
-            owner_kind=OwnerKind.CLASS,
-            visibility=Visibility.PUBLIC,
-            path=Path("sample.py"),
-            line=3,
-            end_line=4,
-            lines=2,
-            name="other",
-            decorators=("not_abstractmethod",),
+        lookalike = self._findings(
+            "def not_abstractmethod(fn): return fn\n" + state + "class Base:\n"
+            "    @not_abstractmethod\n"
+            "    def read(self, state: State):\n"
+            "        return state.value\n",
+            state_types=("State",),
         )
-        tree = ast.parse("@not_abstractmethod\ndef get_value(self):\n    return 1\n")
-        method = tree.body[0]
-        self.assertIsInstance(method, ast.FunctionDef)
 
-        self.assertTrue(symbol_is_externally_invoked(explicit))
-        self.assertFalse(symbol_is_externally_invoked(lookalike))
-        self.assertFalse(_protocol_like_method(method))
+        explicit_qg128 = [item for item in explicit if item.code == "QG128"]
+        lookalike_qg128 = [item for item in lookalike if item.code == "QG128"]
+        self.assertEqual([item.severity for item in explicit_qg128], ["info"])
+        self.assertEqual([item.severity for item in lookalike_qg128], ["warning"])
 
     def test_graph_proven_root_polymorphic_slot_is_not_a_useless_wrapper(self) -> None:
         symbols = self._wrapper_symbols(

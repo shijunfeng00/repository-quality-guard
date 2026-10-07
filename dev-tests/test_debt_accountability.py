@@ -11,6 +11,10 @@ from runtime.src.compact_report import (
 )
 from runtime.src.model import Finding, QualityBaseline, ScanReport
 from runtime.src.report_contract import build_report_facts
+from runtime.src.report_facts import (
+    current_quality_findings,
+    current_test_quality_findings,
+)
 from runtime.src.workflow import build_parser
 
 
@@ -34,7 +38,14 @@ class TestDebtAccountability(unittest.TestCase):
         _git(root, "commit", "-qm", "base")
         return temp, root
 
-    def _finding(self, path: str, code: str, *, message: str | None = None) -> Finding:
+    def _finding(
+        self,
+        path: str,
+        code: str,
+        *,
+        message: str | None = None,
+        evidence: dict[str, object] | None = None,
+    ) -> Finding:
         return Finding(
             code=code,
             severity="warning",
@@ -45,6 +56,7 @@ class TestDebtAccountability(unittest.TestCase):
             symbol="owner",
             message=message or f"{code} debt in {path}",
             suggestion="fix it",
+            evidence={} if evidence is None else evidence,
         )
 
     def _baseline(self, *findings: Finding) -> QualityBaseline:
@@ -229,6 +241,42 @@ class TestDebtAccountability(unittest.TestCase):
         )
         self.assertEqual(
             [item.finding.code for item in facts.historical_debt], ["QG102"]
+        )
+
+    def test_qg179_exempt_only_deduplicates_gate_and_remains_ordinary_debt(
+        self,
+    ) -> None:
+        temp, root = self._repo()
+        self.addCleanup(temp.cleanup)
+        warning = self._finding(
+            "untouched.py",
+            "QG020",
+            evidence={"qg179_exempt": True},
+        )
+        report = self._report(root, [warning], self._baseline(warning))
+
+        facts = build_report_facts(report, "HEAD", debt_mode="progressive")
+
+        self.assertEqual(set(current_quality_findings(report)), {warning.fingerprint})
+        self.assertEqual(facts.legacy_debt_reduced, 0)
+        self.assertEqual(
+            [item.finding.code for item in facts.historical_debt], ["QG020"]
+        )
+
+    def test_qg179_exempt_test_finding_remains_in_test_debt_inventory(self) -> None:
+        temp, root = self._repo()
+        self.addCleanup(temp.cleanup)
+        warning = self._finding(
+            "tests/test_sample.py",
+            "QG020",
+            evidence={"qg179_exempt": True},
+        )
+        report = self._report(root, [], None)
+        report.test_findings = [warning]
+
+        self.assertEqual(
+            set(current_test_quality_findings(report)),
+            {warning.fingerprint},
         )
 
     def test_workflow_cli_defaults_progressive_and_accepts_cleanup(self) -> None:

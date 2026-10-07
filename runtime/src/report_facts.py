@@ -281,10 +281,6 @@ def current_quality_findings(report: ScanReport) -> dict[str, Finding]:
         if finding.severity in report_schema.SEVERITY_RANK
         and not finding.code.startswith("QG98")
         and finding.code not in report_schema.BASELINE_GATE_EXEMPT_CODES
-        and not (
-            "qg179_exempt" in finding.evidence
-            and finding.evidence["qg179_exempt"] is True
-        )
     }
 
 
@@ -303,10 +299,6 @@ def current_test_quality_findings(report: ScanReport) -> dict[str, Finding]:
         if finding.severity in report_schema.SEVERITY_RANK
         and not finding.code.startswith("QG98")
         and finding.code not in report_schema.BASELINE_GATE_EXEMPT_CODES
-        and not (
-            "qg179_exempt" in finding.evidence
-            and finding.evidence["qg179_exempt"] is True
-        )
     }
 
 

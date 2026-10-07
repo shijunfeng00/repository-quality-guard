@@ -83,7 +83,7 @@ Reduction 的核心问题是**复杂度被删除还是仅被重新排列**。至
 
 ## Commit
 
-最终 patch 冻结后必须填写 `## 9. 提交 Commit`。该章节包含机器生成的完整 patch 范围事实，以及一条可直接执行的多行中文 `git commit -m` **建议命令**。它用于验证提交描述能覆盖整个 baseline→target patch，不代表 Guard 已执行或获准执行 Git 写操作。命令必须描述整个 patch，而不是只描述最后修改的文件、单条 finding 或 Reduction Pass 中的局部修复；主题使用统一中文分类，例如 `修复：中文主题`、`重构：中文主题`、`发布：中文主题`，正文至少两条中文 `- ` 摘要。实际提交仍只服从当前任务授权；`REVIEW_REQUIRED` 的人工裁决也不等价于提交授权。
+最终 patch 冻结后必须填写 `## 9. 提交 Commit`。该章节包含机器生成的完整 patch 范围事实，以及一条可直接执行的多行中文 `git commit -m` **建议命令**。它用于验证提交描述能覆盖整个 baseline→target patch，不代表 Guard 已执行或获准执行 Git 写操作。命令必须描述整个 patch，而不是只描述最后修改的文件、单条 finding 或 Reduction Pass 中的局部修复；主题使用统一英文 type + 中文正文，例如 `fix: 修复问题`、`feature: 增加能力`、`perf: 优化性能`，正文至少两条中文 `- ` 摘要。实际提交仍只服从当前任务授权；`REVIEW_REQUIRED` 的人工裁决也不等价于提交授权。
 
 若随后任何源码/配置/index 变化导致 `change_digest` 改变，下一次 `audit` 会主动把旧 commit 命令重置为 `PENDING`；`verify` 在命令缺失、仍是占位、格式错误、摘要不足或试图通过 `git config user.*` / `--author` / `GIT_AUTHOR_*` / `GIT_COMMITTER_*` 覆盖贡献者身份时直接 REJECT。`audit` 生成了未完成报告时也返回门禁退出码 3，避免 Agent 把“已生成报告”误认成“审计通过”。
 

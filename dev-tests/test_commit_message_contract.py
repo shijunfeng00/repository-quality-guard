@@ -18,13 +18,25 @@ class TestCommitMessageContract(unittest.TestCase):
             "```\n"
         )
 
-    def test_chinese_commit_category_is_accepted(self) -> None:
-        text = self._report("修复：统一提交信息语言契约")
-        self.assertEqual([], _commit_findings(text))
-        self.assertEqual([], _commit_issues(text))
+    def test_english_type_with_chinese_subject_is_accepted(self) -> None:
+        for subject in (
+            "fix: 统一提交信息语言契约",
+            "feature: 增加提交契约能力",
+            "perf: 优化提交契约校验",
+            "refactor(parser): 收敛提交解析职责",
+        ):
+            with self.subTest(subject=subject):
+                text = self._report(subject)
+                self.assertEqual([], _commit_findings(text))
+                self.assertEqual([], _commit_issues(text))
 
-    def test_english_conventional_prefix_is_rejected(self) -> None:
-        text = self._report("fix: 统一提交信息语言契约")
+    def test_feat_alias_is_rejected(self) -> None:
+        text = self._report("feat: 增加提交契约能力")
+        self.assertTrue(_commit_findings(text))
+        self.assertTrue(_commit_issues(text))
+
+    def test_chinese_type_is_rejected(self) -> None:
+        text = self._report("修复：统一提交信息语言契约")
         self.assertTrue(_commit_findings(text))
         self.assertTrue(_commit_issues(text))
 

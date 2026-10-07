@@ -1104,7 +1104,7 @@ def _commit_findings(text: str) -> list[Finding]:
     bullets = [line for line in lines[1:] if line.startswith("- ")]
     subject_ok = bool(
         re.search(
-            r'^git commit -m "(?:修复|重构|功能|测试|文档|维护|发布|合并|性能|构建|安全|回退)(?:（[^）]+）)?：.*[\u4e00-\u9fff]',
+            r'^git commit -m "(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\([^\)]+\))?:\s+.*[\u4e00-\u9fff]',
             subject,
         )
     )
@@ -1119,7 +1119,7 @@ def _commit_findings(text: str) -> list[Finding]:
     return [
         _report_finding(
             "QG984",
-            "提交命令必须包含中文主题和至少两条中文多行摘要，并保持一个完整双引号参数。",
+            "提交命令必须包含英文 type + 中文正文主题和至少两条中文多行摘要，并保持一个完整双引号参数。",
         )
     ]
 

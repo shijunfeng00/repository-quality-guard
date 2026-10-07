@@ -157,7 +157,7 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
                 "--resolved-profile-reference",
                 "/tmp/release/installed/profile",
                 "--resolved-profile-name",
-                "geek-ai-agent",
+                "private-agent-fixture",
                 "--resolved-profile-source",
                 "sealed-installed",
             ]
@@ -169,7 +169,7 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
         self.assertEqual(
             args.resolved_profile_reference, "/tmp/release/installed/profile"
         )
-        self.assertEqual(args.resolved_profile_name, "geek-ai-agent")
+        self.assertEqual(args.resolved_profile_name, "private-agent-fixture")
         self.assertEqual(args.resolved_profile_source, "sealed-installed")
 
     def test_external_profile_path_survives_worker_and_contract_validation(

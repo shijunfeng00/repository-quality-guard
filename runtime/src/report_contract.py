@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from . import report_schema
+from .commit_policy import validate_commit_command
 from .gate_status import code_status
 from .model import Finding, ScanReport
 
@@ -1093,34 +1094,15 @@ def _risk_findings(
     return findings
 
 
-def _commit_findings(text: str) -> list[Finding]:
-    """验证提交章节包含可直接执行的多行中文 commit 命令。"""
+def _commit_findings(text: str, report: ScanReport) -> list[Finding]:
+    """Validate the commit section structurally and against Profile policy."""
     match = report_schema.COMMIT_BLOCK.search(text)
     if match is None:
-        return [_report_finding("QG984", "提交章节缺少多行中文 `git commit -m` 命令。")]
+        return [_report_finding("QG984", "提交章节缺少可执行的 `git commit -m` 命令。")]
     command = match.group("command")
-    lines = command.splitlines()
-    subject = lines[0] if lines else ""
-    bullets = [line for line in lines[1:] if line.startswith("- ")]
-    subject_ok = bool(
-        re.search(
-            r'^git commit -m "(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\([^\)]+\))?:\s+.*[\u4e00-\u9fff]',
-            subject,
-        )
-    )
-    valid = (
-        subject_ok
-        and len(bullets) >= report_schema.MIN_COMMIT_BULLETS
-        and all(report_schema.CHINESE.search(line) for line in bullets)
-        and command.endswith('"')
-    )
-    if valid:
-        return []
     return [
-        _report_finding(
-            "QG984",
-            "提交命令必须包含英文 type + 中文正文主题和至少两条中文多行摘要，并保持一个完整双引号参数。",
-        )
+        _report_finding("QG984", issue)
+        for issue in validate_commit_command(command, report.commit_policy)
     ]
 
 
@@ -1131,7 +1113,7 @@ def _report_finding(code: str, message: str) -> Finding:
         "QG981": "重新运行 quality-guard 刷新自动事实，不得手改 AUTO 区块。",
         "QG982": "逐项填写生产 FILE/ADD/ARCH/DELTA、测试 TEST-FILE/TEST-RISK、存量削减结论、通用审判与 profile 专项审判；禁止遗漏、伪造授权或空泛论证。",
         "QG983": "执行最新验证命令并记录真实退出码和结果。",
-        "QG984": "填写可直接执行的多行中文 git commit -m 命令。",
+        "QG984": "填写可直接执行且符合当前 Profile commit_policy 的 git commit -m 命令。",
         "QG985": "直接抄写工具统计的新增函数、变量、类数量，并保证二次减法复审数量一致。",
     }
     return Finding(
@@ -1222,7 +1204,7 @@ def validate_modification_report(
     findings.extend(_question_findings(text, report))
     findings.extend(_validation_findings(text))
     findings.extend(_risk_findings(text, final_status, report))
-    findings.extend(_commit_findings(text))
+    findings.extend(_commit_findings(text, report))
 
     manual_markers = (
         "行为需求（WHAT/WHY）：",

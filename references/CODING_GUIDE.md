@@ -321,7 +321,7 @@ Private 实现变化不机械要求修改 README。README 只描述公开能力�
 - **先冻结 accepted design baseline，再开始修改。** 用户明确指定 commit 时优先使用该 revision；否则使用任务开始时最后一个可确认的目标分支基线。整轮修改、`audit`、`verify` 使用同一累计 baseline，不得把本轮自己生成的中间 commit 重新当 baseline 来隐藏接口或质量漂移。
 - **设计权威来自 revision/明确授权，不来自作者姓名。** 禁止通过 `git log --author`、固定姓名/邮箱等方式判断哪份设计才有效；author/committer 只记录实际贡献者。
 - **无明确新需求时，accepted baseline 的既有 public interface、参数、返回结构、协议字段与 owner 默认保持不变。** 实现应优先适配既有契约；确需变化时必须在 Q2/接口账本中给出本轮需求授权、调用方兼容性和验证证据。
-- **提交身份与设计对齐彻底解耦。** 同事可以基于既有 accepted baseline 修改并延续其设计，但新 commit 使用同事自己的 Git identity；不得为了“和基线一致”设置 `--author`、`git config user.*` 或 `GIT_AUTHOR_*` / `GIT_COMMITTER_*`。
+- **提交身份与设计对齐彻底解耦。** author/committer 记录真实协作历史，默认由各仓库/开发者自己的 Git 配置与既有补丁元数据决定；RQG 不硬编码姓名邮箱，也不根据身份判断设计权威。需要保留他人真实 authorship 的导入/补丁流程可以按仓库协作规范处理。
 - **交付格式不削弱审计。** 直接修改、patch、mbox、bundle、zip 或完整仓库都必须另行完成并交付 `修改说明.md`。该文件默认不纳入业务 Git，最终回复仍必须直接报告报告门禁、静态门禁、最终状态和验证缺口。
 
 

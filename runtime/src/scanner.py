@@ -170,6 +170,7 @@ class RepositoryScanner:
             project_name=self.config.project_name,
             profile_source=self.config.profile_source,
             profile_capabilities=tuple(self.config.profile_capabilities),
+            commit_policy=dict(self.config.profile_commit_policy),
         )
 
     def _has_complete_docstring(self, definition: Definition) -> bool:

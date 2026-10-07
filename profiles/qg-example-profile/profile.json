@@ -24,5 +24,11 @@
     "state_contract_type": "RuntimeState",
     "adapter_path": "app/model_adapter.py",
     "adapter_type": "ModelAdapter"
+  },
+  "commit_policy": {
+    "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+    "subject_example": "fix: 修复问题",
+    "min_body_bullets": 2,
+    "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
   }
 }

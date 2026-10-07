@@ -6,6 +6,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from .commit_policy import DEFAULT_COMMIT_POLICY
+
 
 _PROFILE_NONBLOCKING_PATHS: dict[str, tuple[str, ...]] = {}
 _GENERATED_TOOL_PATTERNS = ("docs/api-reference/**", "修改说明.md")
@@ -85,6 +87,9 @@ class GuardConfig:
     disabled_rules: tuple[str, ...] = ()
     profile_rule_levels: tuple[tuple[str, str], ...] = ()
     profile_settings: tuple[tuple[str, Any], ...] = ()
+    profile_commit_policy: tuple[tuple[str, Any], ...] = tuple(
+        DEFAULT_COMMIT_POLICY.items()
+    )
     short_max_lines: int = 10
     low_use_max_calls: int = 1
     fragmented_owner_min_helpers: int = 5
@@ -198,6 +203,7 @@ class GuardConfig:
             "disabled_rules",
             "profile_rule_levels",
             "profile_settings",
+            "profile_commit_policy",
         }
         allowed = {item.name for item in fields(cls)} - internal_profile_fields
         unknown = sorted(set(section) - allowed)
@@ -265,6 +271,8 @@ class GuardConfig:
         settings = tuple(
             sorted(dict(profile.settings).items(), key=lambda item: item[0])
         )
+        profile_policy = dict(profile.commit_policy) or dict(DEFAULT_COMMIT_POLICY)
+        commit_policy = tuple(sorted(profile_policy.items(), key=lambda item: item[0]))
         if profile.name:
             _PROFILE_NONBLOCKING_PATHS[profile.name] = tuple(profile.nonblocking_paths)
         return replace(
@@ -279,6 +287,7 @@ class GuardConfig:
             disabled_rules=tuple(profile.disabled_rules),
             profile_rule_levels=tuple(sorted(dict(profile.rule_levels).items())),
             profile_settings=settings,
+            profile_commit_policy=commit_policy,
             forced_interface_symbols=merged(
                 self.forced_interface_symbols, profile.forced_interface_symbols
             ),

@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from .commit_policy import validate_commit_command
 from .gate_status import absolute_blocker_codes, code_status
 from .model import Finding, ScanReport
 from .report_contract import ReportFacts, build_report_facts
@@ -131,8 +132,6 @@ _COMMIT_BLOCK = re.compile(
     r'```bash\n(?P<command>git commit -m ".*?"\n?)```',
     re.DOTALL,
 )
-_CHINESE = re.compile(r"[\u4e00-\u9fff]")
-_MIN_COMMIT_BULLETS = 2
 _PENDING_COMMIT_COMMAND = (
     'git commit -m "PENDING: 概括整个 patch\n\n- PENDING\n- PENDING"'
 )
@@ -1343,50 +1342,20 @@ def _question_issues(
     return issues, blocking
 
 
-def _commit_issues(text: str) -> list[str]:
-    """验证提交章节包含整包 commit，且不通过命令覆盖贡献者 Git identity。"""
-    commit_section = text.partition("## 9. 提交 Commit")[2]
-    bash_blocks = re.findall(r"```bash\n(?P<body>.*?)\n```", commit_section, re.DOTALL)
-    forbidden_identity = re.compile(
-        r"(?:git\s+config\s+(?:--(?:global|local|system)\s+)?user\.(?:name|email)"
-        r"|git\s+commit\b[^\n]*--author(?:=|\s)"
-        r"|GIT_(?:AUTHOR|COMMITTER)_(?:NAME|EMAIL)=)",
-        re.IGNORECASE,
-    )
-    if any(forbidden_identity.search(block) for block in bash_blocks):
-        return [
-            "QG984：提交命令不得为了对齐设计基线覆盖 Git author/committer identity；使用当前执行者身份。"
-        ]
+def _commit_issues(text: str, report: ScanReport) -> list[str]:
+    """Validate the commit section structurally and against Profile policy."""
     matches = list(_COMMIT_BLOCK.finditer(text))
     if len(matches) != 1:
-        return ["QG984：提交章节必须且只能包含一条可执行的多行 `git commit -m` 命令。"]
+        return ["QG984：提交章节必须且只能包含一条可执行的 `git commit -m` 命令。"]
     command = matches[0].group("command").rstrip("\n")
     if _has_placeholder(command):
         return [
             "QG984：提交命令仍是占位内容；必须在最终 patch 冻结后重新概括整个 patch。"
         ]
-    lines = command.splitlines()
-    subject = lines[0] if lines else ""
-    bullets = [line for line in lines[1:] if line.startswith("- ")]
-    subject_ok = bool(
-        re.search(
-            r'^git commit -m "(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\([^\)]+\))?:\s+.*[\u4e00-\u9fff]',
-            subject,
-        )
-    )
-    if not subject_ok:
-        return [
-            "QG984：提交主题必须采用英文 type + 中文正文（例如 `fix: 修复问题`、`feature: 增加能力`、`perf: 优化性能`）的可执行 `git commit -m` 形式；不接受 `feat:` 或中文 type。"
-        ]
-    if len(bullets) < _MIN_COMMIT_BULLETS:
-        return [
-            "QG984：提交摘要至少需要两条 `- ` 开头的中文要点，用于覆盖整个 patch 的主要变化。"
-        ]
-    if not all(_CHINESE.search(line) for line in bullets):
-        return ["QG984：提交摘要每条都必须包含中文说明。"]
-    if not command.endswith('"'):
-        return ["QG984：多行 `git commit -m` 必须以同一个完整双引号参数结束。"]
-    return []
+    return [
+        f"QG984：{issue}"
+        for issue in validate_commit_command(command, report.commit_policy)
+    ]
 
 
 def validate_compact_report(
@@ -1424,7 +1393,7 @@ def validate_compact_report(
             issues.append(f"Reduction Pass 未完成：{key}")
     if not manual["Reduction结论"].startswith("COMPLETE"):
         issues.append("Reduction Pass 结论必须以 COMPLETE 开头；报告填写不是流程终点。")
-    issues.extend(_commit_issues(text))
+    issues.extend(_commit_issues(text, report))
     status = (
         "REJECT" if semantic_blocking or test_blocking or question_blocking else "PASS"
     )

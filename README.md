@@ -343,7 +343,13 @@ For example:
   },
   "nonblocking_paths": [
     "tests/**"
-  ]
+  ],
+  "commit_policy": {
+    "subject_regex": "^ACME-[0-9]+: .+$",
+    "subject_example": "ACME-123: repair parser",
+    "min_body_bullets": 0,
+    "body_bullet_regex": ""
+  }
 }
 ```
 
@@ -352,7 +358,8 @@ This configuration says:
 - `name`: the name of this project's rule set;
 - `rules.levels`: change the severity of selected QG rules for this repository, for example making a rule blocking or routing it to semantic review;
 - `rules.disable`: explicitly disable a rule that truly does not apply to this project;
-- `nonblocking_paths`: these paths are still checked, but findings there do not directly block normal delivery.
+- `nonblocking_paths`: these paths are still checked, but findings there do not directly block normal delivery;
+- `commit_policy`: optional QG984 commit-message policy for this repository. Without it, Core only requires a non-placeholder executable `git commit -m` command; the Profile may define its own subject regex, example, and body requirements.
 
 To see which `QGxxx` rules can be configured, read the **[complete QG rules](references/RULES.md)**. Do not disable a rule merely because the current patch cannot pass it; the Profile itself is protected quality configuration.
 
@@ -411,26 +418,28 @@ class Profile(QualityGuardProfile):
 
         self.add_values(
             "callable_contracts",
-            CallableContract(
-                adapter_path,
-                f"{adapter_type}.generate",
-                (
-                    ("self", "positional_or_keyword", False),
-                    ("messages", "positional_or_keyword", False),
-                    ("stop", "positional_or_keyword", True),
-                    ("kwargs", "var_keyword", False),
+            (
+                CallableContract(
+                    adapter_path,
+                    f"{adapter_type}.generate",
+                    (
+                        ("self", "positional_or_keyword", False),
+                        ("messages", "positional_or_keyword", False),
+                        ("stop", "positional_or_keyword", True),
+                        ("kwargs", "var_keyword", False),
+                    ),
+                    ("ModelResponse",),
+                    False,
                 ),
-                ("ModelResponse",),
-                False,
             ),
         )
 ```
 
-You do not need to begin with a Python extension. **Use `profile.json` when you only need severity, disable lists, and path policy. Add `extension.py` only when the repository truly has code contracts that are unique to the project.**
+You do not need to begin with a Python extension. **Use `profile.json` when you only need severity, disable lists, path policy, or commit-message policy. Add `extension.py` only when the repository truly has code contracts that are unique to the project.**
 
 This keeps general problems in the RQG Core and your own engineering rules in your Profile. When RQG is upgraded, you do not have to patch the Core again just to preserve project policy.
 
-A complete executable example is included in the repository. It demonstrates JSON policy, path rules, `settings`, and Python extensions that register state and callable contracts:
+A complete executable example is included in the repository. It demonstrates JSON policy, path rules, `commit_policy`, `settings`, and Python extensions that register state and callable contracts:
 
 **➡️ [View the complete Profile example: `profiles/qg-example-profile/`](profiles/qg-example-profile/)**
 

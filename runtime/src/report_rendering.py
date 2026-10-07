@@ -739,7 +739,7 @@ def _verification_and_question_lines(report: ScanReport) -> list[str]:
 
 
 def _closing_lines() -> list[str]:
-    """构造剩余风险、人工结论和多行中文 commit。"""
+    """构造剩余风险、人工结论和待填写的 commit 命令。"""
     return [
         report_schema.REQUIRED_SECTIONS[8],
         "",
@@ -752,10 +752,10 @@ def _closing_lines() -> list[str]:
         report_schema.REQUIRED_SECTIONS[9],
         "",
         "```bash",
-        'git commit -m "refactor: 完成仓库质量门禁与架构审计',
+        'git commit -m "PENDING: 按当前 Profile 概括整个 patch',
         "",
-        "- 强制披露全部新增接口及其事实依据",
-        "- 校验父类子类边界、验证证据与修改说明完整性",
+        "- PENDING",
+        "- PENDING",
         '"',
         "```",
         "",

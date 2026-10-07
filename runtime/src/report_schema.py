@@ -128,11 +128,9 @@ RISK_ROW = re.compile(
 COMMIT_BLOCK = re.compile(
     r"```bash\n(?P<command>git commit -m \".*?\")\n```", re.DOTALL
 )
-CHINESE = re.compile(r"[\u4e00-\u9fff]")
 NUMSTAT_FIELDS = 3
 MIN_MANUAL_TEXT = 12
 MIN_VALIDATION_TEXT = 6
-MIN_COMMIT_BULLETS = 2
 MIN_SUMMARY_TEXT = 8
 MIN_RISK_TEXT = 8
 TEST_INTERFACE_PREVIEW = 4

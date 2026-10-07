@@ -323,7 +323,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG981` | 报告 schema、change digest、tool_status 或 `RQG:AUTO` 自动事实块与当前 Git/接口/架构事实不一致。 |
 | `QG982` | 生产 FILE/ARTIFACT/ADD/ARCH/DELTA/INTERFACE/PROTOCOL、测试 TEST-FILE/TEST-RISK/TEST-CHANGE、存量削减结论、通用/profile 专项审判或最终语义结论不完整；自动事实覆盖或符号不一致、重复套话、模型抬高静态状态、QG179 DELTA/QG168/正接口净额未标记 BLOCKING、新增/参数/核心协议变化缺少必要性与验证证据，或存量一个未减却没有范围级说明。 |
 | `QG983` | 验证章节缺少 Guard、`git diff --check` 或项目验证命令，记录仍为空泛，或任一命令退出码非零。 |
-| `QG984` | 提交章节缺少描述整个 accepted-baseline→target patch 的可直接执行多行中文 `git commit -m` 命令，主题/至少两条中文摘要不完整，patch digest 变化后继续沿用旧命令，或提交命令试图用 `git config user.*`、`--author`、`GIT_AUTHOR_*` / `GIT_COMMITTER_*` 覆盖当前贡献者 identity。设计基线按 revision/用户授权确定，绝不以 author 姓名确定；任何身份覆盖均使 `verify` REJECT。 |
+| `QG984` | 提交章节缺少描述整个 accepted-baseline→target patch 的可执行 `git commit -m` 命令、仍为占位/陈旧命令，或不符合当前 Profile 声明的 `commit_policy`。Core 不固定 Conventional Commits 类型、语言或正文格式；这些属于仓库级 Profile 策略。Git author/committer identity 不属于 QG984 的通用质量规范。 |
 | `QG985` | 模型抄写的生产新增函数、变量、类数量或二次减法复审 ADD 数量与工具事实不一致。 |
 | `QG990` | Skill 发布清单、release seal、受保护文件数量或文件 SHA-256 不一致，或者受保护目录出现未登记的非派生文件；工具在扫描业务仓库前直接拒绝。`__pycache__`、`*.pyc`、`*.pyo`、`.pytest_cache`、`.ruff_cache`、`.mypy_cache` 等可再生执行缓存不参与 runtime integrity；正式 release builder 仍必须剥离这些缓存。 |
 

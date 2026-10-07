@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from .commit_policy import DEFAULT_COMMIT_POLICY
+
 Severity = Literal["info", "warning", "error", "critical"]
 Confidence = Literal["low", "medium", "high"]
 
@@ -535,6 +537,9 @@ class ScanReport:
     project_name: str = ""
     profile_source: str = ""
     profile_capabilities: tuple[str, ...] = ()
+    commit_policy: dict[str, Any] = field(
+        default_factory=lambda: dict(DEFAULT_COMMIT_POLICY)
+    )
     profile_metadata: dict[str, str] = field(default_factory=dict)
     baseline: QualityBaseline | None = None
     baseline_error: str = ""
@@ -636,6 +641,7 @@ class ScanReport:
             "project_name": self.project_name,
             "profile_source": self.profile_source,
             "profile_capabilities": list(self.profile_capabilities),
+            "commit_policy": dict(self.commit_policy),
             "profile_metadata": dict(self.profile_metadata),
             "baseline": self.baseline.to_dict() if self.baseline is not None else None,
             "baseline_error": self.baseline_error,

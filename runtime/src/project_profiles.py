@@ -9,6 +9,7 @@ import re
 from types import MappingProxyType
 from typing import Any
 
+from .commit_policy import parse_commit_policy
 from .config import GuardConfig
 from .model import Finding
 
@@ -143,6 +144,7 @@ _PROFILE_MANIFEST_DEFAULTS: Mapping[str, Any] = MappingProxyType(
         "nonblocking_paths": (),
         "test_baseline_passthrough_paths": (),
         "settings": MappingProxyType({}),
+        "commit_policy": MappingProxyType({}),
     }
 )
 
@@ -216,6 +218,8 @@ def _prepare_profile_manifest(
     if not isinstance(normalized_rules["levels"], Mapping):
         raise ValueError("profile rules.levels must be an object")
     normalized["rules"] = MappingProxyType(normalized_rules)
+
+    normalized["commit_policy"] = parse_commit_policy(normalized["commit_policy"])
 
     settings = normalized["settings"]
     if not isinstance(settings, Mapping):
@@ -404,6 +408,7 @@ class ProjectProfile:
     rule_levels: Mapping[str, str] = MappingProxyType({})
     capabilities: tuple[str, ...] = ()
     settings: Mapping[str, Any] = MappingProxyType({})
+    commit_policy: Mapping[str, Any] = MappingProxyType({})
     custom_rules: tuple[type[QualityRule], ...] = ()
     rule_codes: Mapping[str, str] = MappingProxyType({})
     search_strategy: type[SearchStrategy] | None = None
@@ -730,6 +735,7 @@ class QualityGuardProfile:
             rule_levels=MappingProxyType(dict(sorted(self._rule_levels.items()))),
             capabilities=tuple(dict.fromkeys(self._capabilities)),
             settings=MappingProxyType(dict(self.settings)),
+            commit_policy=MappingProxyType(dict(self.manifest["commit_policy"])),
             custom_rules=tuple(self._custom_rules),
             rule_codes=MappingProxyType(resolved_codes),
             search_strategy=self._search_strategy,

@@ -345,7 +345,13 @@ profiles/my-project/
   },
   "nonblocking_paths": [
     "tests/**"
-  ]
+  ],
+  "commit_policy": {
+    "subject_regex": "^ACME-[0-9]+: .+$",
+    "subject_example": "ACME-123: 修复解析器",
+    "min_body_bullets": 0,
+    "body_bullet_regex": ""
+  }
 }
 ```
 
@@ -354,7 +360,8 @@ profiles/my-project/
 - `name`：这个项目规则集叫什么；
 - `rules.levels`：调整某些 QG 规则在本项目里的严重程度，例如直接阻断或进入语义审计；
 - `rules.disable`：明确关闭确实不适合本项目的规则；
-- `nonblocking_paths`：这些路径仍然会被检查，但问题不会直接阻断正常交付。
+- `nonblocking_paths`：这些路径仍然会被检查，但问题不会直接阻断正常交付；
+- `commit_policy`：可选的 QG984 提交信息策略。未配置时 Core 只要求存在非占位、可执行的 `git commit -m`；各项目可在 Profile 中自行定义主题正则、示例和正文要求。
 
 具体有哪些 `QGxxx` 可以配置，可以直接查看 **[完整 QG 规则](references/RULES.md)**。不要为了让当前代码过审而临时关闭规则；Profile 本身也是受保护的质量配置。
 
@@ -412,26 +419,28 @@ class Profile(QualityGuardProfile):
 
         self.add_values(
             "callable_contracts",
-            CallableContract(
-                adapter_path,
-                f"{adapter_type}.generate",
-                (
-                    ("self", "positional_or_keyword", False),
-                    ("messages", "positional_or_keyword", False),
-                    ("stop", "positional_or_keyword", True),
-                    ("kwargs", "var_keyword", False),
+            (
+                CallableContract(
+                    adapter_path,
+                    f"{adapter_type}.generate",
+                    (
+                        ("self", "positional_or_keyword", False),
+                        ("messages", "positional_or_keyword", False),
+                        ("stop", "positional_or_keyword", True),
+                        ("kwargs", "var_keyword", False),
+                    ),
+                    ("ModelResponse",),
+                    False,
                 ),
-                ("ModelResponse",),
-                False,
             ),
         )
 ```
 
-你不需要一开始就写这种扩展。**只需要规则等级、禁用项和路径策略时，用 `profile.json`；只有项目真的存在专属代码契约时，才增加 `extension.py`。**
+你不需要一开始就写这种扩展。**只需要规则等级、禁用项、路径策略或提交信息策略时，用 `profile.json`；只有项目真的存在专属代码契约时，才增加 `extension.py`。**
 
 这样，通用问题继续由 RQG Core 负责，你自己的工程规则留在自己的 Profile 里；升级 RQG 时，也不需要重新修改通用 Core。
 
-完整可执行示例已经放在仓库里，里面同时展示了 JSON 配置、路径策略、`settings` 传参，以及 Python 扩展如何注册状态对象和接口契约：
+完整可执行示例已经放在仓库里，里面同时展示了 JSON 配置、路径策略、`commit_policy`、`settings` 传参，以及 Python 扩展如何注册状态对象和接口契约：
 
 **➡️ [查看完整 Profile 示例：`profiles/qg-example-profile/`](profiles/qg-example-profile/)**
 

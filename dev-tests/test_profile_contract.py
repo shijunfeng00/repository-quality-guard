@@ -59,6 +59,27 @@ class TestProfileContract(unittest.TestCase):
         self.assertEqual(built.nonblocking_paths, ("tests/**",))
         self.assertEqual(built.test_baseline_passthrough_paths, ("utils/tracing.py",))
 
+    def test_commit_policy_is_profile_owned_and_validated(self) -> None:
+        class Profile(QualityGuardProfile):
+            name = "sample"
+
+        built = Profile(
+            manifest={
+                "commit_policy": {
+                    "subject_regex": r"^ACME-\d+: .+$",
+                    "subject_example": "ACME-123: fix parser",
+                    "min_body_bullets": 0,
+                    "body_bullet_regex": "",
+                }
+            }
+        ).build()
+        self.assertEqual(built.commit_policy["subject_example"], "ACME-123: fix parser")
+        config = GuardConfig().with_project_profile(built)
+        self.assertEqual(dict(config.profile_commit_policy), dict(built.commit_policy))
+
+        with self.assertRaises(ValueError):
+            Profile(manifest={"commit_policy": {"subject_regex": "["}})
+
     def test_test_baseline_passthrough_is_independent_from_nonblocking(self) -> None:
         class Profile(QualityGuardProfile):
             name = "sample"

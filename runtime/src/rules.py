@@ -264,28 +264,32 @@ class RuleEvaluator:
             nested = definition.nested
         else:
             symbol = self._symbols[definition.symbol_id]
-            direct = self.topology.incoming(
-                definition.symbol_id, (UsageKind.DIRECT_CALL,)
+            incoming_edges = self.topology.incoming(definition.symbol_id)
+            outgoing_edges = self.topology.outgoing(definition.symbol_id)
+            direct = tuple(
+                edge for edge in incoming_edges if edge.kind is UsageKind.DIRECT_CALL
             )
-            callable_edges = self.topology.incoming(
-                definition.symbol_id,
-                (UsageKind.CALLABLE_REFERENCE, UsageKind.CALLBACK_REGISTRATION),
+            callable_edges = tuple(
+                edge
+                for edge in incoming_edges
+                if edge.kind
+                in {UsageKind.CALLABLE_REFERENCE, UsageKind.CALLBACK_REGISTRATION}
             )
-            protocol = self.topology.outgoing(
-                definition.symbol_id, (UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE)
-            )
-            incoming_override_edges = self.topology.incoming(
-                definition.symbol_id, (UsageKind.OVERRIDE,)
-            )
-            outgoing_override_edges = self.topology.outgoing(
-                definition.symbol_id, (UsageKind.OVERRIDE,)
+            protocol = tuple(
+                edge
+                for edge in outgoing_edges
+                if edge.kind in {UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE}
             )
             direct_callers = len({edge.source_id for edge in direct})
             direct_call_sites = len(direct)
             callable_consumers = len({edge.source_id for edge in callable_edges})
             protocol_edges = len(protocol)
-            incoming_overrides = len(incoming_override_edges)
-            outgoing_overrides = len(outgoing_override_edges)
+            incoming_overrides = sum(
+                edge.kind is UsageKind.OVERRIDE for edge in incoming_edges
+            )
+            outgoing_overrides = sum(
+                edge.kind is UsageKind.OVERRIDE for edge in outgoing_edges
+            )
             visibility = symbol.visibility.value
             exported = symbol.exported
             resolution = "normalized"

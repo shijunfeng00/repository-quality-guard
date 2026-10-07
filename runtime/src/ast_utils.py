@@ -103,6 +103,18 @@ def dotted_name(node: ast.AST) -> str:
     return ".".join(reversed(parts))
 
 
+def decorator_leaf(name: str) -> str:
+    """Return the normalized leaf name of one resolved decorator.
+
+    Args:
+        name: Dotted decorator name such as ``abc.abstractmethod``.
+
+    Returns:
+        Lowercase final identifier without guessing by substring.
+    """
+    return name.rsplit(".", 1)[-1].lower()
+
+
 def decorator_names(nodes: Iterable[ast.expr]) -> tuple[str, ...]:
     """
     提取装饰器表达式中的可解析名称。

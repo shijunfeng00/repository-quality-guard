@@ -3,7 +3,12 @@ from __future__ import annotations
 import ast
 from collections import defaultdict
 
-from .ast_utils import decorator_names, dotted_name, enclosing_class_name
+from .ast_utils import (
+    decorator_leaf,
+    decorator_names,
+    dotted_name,
+    enclosing_class_name,
+)
 from .config import GuardConfig
 from .facts import ModuleFacts
 from .model import Finding
@@ -922,18 +927,19 @@ def _protocol_like_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """判断方法签名是否明显受 Python/框架 protocol 约束。"""
     if node.name.startswith("__") and node.name.endswith("__"):
         return True
-    markers = {
-        "override",
-        "abstractmethod",
-        "property",
-        "callback",
-        "route",
-        "validator",
-    }
-    return any(
-        marker in dotted_name(decorator).lower()
-        for marker in markers
+    decorators = tuple(
+        dotted_name(decorator)
         for decorator in node.decorator_list
+        if dotted_name(decorator)
+    )
+    exact_markers = {"abstractmethod", "cached_property", "override", "property"}
+    if any(decorator_leaf(decorator) in exact_markers for decorator in decorators):
+        return True
+    framework_markers = {"callback", "route", "validator"}
+    return any(
+        marker in decorator.lower()
+        for marker in framework_markers
+        for decorator in decorators
     )
 
 

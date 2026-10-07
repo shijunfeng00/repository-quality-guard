@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .ast_utils import decorator_leaf
 from .config import GuardConfig
 from .topology_facts import RepositoryTopology, SymbolFact, UsageKind, Visibility
 
 _EXTERNAL_DECORATOR_MARKERS = frozenset(
     {
-        "abstractmethod",
         "callback",
         "command",
         "event",
@@ -103,6 +103,10 @@ def symbol_is_externally_invoked(symbol: SymbolFact) -> bool:
         return True
     if symbol.name.startswith("visit_") and any(
         base.endswith("NodeVisitor") for base in symbol.bases
+    ):
+        return True
+    if any(
+        decorator_leaf(decorator) == "abstractmethod" for decorator in symbol.decorators
     ):
         return True
     return any(

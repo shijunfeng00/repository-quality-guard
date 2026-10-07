@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from .ast_utils import decorator_leaf
 from .commit_policy import DEFAULT_COMMIT_POLICY
 
 Severity = Literal["info", "warning", "error", "critical"]
@@ -169,7 +170,6 @@ class Definition:
             命中特殊方法、访问器或框架装饰器时返回 True，否则返回 False。
         """
         external_markers = {
-            "abstractmethod",
             "callback",
             "command",
             "event",
@@ -184,6 +184,11 @@ class Definition:
             return True
         if self.name.startswith("visit_") and any(
             base.endswith("NodeVisitor") for base in self.bases
+        ):
+            return True
+        if any(
+            decorator_leaf(decorator) == "abstractmethod"
+            for decorator in self.decorators
         ):
             return True
         return any(

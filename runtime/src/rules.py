@@ -247,6 +247,8 @@ class RuleEvaluator:
             direct_call_sites = definition.calls
             callable_consumers = definition.references
             protocol_edges = 1 if definition.externally_invoked else 0
+            incoming_overrides = 0
+            outgoing_overrides = 0
             visibility = (
                 Visibility.PUBLIC.value
                 if not definition.name.startswith("_")
@@ -272,10 +274,18 @@ class RuleEvaluator:
             protocol = self.topology.outgoing(
                 definition.symbol_id, (UsageKind.PROTOCOL_HOOK, UsageKind.OVERRIDE)
             )
+            incoming_override_edges = self.topology.incoming(
+                definition.symbol_id, (UsageKind.OVERRIDE,)
+            )
+            outgoing_override_edges = self.topology.outgoing(
+                definition.symbol_id, (UsageKind.OVERRIDE,)
+            )
             direct_callers = len({edge.source_id for edge in direct})
             direct_call_sites = len(direct)
             callable_consumers = len({edge.source_id for edge in callable_edges})
             protocol_edges = len(protocol)
+            incoming_overrides = len(incoming_override_edges)
+            outgoing_overrides = len(outgoing_override_edges)
             visibility = symbol.visibility.value
             exported = symbol.exported
             resolution = "normalized"
@@ -286,6 +296,9 @@ class RuleEvaluator:
             "direct_call_sites": direct_call_sites,
             "callable_consumers": callable_consumers,
             "protocol_edges": protocol_edges,
+            "incoming_overrides": incoming_overrides,
+            "outgoing_overrides": outgoing_overrides,
+            "polymorphic_root_slot": incoming_overrides > 0 and outgoing_overrides == 0,
             "visibility": visibility,
             "exported": exported,
             "owner_id": owner_id,
@@ -564,14 +577,14 @@ class RuleEvaluator:
 
     def _wrapper_contract(
         self, definition: Definition
-    ) -> tuple[bool, bool, bool, bool]:
+    ) -> tuple[bool, bool, bool, bool, dict[str, object]]:
         """裁决薄包装的公开/private/protocol 边界及是否需报告。
 
         Args:
-            definition: 包含 wrapper target、装饰器和外部调用事实的定义。
+            definition: 包含 wrapper target、装饰器和拓扑事实的定义。
 
         Returns:
-            private facade、property facade、critical facade 和报告条件。
+            private facade、property facade、critical facade、报告条件和使用证据。
         """
         target_leaf = definition.wrapper_target.rsplit(".", 1)[-1]
         private_facade = (
@@ -594,12 +607,25 @@ class RuleEvaluator:
         critical_facade = (
             private_facade and not property_facade and not node_visitor_hook
         )
+        usage = self._usage_topology(definition)
         report_wrapper = (
             definition.wrapper_target
             and not property_facade
-            and (critical_facade or not definition.externally_invoked)
+            and (
+                critical_facade
+                or (
+                    not definition.externally_invoked
+                    and not bool(usage["polymorphic_root_slot"])
+                )
+            )
         )
-        return private_facade, property_facade, critical_facade, bool(report_wrapper)
+        return (
+            private_facade,
+            property_facade,
+            critical_facade,
+            bool(report_wrapper),
+            usage,
+        )
 
     def _wrapper_findings(self, definition: Definition) -> list[Finding]:
         """根据包装边界契约生成委托与 private 套壳发现。
@@ -617,9 +643,13 @@ class RuleEvaluator:
             "column": definition.column,
             "symbol": definition.symbol_id,
         }
-        private_facade, property_facade, critical_facade, report_wrapper = (
-            self._wrapper_contract(definition)
-        )
+        (
+            private_facade,
+            property_facade,
+            critical_facade,
+            report_wrapper,
+            usage,
+        ) = self._wrapper_contract(definition)
         if report_wrapper:
             if private_facade:
                 message = (
@@ -656,6 +686,9 @@ class RuleEvaluator:
                         "calls": definition.calls,
                         "private_facade": private_facade,
                         "property_facade": property_facade,
+                        "incoming_overrides": usage["incoming_overrides"],
+                        "outgoing_overrides": usage["outgoing_overrides"],
+                        "polymorphic_root_slot": usage["polymorphic_root_slot"],
                     },
                     **common,
                 )

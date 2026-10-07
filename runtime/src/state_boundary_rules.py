@@ -305,38 +305,39 @@ class _FunctionMutationAnalyzer:
             return True
         return False
 
-    def _visit_control_statement(self, statement: ast.stmt) -> bool:  # noqa: PLR0911
+    def _visit_control_statement(self, statement: ast.stmt) -> bool:
         """处理控制流语句并在分支汇合处保留共同别名。"""
+        handled = False
         if isinstance(statement, ast.If):
             self._visit_expression(statement.test)
             self._visit_branches(statement.body, statement.orelse)
-            return True
+            handled = True
         if isinstance(statement, (ast.For, ast.AsyncFor)):
             self._visit_expression(statement.iter)
             self._drop_bound_names(statement.target)
             self._visit_branches(statement.body, statement.orelse)
-            return True
+            handled = True
         if isinstance(statement, ast.While):
             self._visit_expression(statement.test)
             self._visit_branches(statement.body, statement.orelse)
-            return True
+            handled = True
         if isinstance(statement, (ast.With, ast.AsyncWith)):
             for item in statement.items:
                 self._visit_expression(item.context_expr)
                 if item.optional_vars is not None:
                     self._bind_target(item.optional_vars, item.context_expr)
             self._visit_block(statement.body)
-            return True
+            handled = True
         if isinstance(statement, ast.Try):
             branches = [statement.body, statement.orelse, statement.finalbody]
             branches.extend(handler.body for handler in statement.handlers)
             self._visit_many_branches(branches)
-            return True
+            handled = True
         if isinstance(statement, ast.Match):
             self._visit_expression(statement.subject)
             self._visit_many_branches([case.body for case in statement.cases])
-            return True
-        return False
+            handled = True
+        return handled
 
     def _visit_branches(self, first: list[ast.stmt], second: list[ast.stmt]) -> None:
         """分析两个控制流分支。"""
@@ -492,36 +493,49 @@ class _FunctionMutationAnalyzer:
         if isinstance(expression, ast.Subscript):
             return "child" if self._origin(expression.value) is not None else None
         if isinstance(expression, ast.Call):
-            return self._call_origin(expression)
+            origin = self._direct_call_origin(expression, dotted_name(expression.func))
+            if origin is not None or not isinstance(expression.func, ast.Attribute):
+                return origin
+            receiver = self._origin(expression.func.value)
+            child_readers = {"get", "setdefault", "__getitem__", "__getattribute__"}
+            if receiver is not None and expression.func.attr in child_readers:
+                return "child"
         return None
 
-    def _call_origin(self, expression: ast.Call) -> str | None:  # noqa: PLR0911
-        """推断调用返回值是否仍指向状态或嵌套对象。"""
-        name = dotted_name(expression.func)
+    def _direct_call_origin(self, expression: ast.Call, name: str) -> str | None:
+        """推断非 receiver 调用直接产生的状态来源。"""
         if _is_state_value(expression, set(), self._contract.state_type):
             return "state"
-        if name in {"id", "type"} and expression.args:
-            return "child" if self._origin(expression.args[0]) is not None else None
-        if name in {"cast", "typing.cast"}:
-            if len(expression.args) < _CAST_ARGUMENT_COUNT:
-                return None
-            if self._contract.state_type in annotation_names(expression.args[0]):
-                return "state"
-            return self._origin(expression.args[1])
-        if name in _REFLECTION_READERS and expression.args:
-            return "child" if self._origin(expression.args[0]) is not None else None
-        if name.startswith("ctypes."):
-            touched = any(
-                self._expression_mentions_state(arg) for arg in expression.args
-            )
-            return "child" if touched else None
-        if not isinstance(expression.func, ast.Attribute):
-            return None
-        receiver = self._origin(expression.func.value)
-        child_readers = {"get", "setdefault", "__getitem__", "__getattribute__"}
-        if receiver is not None and expression.func.attr in child_readers:
-            return "child"
-        return None
+        origin: str | None = None
+        match name:
+            case "id" | "type":
+                if expression.args:
+                    origin = (
+                        "child"
+                        if self._origin(expression.args[0]) is not None
+                        else None
+                    )
+            case "cast" | "typing.cast":
+                if len(expression.args) >= _CAST_ARGUMENT_COUNT:
+                    if self._contract.state_type in annotation_names(
+                        expression.args[0]
+                    ):
+                        origin = "state"
+                    else:
+                        origin = self._origin(expression.args[1])
+            case _ if name in _REFLECTION_READERS:
+                if expression.args:
+                    origin = (
+                        "child"
+                        if self._origin(expression.args[0]) is not None
+                        else None
+                    )
+            case _ if name.startswith("ctypes."):
+                touched = any(
+                    self._expression_mentions_state(arg) for arg in expression.args
+                )
+                origin = "child" if touched else None
+        return origin
 
     def _expression_mentions_state(self, expression: ast.AST) -> bool:
         """判断表达式或动态代码字符串是否引用状态别名。"""

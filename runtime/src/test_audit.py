@@ -8,7 +8,7 @@ from typing import Protocol
 
 from .ast_utils import dotted_name
 from .git_utils import run_readonly_git
-from .model import Finding, InterfaceChange
+from .model import Finding, InterfaceChange, Severity
 
 
 class ChangedFileLike(Protocol):
@@ -278,7 +278,7 @@ def _metrics(source: str) -> TestMetrics:
 
 def _finding(
     code: str,
-    severity: str,
+    severity: Severity,
     path: str,
     message: str,
     evidence: dict[str, object],
@@ -295,7 +295,7 @@ def _finding(
     }
     return Finding(
         code=code,
-        severity=severity,  # type: ignore[arg-type]
+        severity=severity,
         confidence="high",
         path=path,
         line=1,

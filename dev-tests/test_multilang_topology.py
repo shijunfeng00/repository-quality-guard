@@ -231,6 +231,75 @@ void run() {
         )
         self.assertEqual(nested.parameter_count, 1)
 
+    def test_clang_maps_compiler_proven_crtp_dispatch_without_flattening_specialization(
+        self,
+    ) -> None:
+        topology = self._topology(
+            """namespace app {
+template <class Derived>
+class Base {
+public:
+    int get_value() {
+        return static_cast<Derived*>(this)->get_value_impl();
+    }
+};
+class Child : public Base<Child> {
+public:
+    int get_value_impl() { return 7; }
+};
+int run() { Child child; return child.get_value(); }
+}
+"""
+        )
+        base = next(item for item in topology.symbols if item.qualname == "app::Base")
+        child = next(item for item in topology.symbols if item.qualname == "app::Child")
+        dispatch = next(
+            item for item in topology.symbols if item.qualname == "app::Base::get_value"
+        )
+        implementation = next(
+            item
+            for item in topology.symbols
+            if item.qualname == "app::Child::get_value_impl"
+        )
+        triples = {
+            (edge.source_id, edge.target_id, edge.kind) for edge in topology.edges
+        }
+
+        self.assertNotIn("app::get_value", {item.qualname for item in topology.symbols})
+        self.assertIn(
+            (child.symbol_id, base.symbol_id, UsageKind.INHERITANCE),
+            triples,
+        )
+        self.assertIn(
+            (
+                dispatch.symbol_id,
+                implementation.symbol_id,
+                UsageKind.STATIC_POLYMORPHIC_DISPATCH,
+            ),
+            triples,
+        )
+
+    def test_clang_does_not_guess_crtp_from_ordinary_template_member_call(self) -> None:
+        topology = self._topology(
+            """namespace app {
+class Child {
+public:
+    int get_value_impl() { return 7; }
+};
+template <class T>
+int invoke(T& value) { return value.get_value_impl(); }
+int run() { Child child; return invoke(child); }
+}
+"""
+        )
+
+        self.assertFalse(
+            any(
+                edge.kind is UsageKind.STATIC_POLYMORPHIC_DISPATCH
+                for edge in topology.edges
+            )
+        )
+
     def test_clang_maps_named_concept_as_protocol_evidence(self) -> None:
         topology = self._topology(
             """namespace app {

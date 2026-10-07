@@ -66,6 +66,9 @@ _CPP_MEMBER_REF_RE = re.compile(
     r"(?P<target>0x[0-9A-Fa-f]+)$"
 )
 _CPP_OVERRIDE_RE = re.compile(r"Overrides:\s*\[\s*(?P<target>0x[0-9A-Fa-f]+)\b")
+_CPP_INSTANTIATED_FROM_RE = re.compile(
+    r"\binstantiated_from\s+(?P<target>0x[0-9A-Fa-f]+)\b"
+)
 _CPP_CONCEPT_RE = re.compile(
     r"ConceptDecl\s+(?P<id>0x[0-9A-Fa-f]+)\s+<(?P<range>[^>]+)>\s+"
     r".*?\s(?P<name>[A-Za-z_][A-Za-z0-9_]*)$"
@@ -134,6 +137,9 @@ class _CppTopologyFacts:
         default_factory=list
     )
     pending_bases: list[tuple[str, str, Path, int]] = field(default_factory=list)
+    pending_static_dispatches: list[tuple[str, str, Path, int]] = field(
+        default_factory=list
+    )
     class_by_qualname: dict[str, str] = field(default_factory=dict)
     authored_paths: dict[Path, str] = field(default_factory=dict)
     lambda_counts: defaultdict[tuple[str, int], int] = field(
@@ -160,6 +166,7 @@ class _CppCallableIdentity:
     qualname: str
     kind: str
     existing: SymbolFact | None = None
+    instantiated: bool = False
 
 
 def _record_cpp_module_owner(facts: _CppTopologyFacts, path: str) -> str:
@@ -376,6 +383,23 @@ def _resolve_cpp_callable_identity(
     path: str,
 ) -> _CppCallableIdentity:
     """Resolve owner, visibility and stable identity for one C++ callable."""
+    instantiated_from = _CPP_INSTANTIATED_FROM_RE.search(text)
+    if (
+        instantiated_from is not None
+        and instantiated_from.group("target") in facts.clang_targets
+    ):
+        existing = facts.symbols[facts.clang_targets[instantiated_from.group("target")]]
+        return _CppCallableIdentity(
+            symbol_id=existing.symbol_id,
+            owner_id=existing.owner_id,
+            owner_kind=existing.owner_kind,
+            visibility=existing.visibility,
+            qualname=existing.qualname,
+            kind=existing.kind,
+            existing=existing,
+            instantiated=True,
+        )
+
     prev_match = re.search(r"\bprev\s+(0x[0-9A-Fa-f]+)\b", text)
     previous_clang_id = prev_match.group(1) if prev_match is not None else ""
     previous_symbol_id = (
@@ -623,7 +647,11 @@ def _consume_cpp_function_declaration(
 
     identity = _resolve_cpp_callable_identity(facts, cursor, declaration, text, path)
     _record_cpp_callable_symbol(facts, declaration, identity, path, start, end)
-    context.update(symbol_id=identity.symbol_id, line=start)
+    context.update(
+        symbol_id=identity.symbol_id,
+        line=start,
+        instantiated=identity.instantiated,
+    )
 
     template = _cpp_nearest(cursor.stack, "template")
     if template is not None:
@@ -798,6 +826,7 @@ def _consume_cpp_reference_relation(
     facts: _CppTopologyFacts,
     cursor: _CppAstCursor,
     text: str,
+    column: int,
 ) -> None:
     """Capture field/callable usage for the active authored C++ callable."""
     function = _cpp_nearest(cursor.stack, "function")
@@ -809,6 +838,18 @@ def _consume_cpp_reference_relation(
     decl_ref = _CPP_DECL_REF_RE.search(text)
     if member_ref is not None:
         target_clang = member_ref.group("target")
+        if bool(function.get("instantiated")) and column >= 0:
+            cursor.stack.append(
+                {
+                    "kind": "static_dispatch_candidate",
+                    "column": column,
+                    "source_id": source_id,
+                    "target_clang": target_clang,
+                    "path": source_symbol.path,
+                    "line": source_symbol.line,
+                    "dispatched": False,
+                }
+            )
     elif decl_ref is not None:
         target_clang = decl_ref.group("target")
     else:
@@ -832,6 +873,33 @@ def _consume_cpp_reference_relation(
             kind=usage_kind,
             path=source_symbol.path,
             line=source_symbol.line,
+        )
+    )
+
+
+def _consume_cpp_static_polymorphic_relation(
+    facts: _CppTopologyFacts,
+    cursor: _CppAstCursor,
+    text: str,
+    node: tuple[str, int] | None,
+) -> None:
+    """Capture compiler-proven CRTP/static-polymorphic dispatch evidence.
+
+    A relation is emitted only for an instantiated template member expression whose
+    receiver subtree contains Clang's explicit ``BaseToDerived`` cast evidence.
+    """
+    if node is None or node[0] != "CXXStaticCastExpr" or "<BaseToDerived" not in text:
+        return
+    candidate = _cpp_nearest(cursor.stack, "static_dispatch_candidate")
+    if candidate is None or bool(candidate["dispatched"]):
+        return
+    candidate["dispatched"] = True
+    facts.pending_static_dispatches.append(
+        (
+            str(candidate["source_id"]),
+            str(candidate["target_clang"]),
+            Path(candidate["path"]),
+            int(candidate["line"]),
         )
     )
 
@@ -909,7 +977,8 @@ def _consume_cpp_ast_line(
     if _consume_cpp_lambda_expression(facts, cursor, text, column):
         return
     _consume_cpp_structural_relation(facts, cursor, text, node)
-    _consume_cpp_reference_relation(facts, cursor, text)
+    _consume_cpp_static_polymorphic_relation(facts, cursor, text, node)
+    _consume_cpp_reference_relation(facts, cursor, text, column)
     _consume_cpp_call_context(cursor, node, column)
 
 
@@ -949,8 +1018,24 @@ def _consume_cpp_translation_unit(
         raise RuntimeError(f"C++ AST 解析失败 `{relative_path}`：{detail}")
 
 
-def _consume_cpp_pending_relations(facts: _CppTopologyFacts) -> None:
-    """Resolve deferred Clang ids and base names after all translation units exist."""
+def _cpp_primary_template_qualname(qualname: str) -> str:
+    """Collapse template arguments while preserving the qualified primary name."""
+    result: list[str] = []
+    depth = 0
+    for character in qualname:
+        if character == "<":
+            depth += 1
+            continue
+        if character == ">" and depth:
+            depth -= 1
+            continue
+        if depth == 0:
+            result.append(character)
+    return "".join(result)
+
+
+def _consume_cpp_pending_edges(facts: _CppTopologyFacts) -> None:
+    """Resolve ordinary deferred Clang reference edges."""
     for source_id, target_clang, kind, path, line, confidence in facts.pending_edges:
         if target_clang not in facts.clang_targets:
             continue
@@ -964,16 +1049,60 @@ def _consume_cpp_pending_relations(facts: _CppTopologyFacts) -> None:
                 confidence=confidence,
             )
         )
+
+
+def _consume_cpp_pending_bases(facts: _CppTopologyFacts) -> None:
+    """Resolve compiler-reported class bases, including template specializations."""
     for source_id, base_qualname, path, line in facts.pending_bases:
-        if base_qualname not in facts.class_by_qualname:
+        resolved_base = base_qualname
+        if resolved_base not in facts.class_by_qualname:
+            resolved_base = _cpp_primary_template_qualname(base_qualname)
+        if resolved_base not in facts.class_by_qualname:
             continue
         facts.edges.add(
             UsageEdge(
                 source_id=source_id,
-                target_id=facts.class_by_qualname[base_qualname],
+                target_id=facts.class_by_qualname[resolved_base],
                 kind=UsageKind.INHERITANCE,
                 path=path,
                 line=line,
+            )
+        )
+
+
+def _consume_cpp_pending_static_dispatches(facts: _CppTopologyFacts) -> None:
+    """Resolve compiler-proven CRTP dispatch after owners and bases are known."""
+    callable_kinds = {*_CPP_CALLABLE_KIND.values(), "function"}
+    for source_id, target_clang, path, line in facts.pending_static_dispatches:
+        if target_clang not in facts.clang_targets or source_id not in facts.symbols:
+            continue
+        target_id = facts.clang_targets[target_clang]
+        if target_id not in facts.symbols:
+            continue
+        source = facts.symbols[source_id]
+        target = facts.symbols[target_id]
+        if (
+            source.owner_kind is not OwnerKind.CLASS
+            or target.owner_kind is not OwnerKind.CLASS
+            or target.kind not in callable_kinds
+        ):
+            continue
+        inherited = any(
+            edge.kind is UsageKind.INHERITANCE
+            and edge.source_id == target.owner_id
+            and edge.target_id == source.owner_id
+            for edge in facts.edges
+        )
+        if not inherited:
+            continue
+        facts.edges.add(
+            UsageEdge(
+                source_id=source_id,
+                target_id=target_id,
+                kind=UsageKind.STATIC_POLYMORPHIC_DISPATCH,
+                path=path,
+                line=line,
+                confidence="high",
             )
         )
 
@@ -1026,7 +1155,9 @@ def cpp_topology(
                 )
             except RuntimeError:
                 continue
-            _consume_cpp_pending_relations(unit_facts)
+            _consume_cpp_pending_edges(unit_facts)
+            _consume_cpp_pending_bases(unit_facts)
+            _consume_cpp_pending_static_dispatches(unit_facts)
             facts.symbols.update(unit_facts.symbols)
             facts.owners.update(unit_facts.owners)
             facts.edges.update(unit_facts.edges)

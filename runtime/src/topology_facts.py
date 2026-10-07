@@ -51,6 +51,7 @@ class UsageKind(StrEnum):
     CALLBACK_REGISTRATION = "callback_registration"
     PROTOCOL_HOOK = "protocol_hook"
     OVERRIDE = "override"
+    STATIC_POLYMORPHIC_DISPATCH = "static_polymorphic_dispatch"
     FIELD_ACCESS = "field_access"
     DEPENDENCY = "dependency"
     CLOSURE_CAPTURE = "closure_capture"

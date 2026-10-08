@@ -566,6 +566,7 @@ def _consume_cpp_lambda_expression(
                 "symbol_id": "",
                 "line": start or 1,
                 "parameter_count": 0,
+                "instantiated": False,
             }
         )
         return True
@@ -613,6 +614,7 @@ def _consume_cpp_lambda_expression(
             "symbol_id": symbol_id,
             "line": start,
             "parameter_count": 0,
+            "instantiated": False,
         }
     )
     return True
@@ -638,6 +640,7 @@ def _consume_cpp_function_declaration(
         "symbol_id": "",
         "line": start or 1,
         "parameter_count": 0,
+        "instantiated": False,
     }
     path = _cpp_project_path(location_file, facts.authored_paths)
     authored = path is not None and start is not None and end is not None
@@ -838,7 +841,7 @@ def _consume_cpp_reference_relation(
     decl_ref = _CPP_DECL_REF_RE.search(text)
     if member_ref is not None:
         target_clang = member_ref.group("target")
-        if bool(function.get("instantiated")) and column >= 0:
+        if bool(function["instantiated"]) and column >= 0:
             cursor.stack.append(
                 {
                     "kind": "static_dispatch_candidate",

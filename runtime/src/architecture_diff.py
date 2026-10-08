@@ -736,6 +736,90 @@ def _replacement_finding(
     return None
 
 
+def _new_typed_parent_calls(
+    base: ArchitectureSnapshot, target: ArchitectureSnapshot
+) -> set[tuple[str, str, str, str]]:
+    """比较两个快照，只保留目标端新增的显式类型接收者调用。"""
+    base_calls = {
+        (item.owner, item.caller, item.receiver_type, item.method)
+        for item in base.typed_receiver_calls
+    }
+    return {
+        (item.owner, item.caller, item.receiver_type, item.method)
+        for item in target.typed_receiver_calls
+        if (item.owner, item.caller, item.receiver_type, item.method) not in base_calls
+    }
+
+
+def _surviving_parent_call_reachable(
+    edge: ParentCallEdge,
+    child: ClassSnapshot,
+    direct_callers: set[str],
+) -> bool:
+    """判断调用者合并后，原公开父类能力是否仍经 helper 链可达。"""
+    pending = {edge.caller} if edge.caller in child.methods else set(direct_callers)
+    visited: set[str] = set()
+    while pending:
+        caller = pending.pop()
+        visited.add(caller)
+        method = child.methods[caller]
+        pending.update((method.receiver_call_names & child.methods.keys()) - visited)
+    return bool(visited & direct_callers)
+
+
+def _lost_parent_edge_findings(
+    edge: ParentCallEdge,
+    base: ArchitectureSnapshot,
+    target: ArchitectureSnapshot,
+    child_after: ClassSnapshot,
+    direct_callers: set[str],
+    new_typed_calls: set[tuple[str, str, str, str]],
+) -> list[Finding]:
+    """汇总一条消失的公开父类调用及其可能的能力替代实现。"""
+    findings: list[Finding] = []
+    parent_before = base.classes[edge.parent]
+    explicit_owner_migration = any(
+        owner != edge.child
+        and receiver_type == parent_before.name
+        and method_name == edge.method
+        for owner, _caller, receiver_type, method_name in new_typed_calls
+    )
+    if edge.caller in child_after.methods and explicit_owner_migration:
+        return []
+    caller_after = child_after.methods.get(edge.caller)
+    line = (caller_after or child_after).line
+    findings.append(
+        Finding(
+            code="QG162",
+            severity="warning",
+            confidence="high",
+            path=child_after.path,
+            line=line,
+            column=1,
+            symbol=f"{child_after.qualname}.{edge.caller}",
+            message=(
+                f"Git 基线中的继承调用边 `{child_after.qualname}.{edge.caller}` → "
+                f"`{parent_before.name}.{edge.method}` 已消失。"
+            ),
+            suggestion=(
+                "恢复原调用者到父类能力的直接或同类 helper 可达调用链，"
+                "或披露功能删除/所有者迁移后的完整证据。"
+            ),
+            evidence={
+                "child": child_after.qualname,
+                "caller": edge.caller,
+                "parent": parent_before.name,
+                "method": edge.method,
+                "remaining_direct_callers": sorted(direct_callers),
+            },
+        )
+    )
+    replacement = _replacement_finding(edge, base, target)
+    if replacement is not None:
+        findings.append(replacement)
+    return findings
+
+
 def _lost_parent_call_findings(
     base: ArchitectureSnapshot,
     target: ArchitectureSnapshot,
@@ -747,82 +831,33 @@ def _lost_parent_call_findings(
         for edge in target.parent_calls
     }
     capability_callers: defaultdict[tuple[str, str, str], set[str]] = defaultdict(set)
-    base_typed_calls = {
-        (item.owner, item.caller, item.receiver_type, item.method)
-        for item in base.typed_receiver_calls
-    }
-    new_typed_calls = {
-        (item.owner, item.caller, item.receiver_type, item.method)
-        for item in target.typed_receiver_calls
-        if (item.owner, item.caller, item.receiver_type, item.method)
-        not in base_typed_calls
-    }
+    new_typed_calls = _new_typed_parent_calls(base, target)
     for target_edge in target.parent_calls:
         capability = (target_edge.child, target_edge.parent, target_edge.method)
         capability_callers[capability].add(target_edge.caller)
-    for edge in sorted(
-        base.parent_calls, key=lambda item: (item.path, item.line, item.method)
+    # Only public inherited capabilities can be protected by QG162. Private
+    # parent slots belong exclusively to QG149 ownership enforcement.
+    for edge in filter(
+        lambda entry: (
+            not (
+                entry.method.startswith("_")
+                and not (entry.method.startswith("__") and entry.method.endswith("__"))
+            )
+        ),
+        sorted(base.parent_calls, key=lambda item: (item.path, item.line, item.method)),
     ):
         edge_key = (edge.child, edge.caller, edge.parent, edge.method)
-        if edge_key in target_edges:
-            continue
         child_after = target.classes.get(edge.child)
-        if child_after is None:
+        if edge_key in target_edges or child_after is None:
             continue
         direct_callers = capability_callers[(edge.child, edge.parent, edge.method)]
-        caller_survives = edge.caller in child_after.methods
-        # 调用者被合并时，从现存直接调用者出发即可证明同一父类能力仍可达。
-        pending = {edge.caller} if caller_survives else set(direct_callers)
-        visited: set[str] = set()
-        while pending:
-            caller = pending.pop()
-            visited.add(caller)
-            method = child_after.methods[caller]
-            pending.update(
-                (method.receiver_call_names & child_after.methods.keys()) - visited
-            )
-        if visited & direct_callers:
+        if _surviving_parent_call_reachable(edge, child_after, direct_callers):
             continue
-        parent_before = base.classes[edge.parent]
-        explicit_owner_migration = any(
-            owner != edge.child
-            and receiver_type == parent_before.name
-            and method_name == edge.method
-            for owner, _caller, receiver_type, method_name in new_typed_calls
-        )
-        if edge.caller in child_after.methods and explicit_owner_migration:
-            continue
-        caller_after = child_after.methods.get(edge.caller)
-        line = caller_after.line if caller_after is not None else child_after.line
-        findings.append(
-            Finding(
-                code="QG162",
-                severity="warning",
-                confidence="high",
-                path=child_after.path,
-                line=line,
-                column=1,
-                symbol=f"{child_after.qualname}.{edge.caller}",
-                message=(
-                    f"Git 基线中的继承调用边 `{child_after.qualname}.{edge.caller}` → "
-                    f"`{parent_before.name}.{edge.method}` 已消失。"
-                ),
-                suggestion=(
-                    "恢复原调用者到父类能力的直接或同类 helper 可达调用链，"
-                    "或披露功能删除/所有者迁移后的完整证据。"
-                ),
-                evidence={
-                    "child": child_after.qualname,
-                    "caller": edge.caller,
-                    "parent": parent_before.name,
-                    "method": edge.method,
-                    "remaining_direct_callers": sorted(direct_callers),
-                },
+        findings.extend(
+            _lost_parent_edge_findings(
+                edge, base, target, child_after, direct_callers, new_typed_calls
             )
         )
-        replacement = _replacement_finding(edge, base, target)
-        if replacement is not None:
-            findings.append(replacement)
     return findings
 
 

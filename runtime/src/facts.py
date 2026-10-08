@@ -569,7 +569,14 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         return result
 
     def resolve_imported_name(self, name: str) -> str:
-        """把当前模块中的 import alias 展开为静态限定名。"""
+        """把当前模块中的 import alias 展开为静态限定名。
+
+        Args:
+            name: 待解析的当前模块名称或属性表达式。
+
+        Returns:
+            解析后的静态限定名，空输入返回空字符串。
+        """
         if not name:
             return ""
         root, dot, tail = name.partition(".")
@@ -577,7 +584,13 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         return f"{imported}.{tail}" if dot else imported
 
     def is_external_symbol(self, name: str) -> bool:
-        """判断限定名是否由显式 import 指向当前项目包之外的依赖。"""
+        """判断限定名是否由显式 import 指向当前项目包之外的依赖。
+        Args:
+            name: 待判断的名称或限定名。
+
+        Returns:
+            是否能够证明该名称指向外部依赖。
+        """
         if not name:
             return False
         local_root = name.split(".", 1)[0]
@@ -592,7 +605,13 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
 
     @staticmethod
     def assigned_instance_fields(node: ast.ClassDef) -> set[str]:
-        """返回类体方法中明确写入的 self/cls 属性名称。"""
+        """返回类体方法中明确写入的 self/cls 属性名称。
+        Args:
+            node: 目标类的 AST 定义。
+
+        Returns:
+            当前类明确声明或写入的实例字段集合。
+        """
         methods = (
             method
             for method in node.body
@@ -662,7 +681,16 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         confirmed_mapping: bool = False,
         statically_typed: bool = False,
     ) -> tuple[ContractOwnership, Confidence, tuple[str, ...]]:
-        """按静态 owner 证据分类一次运行时契约访问。"""
+        """按静态 owner 证据分类一次运行时契约访问。
+        Args:
+            receiver_name: 接收者的静态名称。
+        selector: 访问目标成员或映射字段。
+        confirmed_mapping: 是否已有映射契约的静态证明。
+        statically_typed: 是否已有固定类型的静态证明。
+
+        Returns:
+            所有权、置信度以及对应的事实证据。
+        """
         if self.is_contract_boundary_module():
             return ContractOwnership.DYNAMIC_BOUNDARY, "high", ("boundary_module",)
         external_candidate = self._external_contract_candidate(receiver_name, selector)
@@ -692,7 +720,20 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         confidence: Confidence,
         evidence: tuple[str, ...],
     ) -> None:
-        """记录统一 ContractFact，供后续语言中立策略与报告使用。"""
+        """记录统一 ContractFact，供后续语言中立策略与报告使用。
+
+        Args:
+            node: 访问操作所在 AST 节点。
+        receiver: 对象或映射接收者。
+        operation: 静态访问或写入操作类型。
+        selector: 目标字段或成员。
+        ownership: 已证明的契约所有权。
+        confidence: 静态证据置信度。
+        evidence: 所有权与类型的事实证据。
+
+        Returns:
+            None；将归一化事实写入当前模块收集器。
+        """
         self.facts.contracts.append(
             ContractFact(
                 path=self.facts.path,
@@ -1951,8 +1992,6 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
 
 
 class FactsCollector(_UsageFactsVisitor, ast.NodeVisitor):
-    """组合模块静态事实收集职责的公开 AST visitor。
-
-    具体规则按定义/作用域、控制流和调用/使用三个内部 owner 分层实现；
-    该类保持原有 ``ast.NodeVisitor`` 公共继承契约，只提供唯一公开构造入口。
+    """组合模块静态事实收集 owner，保留 ast.NodeVisitor 公开接口。
+    所属职责由作用域、控制流与用法子类明确分担。
     """

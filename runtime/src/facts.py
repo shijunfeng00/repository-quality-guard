@@ -568,7 +568,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             result.update(scope_annotations)
         return result
 
-    def _resolve_imported_name(self, name: str) -> str:
+    def resolve_imported_name(self, name: str) -> str:
         """把当前模块中的 import alias 展开为静态限定名。"""
         if not name:
             return ""
@@ -576,14 +576,14 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         imported = self.facts.imports[root] if root in self.facts.imports else root
         return f"{imported}.{tail}" if dot else imported
 
-    def _is_external_symbol(self, name: str) -> bool:
+    def is_external_symbol(self, name: str) -> bool:
         """判断限定名是否由显式 import 指向当前项目包之外的依赖。"""
         if not name:
             return False
         local_root = name.split(".", 1)[0]
         if local_root not in self.facts.imports:
             return False
-        resolved = self._resolve_imported_name(name)
+        resolved = self.resolve_imported_name(name)
         root = resolved.split(".", 1)[0]
         project_root = self.facts.module.split(".", 1)[0] if self.facts.module else ""
         if root in {"builtins", "collections", "typing"}:
@@ -591,7 +591,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         return bool(root and root != project_root)
 
     @staticmethod
-    def _assigned_instance_fields(node: ast.ClassDef) -> set[str]:
+    def assigned_instance_fields(node: ast.ClassDef) -> set[str]:
         """返回类体方法中明确写入的 self/cls 属性名称。"""
         methods = (
             method
@@ -622,9 +622,9 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         """返回可能属于外部契约但尚未获得依赖解析证明的线索。"""
         receiver_root = receiver_name.split(".", 1)[0] if receiver_name else ""
         annotation = self.annotations.get(receiver_root, "")
-        if annotation and self._is_external_symbol(annotation):
+        if annotation and self.is_external_symbol(annotation):
             return (
-                f"external_annotation_candidate:{self._resolve_imported_name(annotation)}",
+                f"external_annotation_candidate:{self.resolve_imported_name(annotation)}",
             )
         if receiver_root not in {"self", "cls"} or not self.external_class_bases:
             return ()
@@ -655,7 +655,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             if edge.target_id.startswith("external:")
         )
 
-    def _contract_ownership(
+    def contract_ownership(
         self,
         receiver_name: str,
         selector: str = "",
@@ -663,7 +663,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         statically_typed: bool = False,
     ) -> tuple[ContractOwnership, Confidence, tuple[str, ...]]:
         """按静态 owner 证据分类一次运行时契约访问。"""
-        if self._is_contract_boundary_module():
+        if self.is_contract_boundary_module():
             return ContractOwnership.DYNAMIC_BOUNDARY, "high", ("boundary_module",)
         external_candidate = self._external_contract_candidate(receiver_name, selector)
         if external_candidate:
@@ -682,7 +682,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             return ContractOwnership.INTERNAL_FORMAL, "high", evidence
         return ContractOwnership.UNKNOWN, "low", ()
 
-    def _record_contract(
+    def record_contract(
         self,
         node: ast.AST,
         receiver: str,
@@ -721,7 +721,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         """
         return ".".join(self.class_stack + self.function_stack)
 
-    def _is_contract_boundary_module(self) -> bool:
+    def is_contract_boundary_module(self) -> bool:
         """判断当前模块是否承担外部输入、配置或协议适配边界。
 
         Returns:
@@ -778,7 +778,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             )
         )
 
-    def _report_unreachable_blocks(
+    def report_unreachable_blocks(
         self,
         statement_kind: str,
         blocks: list[tuple[str, list[ast.stmt]]],
@@ -965,13 +965,13 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
             )
         )
         external_bases = tuple(
-            self._resolve_imported_name(base_name)
+            self.resolve_imported_name(base_name)
             for base in node.bases
-            if (base_name := dotted_name(base)) and self._is_external_symbol(base_name)
+            if (base_name := dotted_name(base)) and self.is_external_symbol(base_name)
         )
         self.class_stack.append(node.name)
         self.external_class_bases.append(external_bases)
-        self.class_local_fields.append(self._assigned_instance_fields(node))
+        self.class_local_fields.append(self.assigned_instance_fields(node))
         for child in node.body:
             self.visit(child)
         self.class_local_fields.pop()
@@ -1193,7 +1193,7 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
                         "warning"
                         if is_test_path(self.facts.path)
                         else "info"
-                        if self._is_contract_boundary_module()
+                        if self.is_contract_boundary_module()
                         else "critical"
                         if confirmed_mapping
                         else "error"
@@ -1276,7 +1276,7 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
             if static_result
             else [("orelse", node.orelse)]
         )
-        self._report_unreachable_blocks("if", reachable_blocks)
+        self.report_unreachable_blocks("if", reachable_blocks)
         self.generic_visit(node)
 
     def visit_While(self, node: ast.While) -> None:
@@ -1317,7 +1317,7 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
             if static_result
             else [("orelse", node.orelse)]
         )
-        self._report_unreachable_blocks("while", reachable_blocks)
+        self.report_unreachable_blocks("while", reachable_blocks)
         self.generic_visit(node)
 
     def visit_Try(self, node: ast.Try) -> None:
@@ -1351,7 +1351,7 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
             (f"handler[{index}]", handler.body)
             for index, handler in enumerate(node.handlers)
         )
-        self._report_unreachable_blocks("try", blocks)
+        self.report_unreachable_blocks("try", blocks)
         self.generic_visit(node)
 
     def _check_keyerror_fallback(
@@ -1587,10 +1587,10 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             receiver_tail in self.typed_names
             or receiver_name.startswith(("self", "cls"))
         )
-        ownership, confidence, ownership_evidence = self._contract_ownership(
+        ownership, confidence, ownership_evidence = self.contract_ownership(
             receiver_name, selector=selector, statically_typed=statically_typed
         )
-        self._record_contract(
+        self.record_contract(
             node,
             receiver_name,
             node.func.id,
@@ -1701,7 +1701,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             and isinstance(node.args[0].value, str)
             else ""
         )
-        ownership, ownership_confidence, ownership_evidence = self._contract_ownership(
+        ownership, ownership_confidence, ownership_evidence = self.contract_ownership(
             receiver_name,
             selector=selector,
             confirmed_mapping=confirmed_mapping,
@@ -1716,7 +1716,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             confirmed_mapping=confirmed_mapping,
             mapping_name_hint=mapping_name_hint,
             lookup_mapping=is_lookup_mapping_name(receiver_tail),
-            boundary_module=self._is_contract_boundary_module(),
+            boundary_module=self.is_contract_boundary_module(),
             test_context=is_test_path(self.facts.path),
             ownership=ownership,
             ownership_confidence=ownership_confidence,
@@ -1741,7 +1741,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             and isinstance(node.args[0].value, str)
             else ""
         )
-        self._record_contract(
+        self.record_contract(
             node,
             context.receiver_name,
             "mapping_get_default" if explicit_default else "mapping_get",

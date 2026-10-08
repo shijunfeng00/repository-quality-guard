@@ -661,7 +661,196 @@ def _runtime_contract_patch_findings(
     return findings
 
 
-def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
+def private_class_ownership(
+    modules: list[ParsedModule],
+) -> tuple[dict[str, frozenset[str]], dict[str, tuple[str, ...]]]:
+    """建立有静态证据的类成员归属与直接父类边；不猜测运行时类型。"""
+    members: dict[str, frozenset[str]] = {}
+    bases: dict[str, tuple[str, ...]] = {}
+    for parsed in modules:
+        for node in parsed.nodes:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            owners: list[str] = []
+            parent = parsed.parents.get(node)
+            while parent is not None:
+                if isinstance(parent, ast.ClassDef):
+                    owners.append(parent.name)
+                parent = parsed.parents.get(parent)
+            name = ".".join((parsed.facts.module, *reversed(owners), node.name))
+            owned: set[str] = set()
+            for statement in node.body:
+                if isinstance(
+                    statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                ):
+                    owned.add(statement.name)
+                    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        for child in ast.walk(statement):
+                            if isinstance(
+                                child, (ast.Assign, ast.AnnAssign, ast.AugAssign)
+                            ):
+                                targets = (
+                                    child.targets
+                                    if isinstance(child, ast.Assign)
+                                    else [child.target]
+                                )
+                                for target in targets:
+                                    for field in ast.walk(target):
+                                        if (
+                                            isinstance(field, ast.Attribute)
+                                            and isinstance(field.value, ast.Name)
+                                            and field.value.id in {"self", "cls"}
+                                        ):
+                                            owned.add(field.attr)
+                elif isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                    targets = (
+                        statement.targets
+                        if isinstance(statement, ast.Assign)
+                        else [statement.target]
+                    )
+                    owned.update(
+                        item.id
+                        for target in targets
+                        for item in ast.walk(target)
+                        if isinstance(item, ast.Name)
+                    )
+            members[name] = frozenset(owned)
+            direct_bases: list[str] = []
+            for base in node.bases:
+                raw = dotted_name(base)
+                if not raw:
+                    continue
+                root, dot, remainder = raw.partition(".")
+                imported = parsed.facts.imports.get(root)
+                if imported:
+                    direct_bases.append(imported + ("." + remainder if dot else ""))
+                else:
+                    direct_bases.append(
+                        (parsed.facts.module + "." + raw) if not dot else raw
+                    )
+            bases[name] = tuple(direct_bases)
+    return members, bases
+
+
+def _private_inherited(
+    name: str,
+    member: str,
+    members: dict[str, frozenset[str]],
+    bases: dict[str, tuple[str, ...]],
+) -> bool:
+    """仅在父类实际声明该 private 而当前类未拥有时判为越界。"""
+    if member in members.get(name, ()):
+        return False
+    pending = list(bases.get(name, ()))
+    seen = {name}
+    while pending:
+        base = pending.pop()
+        if base in seen:
+            continue
+        seen.add(base)
+        if member in members.get(base, ()):
+            return True
+        pending.extend(bases.get(base, ()))
+    return False
+
+
+def _lexical_class_id(parsed: ParsedModule, node: ast.AST) -> str:
+    owners: list[str] = []
+    current: ast.AST | None = node
+    while current in parsed.parents:
+        current = parsed.parents[current]
+        if isinstance(current, ast.ClassDef):
+            owners.append(current.name)
+    return ".".join((parsed.facts.module, *reversed(owners))) if owners else ""
+
+
+def _private_export_findings(
+    parsed: ParsedModule, project_name: str = ""
+) -> list[Finding]:
+    """拒绝模块级 __all__ 或公开别名将私有定义变成公开入口。"""
+    findings: list[Finding] = []
+    declared_private = {
+        statement.name
+        for statement in parsed.tree.body
+        if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and single_private_name(statement.name)
+    }
+    declared_private.update(
+        target.id
+        for statement in parsed.tree.body
+        if isinstance(statement, (ast.Assign, ast.AnnAssign))
+        for target in (
+            statement.targets
+            if isinstance(statement, ast.Assign)
+            else [statement.target]
+        )
+        if isinstance(target, ast.Name) and single_private_name(target.id)
+    )
+    for statement in parsed.tree.body:
+        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = (
+            statement.targets
+            if isinstance(statement, ast.Assign)
+            else [statement.target]
+        )
+        value = statement.value
+        if value is None:
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in targets
+        ):
+            if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+                for item in value.elts:
+                    if (
+                        isinstance(item, ast.Constant)
+                        and isinstance(item.value, str)
+                        and single_private_name(item.value)
+                    ):
+                        findings.append(
+                            parsed.facts.make_finding(
+                                item,
+                                "QG149",
+                                f"__all__ 不得对外暴露私有符号 `{item.value}`。",
+                                symbol=parsed.facts.module,
+                                severity="warning"
+                                if is_test_path(parsed.facts.path, project_name)
+                                else "critical",
+                                confidence="high",
+                                suggestion="私有符号必须保持模块内部所有权；需要导出的定义须使用公开名称。",
+                                evidence={
+                                    "private_name": item.value,
+                                    "export": "__all__",
+                                },
+                            )
+                        )
+        if isinstance(value, ast.Name) and value.id in declared_private:
+            for target in targets:
+                if isinstance(target, ast.Name) and not single_private_name(target.id):
+                    findings.append(
+                        parsed.facts.make_finding(
+                            statement,
+                            "QG149",
+                            f"公开别名 `{target.id}` 重导出模块私有定义 `{value.id}`。",
+                            symbol=parsed.facts.module,
+                            severity="warning"
+                            if is_test_path(parsed.facts.path, project_name)
+                            else "critical",
+                            confidence="high",
+                            suggestion="不要为私有定义创建公开别名；确有公开契约需求时应正式公开原始定义。",
+                            evidence={"private_name": value.id, "export": target.id},
+                        )
+                    )
+    return findings
+
+
+def check_private_boundary_rules(
+    parsed: ParsedModule,
+    ownership: tuple[dict[str, frozenset[str]], dict[str, tuple[str, ...]]]
+    | None = None,
+    project_name: str = "",
+) -> list[Finding]:
     """检查 private 所有权、生产反射和模块常量命名。
 
     Args:
@@ -679,18 +868,22 @@ def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
         fixed_names_by_scope,
         patch_owners,
     ) = _reflection_context(parsed, parents)
-    production_module = not is_test_path(parsed.facts.path)
+    production_module = not is_test_path(parsed.facts.path, project_name)
+    if ownership is None:
+        ownership = private_class_ownership([parsed])
     for node in parsed.nodes:
         if production_module:
             findings.extend(
                 _runtime_contract_patch_findings(parsed, node, patch_owners)
             )
         if isinstance(node, (ast.Import, ast.ImportFrom)):
-            findings.extend(check_private_import(parsed, node))
+            findings.extend(check_private_import(parsed, node, project_name))
             continue
         finding = None
         if isinstance(node, ast.Attribute):
-            finding = check_private_attribute_access(parsed, node, parents)
+            finding = check_private_attribute_access(
+                parsed, node, parents, ownership, project_name
+            )
         elif isinstance(node, ast.Call):
             finding = check_dynamic_private_access(
                 parsed,
@@ -701,16 +894,18 @@ def check_private_boundary_rules(parsed: ParsedModule) -> list[Finding]:
                 constant_lookup,
                 fixed_names_by_scope,
                 patch_owners,
+                project_name,
             )
         if finding is not None:
             findings.append(finding)
 
     findings.extend(_module_constant_findings(parsed))
+    findings.extend(_private_export_findings(parsed, project_name))
     return findings
 
 
 def check_private_import(
-    parsed: ParsedModule, node: ast.Import | ast.ImportFrom
+    parsed: ParsedModule, node: ast.Import | ast.ImportFrom, project_name: str = ""
 ) -> list[Finding]:
     """检查导入语句是否跨模块依赖单下划线 private 符号。
 
@@ -724,12 +919,6 @@ def check_private_import(
     findings: list[Finding] = []
     for alias in node.names:
         local_name = alias.asname or alias.name.split(".", 1)[0]
-        public_reexport = (
-            parsed.facts.path.name == "__init__.py"
-            and not single_private_name(local_name)
-        )
-        if public_reexport:
-            continue
         private_parts = []
         if isinstance(node, ast.ImportFrom):
             private_parts.extend(
@@ -742,7 +931,7 @@ def check_private_import(
         )
         if not private_parts:
             continue
-        test_context = is_test_path(parsed.facts.path)
+        test_context = is_test_path(parsed.facts.path, project_name)
         findings.append(
             parsed.facts.make_finding(
                 node,
@@ -756,7 +945,7 @@ def check_private_import(
                     "不要为测试新增生产 public API；运行时代码需要正式公开接口。"
                     if test_context
                     else "需要被其他模块使用的函数、变量或模块应改为公开名称；"
-                    "包级 __init__.py 可将内部实现显式重导出为公开别名。"
+                    "不得通过 __init__.py、别名或 __all__ 重导出私有实现。"
                 ),
                 evidence={
                     "private_parts": private_parts,
@@ -768,10 +957,41 @@ def check_private_import(
     return findings
 
 
+def _same_class_typed_receiver(
+    node: ast.AST, receiver: str, owner: str, parents: dict[ast.AST, ast.AST]
+) -> bool:
+    """仅由显式精确类型证明同类实例私有访问，未知类型不猜测。"""
+    if not owner or not receiver or "." in receiver:
+        return False
+    current: ast.AST | None = node
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = [
+                *current.args.posonlyargs,
+                *current.args.args,
+                *current.args.kwonlyargs,
+            ]
+            for arg in args:
+                if arg.arg != receiver or arg.annotation is None:
+                    continue
+                annotation = arg.annotation
+                if isinstance(annotation, ast.Constant) and isinstance(
+                    annotation.value, str
+                ):
+                    return annotation.value in {owner, owner.rsplit(".", 1)[-1]}
+                return dotted_name(annotation) in {owner, owner.rsplit(".", 1)[-1]}
+            return False
+    return False
+
+
 def check_private_attribute_access(
     parsed: ParsedModule,
     node: ast.Attribute,
     parents: dict[ast.AST, ast.AST],
+    ownership: tuple[dict[str, frozenset[str]], dict[str, tuple[str, ...]]]
+    | None = None,
+    project_name: str = "",
 ) -> Finding | None:
     """检查 private 属性越界和 dunder 反射。
 
@@ -783,7 +1003,7 @@ def check_private_attribute_access(
     Returns:
         命中 private 越界或 dunder 反射时返回 Finding，否则返回 None。
     """
-    test_context = is_test_path(parsed.facts.path)
+    test_context = is_test_path(parsed.facts.path, project_name)
     receiver = dotted_name(node.value)
     if receiver == "os" and node.attr == "_exit":
         return None
@@ -814,8 +1034,25 @@ def check_private_attribute_access(
         )
     if not single_private_name(node.attr):
         return None
-    allowed = receiver in {"self", "cls"} or bool(
-        current_class and receiver == current_class
+    member_index, base_index = ownership or private_class_ownership([parsed])
+    owner_id = _lexical_class_id(parsed, node)
+    inherited_private = bool(
+        owner_id
+        and receiver in {"self", "cls", current_class}
+        and _private_inherited(owner_id, node.attr, member_index, base_index)
+    )
+    super_access = isinstance(node.value, ast.Call) and (
+        isinstance(node.value.func, ast.Name) and node.value.func.id == "super"
+    )
+    same_owner_instance = _same_class_typed_receiver(node, receiver, owner_id, parents)
+    allowed = (
+        not inherited_private
+        and not super_access
+        and (
+            receiver in {"self", "cls"}
+            or bool(current_class and receiver == current_class)
+            or same_owner_instance
+        )
     )
     if allowed:
         return None
@@ -837,6 +1074,8 @@ def check_private_attribute_access(
             "receiver": receiver,
             "attribute": node.attr,
             "current_class": current_class,
+            "inherited_private": inherited_private,
+            "super_access": super_access,
             "test_context": test_context,
         },
     )
@@ -906,6 +1145,7 @@ def check_dynamic_private_access(
     constant_lookup: dict[str, str],
     fixed_names_by_scope: dict[int, frozenset[str]],
     patch_owners: frozenset[str],
+    project_name: str = "",
 ) -> Finding | None:
     """检查生产反射、反射调用和 tests 中的动态 private 访问。
 
@@ -939,7 +1179,7 @@ def check_dynamic_private_access(
         member_name,
     ):
         return None
-    test_context = is_test_path(parsed.facts.path)
+    test_context = is_test_path(parsed.facts.path, project_name)
     current_class = enclosing_class_name(node, parents)
     allowed_private = receiver in {"self", "cls"} or bool(
         current_class and receiver == current_class

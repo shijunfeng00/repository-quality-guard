@@ -1038,7 +1038,10 @@ def _readme_sync_finding(
         symbol = change.after if change.after is not None else change.before
         if symbol is None:
             continue
-        components = symbol.qualname.split(".")
+        components = [
+            *Path(change.path).with_suffix("").parts,
+            *symbol.qualname.split("."),
+        ]
         if any(
             part.startswith("_") and not (part.startswith("__") and part.endswith("__"))
             for part in components

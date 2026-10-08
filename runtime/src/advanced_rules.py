@@ -25,7 +25,10 @@ from .policy_common import (
     iter_scoped_definitions,
     parse_modules,
 )
-from .private_boundary_rules import check_private_boundary_rules
+from .private_boundary_rules import (
+    check_private_boundary_rules,
+    private_class_ownership,
+)
 from .return_rules import check_return_rules
 from .signature_rules import (
     check_call_safety_rules,
@@ -71,6 +74,7 @@ class AdvancedRuleEvaluator:
             高级规则产生的发现列表。
         """
         parsed = parse_modules(facts)
+        private_ownership = private_class_ownership(parsed)
         contracts = collect_state_contracts(parsed, self.config)
         collect_registered_tools(parsed, self.config, self.signals)
         state_boundary = StateBoundaryEvaluator(parsed, self.config)
@@ -78,7 +82,11 @@ class AdvancedRuleEvaluator:
         for module in parsed:
             findings.extend(self._evaluate_module(module.facts, module.tree, contracts))
             findings.extend(check_module_rules(module, self.config, self.signals))
-            findings.extend(check_private_boundary_rules(module))
+            findings.extend(
+                check_private_boundary_rules(
+                    module, private_ownership, self.config.project_name
+                )
+            )
             findings.extend(state_boundary.check_module(module))
             findings.extend(check_naming_rules(module.facts, module.tree))
         signatures = collect_function_signatures(parsed)

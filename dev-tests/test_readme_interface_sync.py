@@ -76,6 +76,22 @@ class TestReadmeInterfaceSync(unittest.TestCase):
             )
             git.assert_not_called()
 
+    def test_private_module_public_function_is_not_public_api(self):
+        target = SimpleNamespace(root=ROOT, git_enabled=True)
+        args = argparse.Namespace(staged=False, diff_base="HEAD")
+        change = _change("public_function")
+        change.path = "runtime/src/_internal.py"
+        with patch("runtime.src.cli.run_readonly_git") as git:
+            self.assertIsNone(
+                _readme_sync_finding(
+                    target,
+                    args,
+                    SimpleNamespace(changes=(change,)),
+                    "qg-example-profile",
+                )
+            )
+            git.assert_not_called()
+
     def test_standalone_bootstrap_help_imports_without_pythonpath(self):
         with tempfile.TemporaryDirectory() as outside:
             process = subprocess.run(

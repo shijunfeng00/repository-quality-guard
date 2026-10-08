@@ -102,7 +102,7 @@ normalize_data()
 单下划线表示内部实现：
 
 - 模块级 `_function`、`_Class`、`_variable` 仅由定义模块内部使用；任何其他模块的直接导入、别名导入或 `module._symbol` 访问均为 Critical。
-- 类成员 `_method`、`_field`、嵌套 `_Class` 仅由类自身和明确设计的继承路径调用；其他类、对象或模块访问均为 Critical。
+- 类成员 `_method`、`_field`、嵌套 `_Class` 仅由定义类自身调用；子类不能直接访问父类 `_member`（包括 `self._member`、`super()._member`），需要继承复用则应为其设计无下划线的正式可继承方法。其他类、对象或模块访问均为 Critical。
 - 不能通过 `other._records`、`manager._store`、`session._xxx` 穿透其他对象边界。
 - 某能力确实需要跨模块或跨包调用时，应先确认已有 public 接口是否覆盖；没有时再设计正式 public 接口，而不是继续外部调用 private。
 - production 中反射访问 private 一律 Critical；反射取得普通成员后再调用或注册为 callback/线程 target 也一律 Critical。tests 之外不得用反射规避静态所有权。
@@ -110,6 +110,8 @@ normalize_data()
 - `_method → method`、新增 `@property` 或改变 property/签名/装饰器都是接口变更，必须在报告中证明绝对必要、不可替代并核对全部调用方；“方便调用”不是理由。基线已有且未变化的 property 不作为本轮质量回归清算。
 - tests 之外禁止 monkey patch、运行时改写类/模块属性、`mock.patch/patch.object/monkeypatch` 以及对固定类/模块使用 `setattr/delattr`；必须回到权威定义、依赖注入或正式插件注册点。
 - 普通 public 反射只有在接收者静态契约可确认时才作为 Error；未知动态对象不凭猜测定罪，但反射结果一旦被调用/注册回调仍直接 Critical。
+
+`__init__.py` 不得重导出外部私有符号，即使使用公开别名；`__all__` 和公开赋值别名也不得把私有实现变成对外 API。Profile 明确声明的非阻断路径（例如专用 profiling 工具）按其已声明策略审查，不得由通用扫描器猜路径豁免。
 
 测试代码允许一个受控例外：为了验证内部不变量、资源生命周期或回归缺陷，`tests/**` 可以有限访问私有接口。此时应把访问集中在明确的 `Test*` 类、fixture 或测试模块中，并说明测试目的；不要为了测试便利给生产代码新增测试专用 public API，也不要把私有访问扩散到运行时代码或通用测试工具层。质量检查仍保留 Warning，便于审查是否真的有必要。
 

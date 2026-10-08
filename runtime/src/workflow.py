@@ -366,7 +366,7 @@ def _run_verify(options: argparse.Namespace) -> int:
     if static_status == "REVIEW_REQUIRED":
         _write_cli_line("verify REVIEW_REQUIRED：静态接口/协议账本仍需人工确认。")
         return REVIEW_REQUIRED_EXIT_CODE
-    _write_cli_line("verify PASS")
+    _write_cli_line("verify ACCEPT")
     return 0
 
 

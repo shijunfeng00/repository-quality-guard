@@ -83,7 +83,7 @@ python scripts/quality_guard.py audit <repo> --diff-base <commit>
 python scripts/quality_guard.py verify <repo> --diff-base <commit>
 ```
 
-`verify` 不补写报告、不修改源码，也不会把未完成或 BLOCKING 的裁决自动改成 JUSTIFIED。最终状态为 `PASS`、`REVIEW_REQUIRED` 或 `REJECT`。
+`verify` 不补写报告、不修改源码，也不会把未完成或 BLOCKING 的裁决自动改成 JUSTIFIED。最终质量审计结论统一为 `ACCEPT`、`REVIEW_REQUIRED` 或 `REJECT`；单项测试与文件完整性检查仍可用 `PASS` 表示测试通过。
 
 ## 2. 标准开发流程
 
@@ -107,7 +107,7 @@ RQG 的推荐闭环如下：
 
 | Exit code | 含义 |
 |---:|---|
-| `0` | 命令成功；`audit` 为 `READY_FOR_VERIFY`，或 `verify` 为 `PASS` |
+| `0` | 命令成功；`audit` 为 `READY_FOR_VERIFY`，或 `verify` 为 `ACCEPT` |
 | `1` | `verify REJECT`：静态或语义门禁拒绝 |
 | `2` | CLI、Profile、依赖或运行环境错误 |
 | `3` | 报告门禁未完成或报告契约拒绝 |

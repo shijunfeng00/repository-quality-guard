@@ -452,3 +452,5 @@ Repository Quality Guard is open source under the **Apache License 2.0**.
 You may use, modify, and distribute the project subject to the license terms. See [`LICENSE`](LICENSE) in the repository root for the full license text.
 
 ---
+
+The topology model explicitly records compiler-proven `UsageKind.STATIC_POLYMORPHIC_DISPATCH` edges rather than guessing virtual calls. The Python scanner resolves decorator identifiers exactly (for example, `decorator_leaf` distinguishes `abc.abstractmethod` from lookalike names); C++ CRTP relations are accepted only with compiler-supported topology evidence. These are scanner implementation capabilities, not new end-user CLI entrypoints.

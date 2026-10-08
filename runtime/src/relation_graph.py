@@ -38,11 +38,6 @@ def _module_name(path: str) -> str:
     return module[: -len(".__init__")] if module.endswith(".__init__") else module
 
 
-def _is_test_source(path: str) -> bool:
-    """判断路径是否是真正的测试源码，而不是 profile 的其他非阻断域。"""
-    return is_test_path(path)
-
-
 def _class_digest(node: ast.ClassDef) -> str:
     """只对类声明头和非方法直接语句取摘要，避免重复序列化全部方法体。"""
     header = (
@@ -430,7 +425,7 @@ class _Collector(ast.NodeVisitor):
                 owner="",
                 private=False,
                 nested=False,
-                test=_is_test_source(self.path),
+                test=is_test_path(self.path),
                 fingerprint=self.source_digest,
             )
         )
@@ -498,7 +493,7 @@ class _Collector(ast.NodeVisitor):
                 private=node.name.startswith("_")
                 and not (node.name.startswith("__") and node.name.endswith("__")),
                 nested=bool(self.function_stack),
-                test=_is_test_source(self.path),
+                test=is_test_path(self.path),
                 fingerprint=_class_digest(node),
             )
         )
@@ -541,7 +536,7 @@ class _Collector(ast.NodeVisitor):
             "method"
             if self.class_stack
             else "test"
-            if _is_test_source(self.path) and node.name.startswith("test")
+            if is_test_path(self.path) and node.name.startswith("test")
             else "function"
         )
         bound_names, loaded_names, loaded_lines = _function_scope_names(node)
@@ -573,7 +568,7 @@ class _Collector(ast.NodeVisitor):
                 private=node.name.startswith("_")
                 and not (node.name.startswith("__") and node.name.endswith("__")),
                 nested=bool(self.function_stack),
-                test=_is_test_source(self.path),
+                test=is_test_path(self.path),
                 fingerprint=hashlib.sha256(
                     ast.dump(
                         node, annotate_fields=True, include_attributes=False
@@ -1493,7 +1488,7 @@ def _interface_impacts(
     impacts: list[_InterfaceImpact] = []
     for change in interface_diff.changes:
         if (
-            _is_test_source(change.path)
+            is_test_path(change.path)
             or change.kind not in {"function", "method", "class"}
             or change.change == "added"
         ):

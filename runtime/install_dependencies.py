@@ -18,6 +18,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping
 
+# Allow the documented standalone file entrypoint as well as `python -m runtime...`.
+# The installed Skill may live under `.agents`; anchor imports to this file,
+# never to the caller's current working directory.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from runtime.src.bootstrap_settings import BootstrapSettings, load_bootstrap_settings
 from runtime.src.process_lifecycle import process_alive
 

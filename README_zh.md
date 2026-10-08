@@ -453,3 +453,5 @@ Repository Quality Guard 使用 **Apache License 2.0** 开源。
 你可以在遵守许可证条款的前提下使用、修改和分发本项目。完整许可证内容见仓库根目录的 [`LICENSE`](LICENSE)。
 
 ---
+
+拓扑模型使用 `UsageKind.STATIC_POLYMORPHIC_DISPATCH` 记录编译器证明的静态多态边，不猜测虚函数调用。Python 扫描器通过 `decorator_leaf` 精确识别装饰器名称（例如区分 `abc.abstractmethod` 与近似拼写）；C++ CRTP 关系必须有编译器拓扑证据才予以认定。这属于扫描器内部能力，不是新增对外 CLI 入口。

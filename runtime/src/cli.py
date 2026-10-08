@@ -952,6 +952,62 @@ def _run_interface_diff(
     )
 
 
+def _changed_readme_paths(target: AuditTarget, args: argparse.Namespace) -> set[str]:
+    """Collect changed tracked/untracked paths from the selected Git comparison."""
+    if not target.git_enabled:
+        return set()
+    command = [
+        "diff",
+        *(["--cached"] if args.staged else []),
+        "--name-only",
+        args.diff_base,
+        "--",
+    ]
+    result = run_readonly_git(target.root, command)
+    paths = set(result.stdout.splitlines()) if result.returncode == 0 else set()
+    if not args.staged:
+        untracked = run_readonly_git(
+            target.root, ("ls-files", "--others", "--exclude-standard")
+        )
+        if untracked.returncode == 0:
+            paths.update(untracked.stdout.splitlines())
+    return {path.strip() for path in paths if path.strip()}
+
+
+def _documented_public_symbols(
+    target: AuditTarget,
+    args: argparse.Namespace,
+    readme_paths: list[str],
+    public_changes: list[InterfaceChange],
+) -> set[str]:
+    """Only matching API names in newly added README lines count as synchronization."""
+    documented: set[str] = set()
+    if not target.git_enabled:
+        return documented
+    for path in readme_paths:
+        command = [
+            "diff",
+            *(["--cached"] if args.staged else []),
+            "--unified=0",
+            args.diff_base,
+            "--",
+            path,
+        ]
+        diff = run_readonly_git(target.root, command)
+        if diff.returncode != 0:
+            continue
+        added = "\n".join(
+            line[1:]
+            for line in diff.stdout.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        for change in public_changes:
+            symbol = change.after if change.after is not None else change.before
+            if symbol is not None and symbol.qualname.rsplit(".", 1)[-1] in added:
+                documented.add(change.symbol)
+    return documented
+
+
 def _readme_sync_finding(
     target: AuditTarget,
     args: argparse.Namespace,
@@ -982,46 +1038,28 @@ def _readme_sync_finding(
         symbol = change.after if change.after is not None else change.before
         if symbol is None:
             continue
-        leaf = symbol.qualname.rsplit(".", 1)[-1]
+        components = symbol.qualname.split(".")
         if any(
-            (
-                not leaf.startswith("_"),
-                all((leaf.startswith("__"), leaf.endswith("__"))),
-            )
+            part.startswith("_") and not (part.startswith("__") and part.endswith("__"))
+            for part in components
         ):
-            public_changes.append(change)
+            continue
+        public_changes.append(change)
     if not public_changes:
         return None
-    changed_paths: set[str] = set()
-    if target.git_enabled:
-        command = [
-            "diff",
-            *(["--cached"] if args.staged else []),
-            "--name-only",
-            args.diff_base,
-            "--",
-        ]
-        changed = run_readonly_git(target.root, command)
-        if changed.returncode == 0:
-            changed_paths.update(
-                line.strip() for line in changed.stdout.splitlines() if line.strip()
-            )
-        if not args.staged:
-            untracked = run_readonly_git(
-                target.root, ("ls-files", "--others", "--exclude-standard")
-            )
-            if untracked.returncode == 0:
-                changed_paths.update(
-                    line.strip()
-                    for line in untracked.stdout.splitlines()
-                    if line.strip()
-                )
-    readme_changed = any(
-        Path(item).name.lower().startswith("readme") for item in changed_paths
+    changed_paths = _changed_readme_paths(target, args)
+    readme_paths = sorted(
+        item for item in changed_paths if Path(item).name.lower().startswith("readme")
     )
-    if readme_changed:
+    documented_changes = _documented_public_symbols(
+        target, args, readme_paths, public_changes
+    )
+    missing_changes = [
+        change for change in public_changes if change.symbol not in documented_changes
+    ]
+    if not missing_changes:
         return None
-    first = public_changes[0]
+    first = missing_changes[0]
     symbol = first.after if first.after is not None else first.before
     return Finding(
         code="QG161",
@@ -1031,7 +1069,7 @@ def _readme_sync_finding(
         line=symbol.line if symbol is not None else 1,
         column=1,
         message=(
-            f"检测到 {len(public_changes)} 项公开接口变化，但当前变更未同步任何 README。"
+            f"检测到 {len(missing_changes)} 项公开接口变化尚无对应 README 更新说明。"
         ),
         suggestion=(
             "更新仓库 README 中的公开能力、参数、返回结构、配置或使用示例，并同步测试与调用方；"
@@ -1040,8 +1078,10 @@ def _readme_sync_finding(
         evidence={
             "public_changes": [
                 f"{change.change}:{change.kind}:{change.path}:{change.symbol}"
-                for change in public_changes
+                for change in missing_changes
             ],
+            "readme_paths": readme_paths,
+            "documented_changes": sorted(documented_changes),
             "changed_paths": sorted(changed_paths),
             "qg179_exempt": True,
             "governed_by": "interface-review",

@@ -944,7 +944,7 @@ def _append_reduction_and_final(
                 "final_gate",
                 [
                     "- 报告状态：`PENDING_VERIFY`",
-                    "- 最终 PASS / REVIEW_REQUIRED / REJECT 只能由 `verify` 基于最新源码重新计算。",
+                    "- 最终 ACCEPT / REVIEW_REQUIRED / REJECT 只能由 `verify` 基于最新源码重新计算。",
                     "- `verify` 只读，不补报告、不修改代码、不把 BLOCKING 自动改成 JUSTIFIED。",
                 ],
             ),

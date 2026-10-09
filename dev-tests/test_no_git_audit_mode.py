@@ -29,7 +29,12 @@ from runtime.src.compact_report import (
 )
 from runtime.src.gate_status import code_status
 from runtime.src.report_facts import build_report_facts
-from runtime.src.workflow import _resolve_audit_mode, _run_verify, build_parser
+from runtime.src.workflow import (
+    _resolve_audit_mode,
+    _run_audit,
+    _run_verify,
+    build_parser,
+)
 
 
 class TestNoGitAuditMode(unittest.TestCase):
@@ -105,6 +110,38 @@ class TestNoGitAuditMode(unittest.TestCase):
                     for i in _debt_issues(doc, build_report_facts(report, ""))
                 )
             )
+
+    def test_real_audit_writes_report_for_gitless_and_ignore_diff(self) -> None:
+        """Persisted audit reports must not need .git or fabricate history."""
+        reports = []
+        for root, requested in ((self.plain, None), (self.repo, "ignore-diff")):
+            output = Path(self.directory.name) / (root.name + "-audit.md")
+            arguments = ["audit", str(root), "--report-output", str(output)]
+            if requested is not None:
+                arguments.extend(("--mode", requested))
+            # The report initially requires human review, not an invalid scan.
+            self.assertEqual(_run_audit(build_parser().parse_args(arguments)), 3)
+            self.assertTrue(output.is_file())
+            content = output.read_text(encoding="utf-8")
+            self.assertIn("baseline_revision: N/A", content)
+            self.assertIn("- Git 基线可用：NO", content)
+            self.assertIn("- 本轮 Delta：N/A", content)
+            self.assertIn("audit_mode: " + (requested or "normal"), content)
+            self.assertIn("<!-- RQG:AUTO:BEGIN relation_impact -->", content)
+            scan_report = self.scan(root, requested or "normal")
+            actual_validation = validate_compact_report(
+                content, scan_report, revision="", audit_mode=requested or "normal"
+            )
+            self.assertFalse(
+                any(
+                    "报告 Git baseline 已过期" in issue
+                    for issue in actual_validation.issues
+                )
+            )
+            reports.append(content)
+        # Same source facts, different explicitly visible requested modes.
+        self.assertIn("| INFO | N/A |", reports[0])
+        self.assertIn("| INFO | N/A |", reports[1])
 
     def test_normal_git_still_uses_baseline(self) -> None:
         args = build_scan_parser().parse_args([str(self.repo), "--diff-base", "HEAD"])

@@ -1118,7 +1118,7 @@ def _header_and_auto_issues(
     metadata = front_matter(text)
     expected = {
         "report_schema": REPORT_SCHEMA,
-        "baseline_revision": revision,
+        "baseline_revision": revision or "N/A",
         "change_digest": _report_digest(report, facts, items),
     }
     labels = {

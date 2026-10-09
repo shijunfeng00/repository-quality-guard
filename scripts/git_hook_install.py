@@ -16,8 +16,14 @@ _HOOK_TEXT = f"""#!/bin/sh
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1
 qg="$repo_root/.agents/skills/repository-quality-guard/scripts/quality_guard.py"
 if [ ! -f "$qg" ]; then
-  echo "pre-push: Repository Quality Guard 运行时缺失，拒绝 push" >&2
-  exit 1
+  # RQG's own source repository is a portable checkout, not an .agents deployment.
+  own_qg="$repo_root/scripts/quality_guard.py"
+  if [ -f "$repo_root/SKILL.md" ] && [ -f "$repo_root/runtime/RELEASE.lock" ] && [ -f "$own_qg" ]; then
+    qg="$own_qg"
+  else
+    echo "pre-push: Repository Quality Guard 运行时缺失，拒绝 push" >&2
+    exit 1
+  fi
 fi
 
 head_sha=$(git rev-parse HEAD 2>/dev/null) || exit 1

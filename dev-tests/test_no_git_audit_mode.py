@@ -111,6 +111,43 @@ class TestNoGitAuditMode(unittest.TestCase):
                 )
             )
 
+    def test_git_baseline_static_positive_delta_is_signed(self) -> None:
+        """Git comparisons retain an explicit positive sign, unlike N/A snapshots."""
+        from runtime.src.model import QualityBaseline
+
+        report = self.scan(self.repo, "ignore-diff")
+        report.baseline = QualityBaseline(
+            revision="HEAD",
+            files_scanned=1,
+            definitions=0,
+            documented_definitions=0,
+            complete_docstrings=0,
+            docstring_definitions=0,
+            summary={
+                severity: 0 for severity in ("critical", "error", "warning", "info")
+            },
+            by_rule={},
+            by_file={},
+        )
+        report.baseline_error = ""
+        # Force a positive count regardless of the fixture's independent rules.
+        from runtime.src.model import Finding
+
+        report.findings.append(
+            Finding(
+                code="QG026",
+                severity="warning",
+                confidence="low",
+                path="model.py",
+                line=1,
+                column=1,
+                message="测试正向静态增量数值格式",
+            )
+        )
+        document = render_compact_report(report, revision="HEAD")
+        self.assertIn("| WARNING | 0 |", document)
+        self.assertIn("| WARNING | 0 | 2 | +2 |", document)
+
     def test_real_audit_writes_report_for_gitless_and_ignore_diff(self) -> None:
         """Persisted audit reports must not need .git or fabricate history."""
         reports = []

@@ -607,8 +607,9 @@ def _append_static_and_additions(
         before = (
             int(baseline_summary[severity]) if baseline_summary is not None else None
         )
+        delta = f"{counts[severity] - before:+d}" if before is not None else "N/A"
         static_rows.append(
-            f"| {severity.upper()} | {before if before is not None else 'N/A'} | {counts[severity]} | {counts[severity] - before if before is not None else 'N/A'} |"
+            f"| {severity.upper()} | {before if before is not None else 'N/A'} | {counts[severity]} | {delta} |"
         )
     delta_rows = ["| ID | Rule | Severity | Path | Symbol |", "|---|---|---|---|---|"]
     delta_rows.extend(

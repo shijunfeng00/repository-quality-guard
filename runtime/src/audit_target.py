@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from .config import is_tool_generated_path
 from .git_utils import run_readonly_git
@@ -66,6 +66,37 @@ class GitComparisonPlan:
     mode: str
 
 
+def apply_audit_mode(
+    target: AuditTarget, mode: str, diff_base: str | None, staged: bool
+) -> AuditTarget:
+    """Resolve explicit current-source modes without changing target ownership.
+
+    Args:
+        target: Filesystem and Git identity already resolved by the target owner.
+        mode: Explicit audit policy (`normal`, `ignore-diff`, or `cleanup`).
+        diff_base: Requested Git comparison revision, if any.
+        staged: Whether the request compares the staged index.
+
+    Returns:
+        The original target for normal audits, otherwise a Git-comparison-free
+        target referencing exactly the same current source tree.
+    """
+    if mode == "normal":
+        return target
+    if diff_base or staged:
+        raise ValueError("ignore-diff/cleanup 禁止指定 Git diff 基线")
+    return replace(
+        target,
+        git_enabled=False,
+        notes=(
+            *target.notes,
+            f"显式模式 {mode}：只审计当前源码，不比较 Git 历史。",
+        ),
+        git_issue_message="显式当前源码模式：Git 比较已跳过。",
+        git_issue_suggestion="当前源码静态审计仍完整执行；历史 Delta 标记 N/A。",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     构建极简且不可降级的 quality-guard 命令行参数解析器。
@@ -105,6 +136,12 @@ def build_parser() -> argparse.ArgumentParser:
             "累计审计本批全部已提交和未提交变化；无法可靠确定时才降级为 dirty/staged "
             "使用 HEAD、clean 使用 HEAD~1。"
         ),
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("normal", "ignore-diff", "cleanup"),
+        default="normal",
+        help="当前源码审计或 Git diff 审计选择。",
     )
     parser.add_argument(
         "--staged",
@@ -414,9 +451,7 @@ def git_comparison_plan(
             f"显式基线：{args.diff_base}→{requested_target}",
         )
     if not target.git_enabled:
-        return GitComparisonPlan(
-            "HEAD", requested_target, "非 Git 输入：自动基线不可用"
-        )
+        return GitComparisonPlan("", "CURRENT", "非 Git 输入：历史比较 N/A")
     status = run_readonly_git(
         target.root, ("status", "--porcelain=v1", "--untracked-files=all")
     )

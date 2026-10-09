@@ -31,6 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resolved-profile-name", default="")
     parser.add_argument("--resolved-profile-source", default="")
     parser.add_argument("--diff-base", default="")
+    parser.add_argument(
+        "--mode", default="normal", choices=("normal", "ignore-diff", "cleanup")
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument("--status", default="")
     parser.add_argument("--parent-pid", type=int, default=0)
@@ -72,6 +75,8 @@ def _legacy_args(options: argparse.Namespace) -> argparse.Namespace:
         argv.extend(["--diff-base", options.diff_base])
     if options.staged:
         argv.append("--staged")
+    if options.mode != "normal":
+        argv.extend(["--mode", options.mode])
     args = cli.build_parser().parse_args(argv)
     if options.resolved_profile_source:
         args.resolved_profile_reference = options.resolved_profile_reference

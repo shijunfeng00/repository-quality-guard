@@ -210,7 +210,7 @@ def _semantic_items(report: ScanReport, facts: ReportFacts) -> tuple[SemanticIte
                 item_id="SEM-"
                 + hashlib.sha256(f"{key}:{occurrences[key]}".encode()).hexdigest()[:10],
                 finding=finding,
-                delta=not historical,
+                delta=baseline is not None and not historical,
                 touched_historical=historical and finding.path in changed_paths,
             )
         )
@@ -364,8 +364,12 @@ def _append_metadata_and_changes(
                 "metadata",
                 [
                     f"- Profile：`{report.project_name or '通用'}`",
-                    f"- Git 基线：`{revision}`",
-                    f"- Accepted design baseline：Git `{revision}`（设计权威来自冻结 revision，不来自 author/committer identity）。",
+                    f"- Git 基线：`{revision or 'N/A'}`",
+                    (
+                        f"- Accepted design baseline：Git `{revision}`（设计权威来自冻结 revision，不来自 author/committer identity）。"
+                        if report.baseline is not None
+                        else "- Accepted design baseline：N/A（当前源码静态事实，不声称存在 Git 历史比较）。"
+                    ),
                     f"- 比较目标：`{report.comparison_target}`",
                     f"- 静态事实门禁：**{code_status(report)}**",
                     f"- Critical / Error / Warning / Info：**{counts['critical']} / {counts['error']} / {counts['warning']} / {counts['info']}**",
@@ -597,16 +601,14 @@ def _append_static_and_additions(
 ) -> None:
     """追加静态门禁与新增接口必要性审判。"""
     counts = _counts(report)
-    baseline_summary = (
-        report.baseline.summary
-        if report.baseline is not None
-        else dict.fromkeys(counts, 0)
-    )
+    baseline_summary = report.baseline.summary if report.baseline is not None else None
     static_rows = ["| Severity | Baseline | Current | Delta |", "|---|---:|---:|---:|"]
     for severity in ("critical", "error", "warning", "info"):
-        before = int(baseline_summary[severity])
+        before = (
+            int(baseline_summary[severity]) if baseline_summary is not None else None
+        )
         static_rows.append(
-            f"| {severity.upper()} | {before} | {counts[severity]} | {counts[severity] - before:+d} |"
+            f"| {severity.upper()} | {before if before is not None else 'N/A'} | {counts[severity]} | {counts[severity] - before if before is not None else 'N/A'} |"
         )
     delta_rows = ["| ID | Rule | Severity | Path | Symbol |", "|---|---|---|---|---|"]
     delta_rows.extend(
@@ -679,12 +681,10 @@ def _append_debt_accountability(
     selected = tuple(
         item for item in facts.historical_debt if item.scope == "SELECTED_SCOPE"
     )
-    cleanup_required = (
-        facts.historical_debt if facts.debt_mode == "cleanup" or selected else ()
-    )
+    cleanup_required = facts.historical_debt if facts.debt_mode == "cleanup" else ()
     summary = [
         f"- 债务模式：`{facts.debt_mode}`",
-        f"- Git 基线可用：{'NO' if selected else 'YES'}",
+        f"- Git 基线可用：{'YES' if facts.revision else 'NO'}",
         f"- 基线普通存量债务：{facts.legacy_debt_total}",
         f"- 当前普通 C/E/W 总数：{facts.current_ordinary_debt_total}",
         f"- 新增/恶化普通债务：{len(facts.quality_deltas)}",
@@ -700,7 +700,7 @@ def _append_debt_accountability(
         "| DEBT | Rule | Severity | Location | Message |",
         "|---|---|---|---|---|",
     ]
-    manual_items = touched if facts.debt_mode == "progressive" and not selected else ()
+    manual_items = touched if facts.debt_mode == "progressive" else ()
     touched_rows.extend(
         f"| {item.item_id} | `{item.finding.code}` | `{item.finding.severity.upper()}` | "
         f"`{escape(item.finding.path)}:{item.finding.line}` | {escape(item.finding.message)} |"
@@ -736,7 +736,7 @@ def _append_debt_accountability(
         "|---|---|---|---|",
     ]
     inventory_items = (
-        untouched if facts.debt_mode == "progressive" and not selected else ()
+        (*untouched, *selected) if facts.debt_mode == "progressive" else ()
     )
     inventory.extend(
         f"| `{item.finding.code}` | `{item.finding.severity.upper()}` | "
@@ -770,7 +770,7 @@ def _append_debt_accountability(
                 "",
                 *_auto("cleanup_required_debt", cleanup_rows),
                 "",
-                "> cleanup 模式（以及无 Git baseline 的选定 scope）不接受延期说明；表中仍有项目就必须继续修复后重跑。",
+                "> cleanup 模式不接受普通质量债务延期；无 Git 源码快照默认不进入 cleanup。",
                 "",
             ]
         )
@@ -813,7 +813,7 @@ def _append_semantic_and_questions(
         delta_rows.append("| — | — | — | — | — | — | — | 无本轮语义 Delta |")
     summary = [
         f"- 当前语义候选：{len(items)}",
-        f"- 本轮 Delta：{len(delta_items)}",
+        f"- 本轮 Delta：{len(delta_items) if report.baseline is not None else 'N/A'}",
         "- 历史语义候选不要求抽样解释；普通 C/E/W 存量责任由 DEBT 账本单独管理。",
     ]
     lines.extend(
@@ -922,7 +922,7 @@ def _append_reduction_and_final(
     delta_count = sum(item.delta for item in items)
     reduction = [
         f"- 当前 Warning：{counts['warning']}",
-        f"- 当前语义 Delta：{delta_count}",
+        f"- 当前语义 Delta：{delta_count if report.baseline is not None else 'N/A'}",
         f"- 当前新增接口：{len(facts.additions)}",
         f"- 当前 TEST-CHANGE：{len(_test_change_items(facts))}",
         f"- 存量三档债务已减少：{facts.legacy_debt_reduced}",
@@ -1013,7 +1013,7 @@ def _render_compact_report(
     lines = [
         "---",
         f"report_schema: {REPORT_SCHEMA}",
-        f"baseline_revision: {revision}",
+        f"baseline_revision: {revision or 'N/A'}",
         f"change_digest: {_report_digest(report, facts, items)}",
         f"tool_status: {code_status(report)}",
         "final_status: PENDING_VERIFY",
@@ -1035,6 +1035,7 @@ def render_compact_report(
     revision: str,
     existing: str | None = None,
     debt_mode: str = "progressive",
+    audit_mode: str = "normal",
 ) -> str:
     """
     生成固定九段紧凑报告，并保留仍存在对象的人工裁决与有效 commit。
@@ -1044,13 +1045,24 @@ def render_compact_report(
         revision: 绑定报告的 Git baseline revision。
         existing: 可选旧报告，用于保留仍有效的人工字段。
         debt_mode: 存量债务责任策略。
+        audit_mode: 显式请求的审计模式；默认 normal。
 
     Returns:
         固定九段 schema 的 Markdown 审计报告。
     """
     facts = build_report_facts(report, revision, debt_mode=debt_mode)
     items = _semantic_items(report, facts)
-    return _render_compact_report(report, revision, existing, facts, items)
+    rendered = _render_compact_report(report, revision, existing, facts, items)
+    label = {
+        "normal": "正常模式",
+        "ignore-diff": "忽略diff模式",
+        "cleanup": "强制清零模式",
+    }[audit_mode]
+    return rendered.replace(
+        "final_status: PENDING_VERIFY",
+        f"audit_mode: {audit_mode} # {label}\nfinal_status: PENDING_VERIFY",
+        1,
+    )
 
 
 def _has_placeholder(value: str) -> bool:
@@ -1185,11 +1197,10 @@ def _semantic_issues(
 def _debt_issues(text: str, facts: ReportFacts) -> list[str]:
     """Validate touched-history deferrals and strict cleanup responsibility."""
     rows = _existing_debt_rows(text)
-    selected = any(item.scope == "SELECTED_SCOPE" for item in facts.historical_debt)
     touched = tuple(item for item in facts.historical_debt if item.scope == "TOUCHED")
     expected = (
         {item.item_id for item in touched}
-        if facts.debt_mode == "progressive" and not selected
+        if facts.debt_mode == "progressive"
         else set()
     )
     issues: list[str] = []
@@ -1224,11 +1235,9 @@ def _debt_issues(text: str, facts: ReportFacts) -> list[str]:
                 issues.append(f"{item_id} {label} 必须给出具体、可验证的延期事实。")
         if reason.strip().lower().strip("。.!！ ") in generic:
             issues.append(f"{item_id} 不能仅用‘历史债务/超出范围’作为延期理由。")
-    cleanup_required = (
-        facts.historical_debt if facts.debt_mode == "cleanup" or selected else ()
-    )
+    cleanup_required = facts.historical_debt if facts.debt_mode == "cleanup" else ()
     if cleanup_required:
-        mode = "无 Git baseline 的选定 scope" if selected else "cleanup 模式"
+        mode = "cleanup 模式"
         issues.append(
             f"{mode} 仍有 {len(cleanup_required)} 项历史普通 C/E/W；必须清零后才能通过。"
         )
@@ -1363,6 +1372,7 @@ def validate_compact_report(
     report: ScanReport,
     revision: str,
     debt_mode: str = "progressive",
+    audit_mode: str = "normal",
 ) -> ReportValidation:
     """
     验证机器事实、ADD/SEM/十一问和 Reduction Pass 均与最新源码一致。
@@ -1372,6 +1382,7 @@ def validate_compact_report(
         report: 当前最新生产扫描报告。
         revision: 当前报告必须绑定的 Git baseline revision。
         debt_mode: `progressive` 或 `cleanup` 存量债务责任策略。
+        audit_mode: 显式请求的审计模式；用于识别报告身份不匹配。
 
     Returns:
         报告契约问题与语义 PASS/REJECT 状态。
@@ -1379,6 +1390,16 @@ def validate_compact_report(
     facts = build_report_facts(report, revision, debt_mode=debt_mode)
     items = _semantic_items(report, facts)
     issues = _header_and_auto_issues(text, report, revision, facts, items)
+    expected_mode = (
+        f"audit_mode: {audit_mode} # "
+        + {
+            "normal": "正常模式",
+            "ignore-diff": "忽略diff模式",
+            "cleanup": "强制清零模式",
+        }[audit_mode]
+    )
+    if expected_mode not in text.split("---", 2)[1].splitlines():
+        issues.append("审计模式与 audit/verify 请求不一致。")
     issues.extend(_addition_issues(text, facts))
     semantic_issues, semantic_blocking = _semantic_issues(text, items)
     issues.extend(semantic_issues)

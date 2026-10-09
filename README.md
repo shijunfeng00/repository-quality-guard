@@ -454,3 +454,7 @@ You may use, modify, and distribute the project subject to the license terms. Se
 ---
 
 The topology model explicitly records compiler-proven `UsageKind.STATIC_POLYMORPHIC_DISPATCH` edges rather than guessing virtual calls. The Python scanner resolves decorator identifiers exactly (for example, `decorator_leaf` distinguishes `abc.abstractmethod` from lookalike names); C++ CRTP relations are accepted only with compiler-supported topology evidence. These are scanner implementation capabilities, not new end-user CLI entrypoints.
+
+### Audit modes
+
+Normal is the default (omit `--mode`). Explicit user authorization is required for `--mode ignore-diff` (current-source audit) or `--mode cleanup` (all ordinary production Critical/Error/Warning debt must be zero; ACCEPT or REJECT only). Git-free directories are auditable in normal mode; baseline and historical deltas are N/A, while current static findings and relation graph remain available. Audit and verify must use the same mode.

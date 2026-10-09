@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ from .compact_report import (
     validate_compact_report,
 )
 from .gate_status import code_status
+from .report_schema import BASELINE_GATE_EXEMPT_CODES
 from .scan_snapshot import scan_target_cached
 
 REPORT_GATE_EXIT_CODE = 3
@@ -76,10 +78,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--report-output", default=None, help="报告路径；默认仓库根 修改说明.md。"
     )
     audit.add_argument(
+        "--mode",
+        choices=("normal", "ignore-diff", "cleanup"),
+        default=None,
+        help="审计模式；默认 normal。忽略 diff 与强制清零须获得用户授权。",
+    )
+    audit.add_argument(
         "--debt-mode",
         choices=("progressive", "cleanup"),
-        default="progressive",
-        help="存量债务责任策略；默认 progressive，cleanup 要求选定 scope 存量清零。",
+        default=None,
+        help="旧版兼容参数：progressive/cleanup；优先使用 --mode。",
     )
 
     verify = subparsers.add_parser("verify", help="最终只读重扫并验证报告。")
@@ -88,12 +96,41 @@ def build_parser() -> argparse.ArgumentParser:
         "--report-output", default=None, help="报告路径；默认仓库根 修改说明.md。"
     )
     verify.add_argument(
+        "--mode",
+        choices=("normal", "ignore-diff", "cleanup"),
+        default=None,
+        help="必须与 audit 使用同一审计模式。",
+    )
+    verify.add_argument(
         "--debt-mode",
         choices=("progressive", "cleanup"),
-        default="progressive",
-        help="必须与 audit 使用同一存量债务责任策略。",
+        default=None,
+        help="旧版兼容参数；必须与 audit 使用同一审计模式。",
     )
     return parser
+
+
+def _resolve_audit_mode(options: argparse.Namespace) -> argparse.Namespace:
+    """Return a normalized audit policy without changing the caller's options.
+
+    Args:
+        options: Parsed CLI options, including explicit and legacy modes.
+
+    Returns:
+        A new namespace retaining all options with one resolved audit policy.
+    """
+    legacy = options.debt_mode
+    requested = options.mode
+    mapped = "cleanup" if legacy == "cleanup" else "normal"
+    if legacy is not None and requested is not None and requested != mapped:
+        raise ValueError("--mode 与旧版 --debt-mode 冲突，不能隐式改变审计模式")
+    effective_mode = requested or (mapped if legacy is not None else "normal")
+    if effective_mode != "normal" and (options.diff_base or options.staged):
+        raise ValueError("非 normal 模式不能同时使用 --diff-base 或 --staged")
+    normalized = copy.copy(options)
+    normalized.mode = effective_mode
+    normalized.debt_mode = "cleanup" if effective_mode == "cleanup" else "progressive"
+    return normalized
 
 
 def _scoped_file_arguments(options: argparse.Namespace) -> str:
@@ -133,6 +170,9 @@ def _legacy_args(
         argv.extend(["--diff-base", options.diff_base])
     if options.staged:
         argv.append("--staged")
+    mode = options.mode if options.command in {"audit", "verify"} else "normal"
+    if mode != "normal":
+        argv.extend(["--mode", mode])
     return legacy_cli.build_parser().parse_args(argv)
 
 
@@ -294,32 +334,43 @@ def _scan_for_workflow(
 
 def _run_audit(options: argparse.Namespace) -> int:
     """生成机器事实与人工语义字段分离的紧凑审计报告。"""
+    options = _resolve_audit_mode(options)
     target, report, _interface_diff, revision = _scan_for_workflow(options)
     report_path = _resolve_report(target.root, options.report_output)
     existing = (
         report_path.read_text(encoding="utf-8") if report_path.is_file() else None
     )
     text = render_compact_report(
-        report, revision=revision, existing=existing, debt_mode=options.debt_mode
+        report,
+        revision=revision,
+        existing=existing,
+        debt_mode=options.debt_mode,
+        audit_mode=options.mode,
     )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(text, encoding="utf-8")
     validation = validate_compact_report(
-        text, report, revision=revision, debt_mode=options.debt_mode
+        text,
+        report,
+        revision=revision,
+        debt_mode=options.debt_mode,
+        audit_mode=options.mode,
     )
     counts = dict.fromkeys(("critical", "error", "warning", "info"), 0)
     for finding in report.findings:
         if not finding.code.startswith("QG98"):
             counts[finding.severity] += 1
     sem = semantic_items(report)
-    delta_sem = sum(item.delta for item in sem)
+    delta_sem = (
+        sum(item.delta for item in sem) if report.baseline is not None else "N/A"
+    )
     touched_historical = sum(item.touched_historical for item in sem)
     _write_cli_line(
         "audit GENERATED "
         f"static={code_status(report)} "
         f"C/E/W/I={counts['critical']}/{counts['error']}/{counts['warning']}/{counts['info']} "
         f"semantic_delta={delta_sem} touched_historical={touched_historical} "
-        f"debt_mode={options.debt_mode} report_issues={len(validation.issues)}"
+        f"audit_mode={options.mode} debt_mode={options.debt_mode} report_issues={len(validation.issues)}"
     )
     _write_cli_line(str(report_path))
     if validation.issues:
@@ -343,21 +394,37 @@ def _run_audit(options: argparse.Namespace) -> int:
 
 def _run_verify(options: argparse.Namespace) -> int:
     """只读重扫源码并验证最新报告、语义账本与 Reduction Pass。"""
+    options = _resolve_audit_mode(options)
     target, report, _interface_diff, revision = _scan_for_workflow(options)
     report_path = _resolve_report(target.root, options.report_output)
     if not report_path.is_file():
         _write_cli_line(f"verify REJECT：缺少报告 {report_path}", error=True)
-        return REPORT_GATE_EXIT_CODE
+        return 1 if options.mode == "cleanup" else REPORT_GATE_EXIT_CODE
     text = report_path.read_text(encoding="utf-8")
     validation = validate_compact_report(
-        text, report, revision=revision, debt_mode=options.debt_mode
+        text,
+        report,
+        revision=revision,
+        debt_mode=options.debt_mode,
+        audit_mode=options.mode,
     )
     static_status = code_status(report)
     if validation.issues:
         _write_cli_line("verify REJECT：报告契约未通过", error=True)
         for issue in validation.issues:
             _write_cli_line(f"- {issue}", error=True)
-        return REPORT_GATE_EXIT_CODE
+        return 1 if options.mode == "cleanup" else REPORT_GATE_EXIT_CODE
+    if options.mode == "cleanup" and (
+        any(
+            f.severity in {"critical", "error", "warning"}
+            and not f.code.startswith(("QG98", "QG99"))
+            and f.code not in BASELINE_GATE_EXEMPT_CODES
+            for f in report.findings
+        )
+        or static_status == "REVIEW_REQUIRED"
+    ):
+        _write_cli_line("verify REJECT：cleanup 未清零普通 C/E/W 或接口审查未闭环。")
+        return 1
     if static_status == "REJECT" or validation.semantic_status == "REJECT":
         _write_cli_line(
             f"verify REJECT static={static_status} semantic={validation.semantic_status}"

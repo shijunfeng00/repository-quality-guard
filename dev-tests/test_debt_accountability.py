@@ -188,7 +188,7 @@ class TestDebtAccountability(unittest.TestCase):
             "| DEBT-", text.split("| DEBT | Decision", 1)[-1].split("###", 1)[0]
         )
 
-    def test_no_baseline_treats_selected_scope_as_cleanup_responsibility(self) -> None:
+    def test_no_baseline_reports_selected_scope_without_forced_cleanup(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -199,9 +199,7 @@ class TestDebtAccountability(unittest.TestCase):
         text = render_compact_report(report, revision="HEAD", debt_mode="progressive")
 
         self.assertEqual(facts.historical_debt[0].scope, "SELECTED_SCOPE")
-        self.assertTrue(
-            any("无 Git baseline" in issue for issue in _debt_issues(text, facts))
-        )
+        self.assertEqual(_debt_issues(text, facts), [])
         self.assertIn("no-baseline selected-scope remaining：1", text)
 
     def test_fixing_touched_history_removes_obligation_and_counts_paydown(self) -> None:
@@ -285,5 +283,7 @@ class TestDebtAccountability(unittest.TestCase):
         default = parser.parse_args(["audit", "."])
         cleanup = parser.parse_args(["audit", ".", "--debt-mode", "cleanup"])
 
-        self.assertEqual(default.debt_mode, "progressive")
+        self.assertIsNone(
+            default.debt_mode
+        )  # resolved to normal/progressive at execution
         self.assertEqual(cleanup.debt_mode, "cleanup")

@@ -1,18 +1,18 @@
 ---
 name: repository-quality-guard
-description: 对 Git 仓库执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
+description: 对 Git 或无 Git 源码执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
 metadata:
-  version: "0.22.3"
+  version: "0.22.4"
   status: stable
 ---
 
 # Repository Quality Guard
 
-**Version:** 0.22.3
+**Version:** 0.22.4
 **Status:** Stable
 **Distribution:** canonical full-repository ZIP / repository-installed `.agents`
 
-Repository Quality Guard（RQG）是一套面向 Git 仓库的代码质量审计与开发闭环工具。它把可机械验证的代码事实、接口变化、测试契约和多语言静态分析统一到同一份仓库快照中，再通过结构化审计报告完成语义裁决、Reduction Pass 与最终只读验证。
+Repository Quality Guard（RQG）是一套面向 Git 或无 Git 源码目录的代码质量审计与开发闭环工具。它把可机械验证的代码事实、接口变化、测试契约和多语言静态分析统一到同一份仓库快照中，再通过结构化审计报告完成语义裁决、Reduction Pass 与最终只读验证。
 
 RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并提供 API catalog、RelationGraph、接口差分、测试契约分析、报告完整性和 release integrity 检查。机器扫描负责事实与候选；需要源码语义判断的项目保留在审计账本中，由使用者完成裁决后再交给 `verify` 重新验证。
 
@@ -64,6 +64,16 @@ python scripts/quality_guard.py doc-search <repo> "state transaction ownership"
 ```
 
 默认检索策略保持稳定；Profile 可以注册可选 `SearchStrategy` 对现有候选进行重排或过滤。
+
+### v0.22.4 审计模式（Agent 不得私自降低门禁）
+
+默认不传 `--mode`，执行 `normal`。只有用户明确授权，才可以选择：
+
+- `--mode normal`：正常模式，Git 可用时做增量比较，无 Git 时仅审当前静态状态且所有历史 Delta 为 N/A。
+- `--mode ignore-diff`：忽略diff模式，不使用 Git 基线，但不豁免当前质量规则；允许 REVIEW_REQUIRED。
+- `--mode cleanup`：强制清零模式，要求普通生产 C/E/W 清零，最终只允许 ACCEPT 或 REJECT。
+
+`--mode ignore-diff/cleanup` 不允许与 `--diff-base` / `--staged` 并用。旧 `--debt-mode progressive/cleanup` 保留兼容映射。`audit` 和 `verify` 必须使用相同模式；报告首页记录模式、基线可用性和当前关系图。**无 `.git` 不构成用户授权忽略 diff 的证据。**
 
 ### `audit`
 

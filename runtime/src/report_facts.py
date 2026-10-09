@@ -433,7 +433,11 @@ def build_report_facts(
             key=lambda item: (item.path, item.line, item.code, item.symbol),
         )
     )
-    all_changed_files = collect_changed_files(report.root, revision)
+    all_changed_files = (
+        collect_changed_files(report.root, revision)
+        if report.baseline is not None
+        else ()
+    )
     artifact_raw = tuple(
         item for item in all_changed_files if _is_delivery_artifact(item.path)
     )

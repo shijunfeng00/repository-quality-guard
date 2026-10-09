@@ -455,3 +455,7 @@ Repository Quality Guard 使用 **Apache License 2.0** 开源。
 ---
 
 拓扑模型使用 `UsageKind.STATIC_POLYMORPHIC_DISPATCH` 记录编译器证明的静态多态边，不猜测虚函数调用。Python 扫描器通过 `decorator_leaf` 精确识别装饰器名称（例如区分 `abc.abstractmethod` 与近似拼写）；C++ CRTP 关系必须有编译器拓扑证据才予以认定。这属于扫描器内部能力，不是新增对外 CLI 入口。
+
+### 审计模式
+
+默认不传 `--mode`，使用 `normal` 正常模式。仅当用户明确授权，才可以使用 `--mode ignore-diff`（忽略diff模式）或 `--mode cleanup`（强制清零模式）。cleanup 要求普通生产 Critical / Error / Warning 债务归零，最终只有 ACCEPT 或 REJECT。无 Git 目录在 normal 下照常生成当前静态发现与当前关系图，历史基线和 Delta 标为 N/A。audit 与 verify 模式必须一致；无 `.git` 本身不是忽略 diff 的授权。

@@ -54,7 +54,9 @@ class TestWorkerLifecycle(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             target = SimpleNamespace(root=root, focus_roots=(root,), focus_files=set())
-            args = SimpleNamespace(files="", profile="", diff_base="", staged=False)
+            args = SimpleNamespace(
+                files="", profile="", diff_base="", staged=False, mode="normal"
+            )
             original_popen = subprocess.Popen
             processes: list[subprocess.Popen[bytes]] = []
 

@@ -455,6 +455,8 @@ def _worker_command(
         command.extend(["--diff-base", args.diff_base])
     if args.staged:
         command.append("--staged")
+    if args.mode != "normal":
+        command.extend(["--mode", args.mode])
     if worker_files:
         command.extend(["--files", worker_files])
     return command
@@ -586,7 +588,7 @@ def scan_target_cached(
         审计目标、完整 ScanReport、InterfaceDiffReport、实际 baseline revision 和缓存状态。
     """
     target = cli.resolve_target(args)
-    if not args.diff_base or not target.git_enabled:
+    if not args.diff_base or not target.git_enabled or args.mode != "normal":
         report, revision = _run_worker(args, target)
         return target, report, report.interface_diff, revision, "BYPASS"
 

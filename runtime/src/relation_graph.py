@@ -1547,7 +1547,27 @@ def build_relation_graph_summary(
         BASE 图、TARGET 图与紧凑关系摘要；缺少 Git 基线时返回两个 ``None`` 和空摘要。
     """
     if base_snapshot is None:
-        return None, None, {}
+        current = (
+            current_graph
+            if current_graph is not None
+            else RepositoryRelationGraph(current_snapshot)
+        )
+        return (
+            None,
+            current,
+            {
+                "base": "N/A",
+                "current": current.stats(),
+                "changed_symbols": "N/A",
+                "interface_impacts": [],
+                "affected_tests": [],
+                "affected_test_count": 0,
+                "affected_test_nodes": [],
+                "affected_test_node_count": 0,
+                "preserved_reachability": [],
+                "suppressed_direct_edge_findings": [],
+            },
+        )
     base = (
         base_graph if base_graph is not None else RepositoryRelationGraph(base_snapshot)
     )

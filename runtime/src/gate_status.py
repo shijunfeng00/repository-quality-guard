@@ -5,7 +5,7 @@ from .model import ScanReport
 from .report_schema import BASELINE_GATE_EXEMPT_CODES, SEVERITY_RANK
 
 _ABSOLUTE_BLOCKERS = frozenset(
-    {"QG168", "QG179", "QG183", "QG186", "QG187", "QG189", "QG190"}
+    {"QG149", "QG168", "QG179", "QG183", "QG186", "QG187", "QG189", "QG190"}
 )
 
 
@@ -83,6 +83,6 @@ def code_status(report: ScanReport) -> str:
         )
         for finding in report.findings
     )
-    if all((report.baseline is None, any((current_quality, has_review)))):
-        return "REJECT"
+    if report.baseline is None and current_quality:
+        return "REVIEW_REQUIRED"
     return "REVIEW_REQUIRED" if has_review else "ACCEPT"

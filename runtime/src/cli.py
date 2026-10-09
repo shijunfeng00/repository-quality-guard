@@ -23,6 +23,7 @@ from .audit_target import (
     git_failure_lookup as git_failure_lookup,
     resolve_target as resolve_target,
     git_comparison_plan,
+    apply_audit_mode,
     git_stdout,
 )
 from .analysis_snapshot import (
@@ -205,23 +206,14 @@ def _apply_focus(report: ScanReport, target: AuditTarget) -> ScanReport:
         report.focus_paths = tuple(
             sorted(str(path) for path in (*target.focus_files, *target.focus_roots))
         )
-    report.scope_notes = target.notes
-    if not target.git_enabled:
-        report.findings.append(
-            Finding(
-                code="QG998",
-                severity="warning",
-                confidence="high",
-                path=".",
-                line=1,
-                column=1,
-                message=target.git_issue_message
-                or "当前输入缺失 Git 仓库上下文，接口 diff 已跳过。",
-                suggestion=target.git_issue_suggestion
-                or "确认传入的是预期非 Git 目录/文件；如果不是，切换到正确仓库根或子目录重跑。",
-                source="quality-guard",
-            )
+    report.scope_notes = (
+        (
+            *target.notes,
+            target.git_issue_message or "Git 历史比较不可用；当前源码扫描正常完成。",
         )
+        if not target.git_enabled
+        else target.notes
+    )
     report.findings.sort(
         key=lambda item: (
             -SEVERITY_RANK[item.severity],
@@ -1447,7 +1439,9 @@ def scan_target(
     Returns:
         解析后的审计目标、生产扫描报告与接口差分报告。
     """
-    target = resolve_target(args)
+    target = apply_audit_mode(
+        resolve_target(args), args.mode, args.diff_base, args.staged
+    )
     comparison = git_comparison_plan(target, args)
     scan_args = copy.copy(args)
     scan_args.diff_base = comparison.base_revision
@@ -1512,7 +1506,7 @@ def scan_target(
     )
     report = production_scanner.scan(selected_files=selected_files)
     report.interface_diff = interface_diff
-    report.comparison_mode = comparison.mode
+    report.comparison_mode = f"{args.mode}: {comparison.mode}"
     report.comparison_target = comparison.target_label
 
     base_relation_graph = (

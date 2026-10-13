@@ -10,18 +10,12 @@ from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import ParsedModule, all_parameters, annotation_names
 
-_CAST_ARGUMENT_COUNT = 2
-
 
 def _profile_settings(config: GuardConfig) -> dict[str, object]:
     """Normalize optional profile settings into one total state-boundary contract map."""
     settings: dict[str, object] = {
         "state_boundary_type": "",
         "absolute_boundary_name": "",
-        "state_boundary_allowed_transitions": (),
-        "state_boundary_state_read_methods": (),
-        "state_boundary_child_read_methods": (),
-        "state_boundary_conventional_names": ("state",),
         "state_boundary_suggestion": "",
         "dynamic_execution_nonblocking_hint": "",
     }
@@ -29,41 +23,6 @@ def _profile_settings(config: GuardConfig) -> dict[str, object]:
     return settings
 
 
-_REFLECTION_MUTATORS = frozenset(
-    {
-        "delattr",
-        "operator.delitem",
-        "operator.setitem",
-        "setattr",
-    }
-)
-_STATIC_MUTATOR_SUFFIXES = frozenset(
-    {
-        "__delattr__",
-        "__delitem__",
-        "__setattr__",
-        "__setitem__",
-        "append",
-        "clear",
-        "extend",
-        "insert",
-        "pop",
-        "popitem",
-        "remove",
-        "reverse",
-        "setdefault",
-        "sort",
-        "update",
-    }
-)
-_REFLECTION_READERS = frozenset(
-    {
-        "getattr",
-        "object.__getattribute__",
-        "operator.getitem",
-        "vars",
-    }
-)
 _DYNAMIC_EXECUTION_CALLS = frozenset(
     {
         "__import__",
@@ -88,10 +47,6 @@ class _StateBoundaryContract:
 
     state_type: str
     boundary_name: str
-    allowed_transitions: frozenset[str]
-    state_read_methods: frozenset[str]
-    child_read_methods: frozenset[str]
-    conventional_names: frozenset[str]
     suggestion: str
     profile_name: str
 
@@ -130,18 +85,6 @@ class StateBoundaryEvaluator:
             profile_name=config.project_name,
             boundary_name=str(
                 settings["absolute_boundary_name"] or state_type or "state"
-            ),
-            allowed_transitions=frozenset(
-                settings["state_boundary_allowed_transitions"] or ()
-            ),
-            state_read_methods=frozenset(
-                settings["state_boundary_state_read_methods"] or ()
-            ),
-            child_read_methods=frozenset(
-                settings["state_boundary_child_read_methods"] or ()
-            ),
-            conventional_names=frozenset(
-                settings["state_boundary_conventional_names"] or ("state",)
             ),
             suggestion=str(
                 settings["state_boundary_suggestion"]
@@ -237,11 +180,7 @@ class _FunctionMutationAnalyzer:
             annotated = self._contract.state_type in annotation_names(
                 argument.annotation
             )
-            conventional = (
-                argument.arg in self._contract.conventional_names
-                and owner != self._contract.state_type
-            )
-            if annotated or conventional:
+            if annotated:
                 self._aliases[argument.arg] = "state"
 
     def run(self) -> list[Finding]:
@@ -267,15 +206,12 @@ class _FunctionMutationAnalyzer:
         if self._visit_control_statement(statement):
             return
         for child in ast.iter_child_nodes(statement):
-            if isinstance(child, ast.expr):
-                self._visit_expression(child)
-            elif isinstance(child, ast.stmt):
+            if isinstance(child, ast.stmt):
                 self._visit_statement(child)
 
     def _visit_assignment_statement(self, statement: ast.stmt) -> bool:
         """处理赋值、增量赋值和删除语句并返回是否已消费。"""
         if isinstance(statement, ast.Assign):
-            self._visit_expression(statement.value)
             for target in statement.targets:
                 self._check_target(target, statement)
             if len(statement.targets) == 1:
@@ -283,8 +219,7 @@ class _FunctionMutationAnalyzer:
             return True
         if isinstance(statement, ast.AnnAssign):
             if statement.value is not None:
-                self._visit_expression(statement.value)
-            self._check_target(statement.target, statement)
+                self._check_target(statement.target, statement)
             annotated = self._contract.state_type in annotation_names(
                 statement.annotation
             )
@@ -296,7 +231,6 @@ class _FunctionMutationAnalyzer:
                 self._bind_target(statement.target, statement.value)
             return True
         if isinstance(statement, ast.AugAssign):
-            self._visit_expression(statement.value)
             self._check_target(statement.target, statement)
             return True
         if isinstance(statement, ast.Delete):
@@ -309,21 +243,17 @@ class _FunctionMutationAnalyzer:
         """处理控制流语句并在分支汇合处保留共同别名。"""
         handled = False
         if isinstance(statement, ast.If):
-            self._visit_expression(statement.test)
             self._visit_branches(statement.body, statement.orelse)
             handled = True
         if isinstance(statement, (ast.For, ast.AsyncFor)):
-            self._visit_expression(statement.iter)
             self._drop_bound_names(statement.target)
             self._visit_branches(statement.body, statement.orelse)
             handled = True
         if isinstance(statement, ast.While):
-            self._visit_expression(statement.test)
             self._visit_branches(statement.body, statement.orelse)
             handled = True
         if isinstance(statement, (ast.With, ast.AsyncWith)):
             for item in statement.items:
-                self._visit_expression(item.context_expr)
                 if item.optional_vars is not None:
                     self._bind_target(item.optional_vars, item.context_expr)
             self._visit_block(statement.body)
@@ -334,7 +264,6 @@ class _FunctionMutationAnalyzer:
             self._visit_many_branches(branches)
             handled = True
         if isinstance(statement, ast.Match):
-            self._visit_expression(statement.subject)
             self._visit_many_branches([case.body for case in statement.cases])
             handled = True
         return handled
@@ -362,17 +291,6 @@ class _FunctionMutationAnalyzer:
                 aliases[name] == branch_aliases[0][name] for aliases in branch_aliases
             )
         }
-
-    def _visit_expression(self, expression: ast.expr) -> None:
-        """检查表达式内部的调用节点。"""
-        for node in ast.walk(expression):
-            if isinstance(
-                node,
-                (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp),
-            ):
-                continue
-            if isinstance(node, ast.Call):
-                self._check_call(node)
 
     def _bind_target(self, target: ast.expr, value: ast.expr) -> None:
         """把赋值目标绑定为状态、子对象或普通值。"""
@@ -415,73 +333,8 @@ class _FunctionMutationAnalyzer:
                 f"通过赋值或删除直接修改 {self._contract.boundary_name} {kind}对象 `{_node_text(target)}`",
             )
 
-    def _check_call(self, node: ast.Call) -> None:
-        """检查反射、基类写入口和状态绑定方法调用。"""
-        if self._check_static_mutator_call(node):
-            return
-        name = dotted_name(node.func)
-        if name in {"eval", "exec"} and self._expression_mentions_state(node):
-            self._report(
-                node, f"通过 `{name}` 动态执行路径触达 {self._contract.boundary_name}"
-            )
-            return
-        if isinstance(node.func, ast.Attribute):
-            self._check_bound_call(node)
-            return
-        if self._origin(node.func) is not None:
-            self._report(
-                node,
-                f"动态取得 {self._contract.boundary_name} 成员后直接调用，无法保持唯一写入口",
-            )
-
-    def _check_static_mutator_call(self, node: ast.Call) -> bool:
-        """检查 setattr/operator 及 dict/list/object 基类写入口。"""
-        name = dotted_name(node.func)
-        if (
-            name in _REFLECTION_MUTATORS
-            and node.args
-            and self._origin(node.args[0]) is not None
-        ):
-            self._report(
-                node, f"通过反射写入口 `{name}` 修改 {self._contract.boundary_name}"
-            )
-            return True
-        suffix = name.rsplit(".", 1)[-1]
-        owner_name = name.rsplit(".", 1)[0] if "." in name else ""
-        static_owner = owner_name in {"dict", "list", "object", "set", "MutableMapping"}
-        if not static_owner or suffix not in _STATIC_MUTATOR_SUFFIXES or not node.args:
-            return False
-        if self._origin(node.args[0]) is None:
-            return False
-        self._report(
-            node, f"通过基类写入口 `{name}` 修改 {self._contract.boundary_name}"
-        )
-        return True
-
-    def _check_bound_call(self, node: ast.Call) -> None:
-        """检查状态根对象或嵌套对象上的绑定方法调用。"""
-        receiver_kind = self._origin(node.func.value)
-        if receiver_kind is None:
-            return
-        method = node.func.attr
-        if receiver_kind == "state":
-            if (
-                method in self._contract.allowed_transitions
-                or method in self._contract.state_read_methods
-            ):
-                return
-            receiver = _node_text(node.func.value)
-            self._report(node, f"绕过受控状态入口调用 `{receiver}.{method}()`")
-            return
-        if method not in self._contract.child_read_methods:
-            self._report(
-                node,
-                f"直接调用 {self._contract.boundary_name} 子对象 `{_node_text(node.func.value)}` "
-                f"的 `{method}()` 修改或逃逸状态边界",
-            )
-
     def _origin(self, expression: ast.AST | None) -> str | None:
-        """推断表达式来自状态根对象、嵌套对象或普通值。"""
+        """只沿显式字段、下标与局部别名追踪来源；调用结果未知。"""
         if isinstance(expression, ast.Name):
             return (
                 self._aliases[expression.id] if expression.id in self._aliases else None
@@ -492,69 +345,7 @@ class _FunctionMutationAnalyzer:
             return "child" if self._origin(expression.value) is not None else None
         if isinstance(expression, ast.Subscript):
             return "child" if self._origin(expression.value) is not None else None
-        if isinstance(expression, ast.Call):
-            origin = self._direct_call_origin(expression, dotted_name(expression.func))
-            if origin is not None or not isinstance(expression.func, ast.Attribute):
-                return origin
-            receiver = self._origin(expression.func.value)
-            child_readers = {"get", "setdefault", "__getitem__", "__getattribute__"}
-            if receiver is not None and expression.func.attr in child_readers:
-                return "child"
         return None
-
-    def _direct_call_origin(self, expression: ast.Call, name: str) -> str | None:
-        """推断非 receiver 调用直接产生的状态来源。"""
-        if _is_state_value(expression, set(), self._contract.state_type):
-            return "state"
-        origin: str | None = None
-        match name:
-            case "id" | "type":
-                if expression.args:
-                    origin = (
-                        "child"
-                        if self._origin(expression.args[0]) is not None
-                        else None
-                    )
-            case "cast" | "typing.cast":
-                if len(expression.args) >= _CAST_ARGUMENT_COUNT:
-                    if self._contract.state_type in annotation_names(
-                        expression.args[0]
-                    ):
-                        origin = "state"
-                    else:
-                        origin = self._origin(expression.args[1])
-            case _ if name in _REFLECTION_READERS:
-                if expression.args:
-                    origin = (
-                        "child"
-                        if self._origin(expression.args[0]) is not None
-                        else None
-                    )
-            case _ if name.startswith("ctypes."):
-                touched = any(
-                    self._expression_mentions_state(arg) for arg in expression.args
-                )
-                origin = "child" if touched else None
-        return origin
-
-    def _expression_mentions_state(self, expression: ast.AST) -> bool:
-        """判断表达式或动态代码字符串是否引用状态别名。"""
-        state_names = {name for name, kind in self._aliases.items() if kind == "state"}
-        for node in ast.walk(expression):
-            if node is expression:
-                continue
-            if (
-                isinstance(node, (ast.Name, ast.Attribute, ast.Subscript, ast.Call))
-                and self._origin(node) is not None
-            ):
-                return True
-            if (
-                isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and any(name in node.value for name in state_names)
-            ):
-                return True
-        return False
 
     def _report(self, node: ast.AST, detail: str) -> None:
         """追加一次去重后的 QG189 Critical。"""
@@ -640,13 +431,10 @@ def _function_holder_fields(
 def _is_state_value(
     value: ast.AST | None, local_states: set[str], state_type: str
 ) -> bool:
-    """判断表达式是否为已知或新构造的 Profile state。"""
+    """仅跟踪已验证的同函数局部状态别名；构造器调用仍是未知。"""
     if isinstance(value, ast.Name):
         return value.id in local_states
-    return (
-        isinstance(value, ast.Call)
-        and dotted_name(value.func).rsplit(".", 1)[-1] == state_type
-    )
+    return False  # Constructor identity needs a resolved TypeChecker declaration.
 
 
 def _dynamic_execution_findings(

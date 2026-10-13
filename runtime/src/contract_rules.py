@@ -7,8 +7,6 @@ from .ast_utils import dotted_name
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
-    CONTRACT_NAME_HINTS,
-    MUTATING_METHODS,
     all_parameters,
     annotation_names,
     call_name,
@@ -19,7 +17,6 @@ PAIR_ARGUMENT_COUNT = 2
 
 MIN_PARALLEL_CONTRACT_ITEMS = 2
 MIN_FIELD_ALIAS_CALLS = 2
-MIN_DEFAULT_FALLBACK_VALUES = 2
 MAPPING_PROTOCOL_METHODS = {
     "clear",
     "copy",
@@ -86,9 +83,8 @@ def check_type_probe_rules(
     for item in nodes:
         if isinstance(item, ast.Call) and call_name(item) == "isinstance" and item.args:
             checked = dotted_name(item.args[0])
-            if contract_like_name(checked):
-                tail = checked.rsplit(".", 1)[-1]
-                annotation = parameter_annotations.get(tail)
+            if checked in parameter_annotations:
+                annotation = parameter_annotations[checked]
                 annotation_types = annotation_names(annotation)
                 annotation_root = root_annotation_name(annotation)
                 concrete_annotation = bool(
@@ -97,15 +93,18 @@ def check_type_probe_rules(
                     "Any",
                     "object",
                     "Union",
+                    "Optional",
                 }
+                if not concrete_annotation:
+                    continue
                 findings.append(
                     facts.make_finding(
                         item,
                         "QG060",
                         f"对契约候选对象 `{checked}` 使用 isinstance() 猜测返回形态。",
                         symbol=qualname,
-                        severity="critical" if concrete_annotation else "error",
-                        confidence="high" if concrete_annotation else "medium",
+                        severity="critical",
+                        confidence="high",
                         suggestion=(
                             "具体类型标注的内部参数应按正式契约使用；"
                             "Any、联合类型或局部 payload/result 仍不得在内部链路长期猜测；"
@@ -118,7 +117,13 @@ def check_type_probe_rules(
                         },
                     )
                 )
-        if isinstance(item, ast.IfExp) and wraps_by_type_probe(item):
+        if (
+            isinstance(item, ast.IfExp)
+            and wraps_by_type_probe(item)
+            and isinstance(item.test, ast.Call)
+            and bool(item.test.args)
+            and dotted_name(item.test.args[0]) in parameter_annotations
+        ):
             findings.append(
                 facts.make_finding(
                     item,
@@ -322,6 +327,7 @@ def check_field_contract_rules(
     Returns:
         字段契约相关发现列表。
     """
+    annotated = {arg.arg for arg in all_parameters(node) if arg.annotation is not None}
     accesses: dict[str, set[str]] = defaultdict(set)
     findings: list[Finding] = []
     for item in nodes:
@@ -347,7 +353,7 @@ def check_field_contract_rules(
             if base:
                 accesses[base].add("attribute")
     for base, modes in accesses.items():
-        if modes == {"mapping", "attribute"} and contract_like_name(base):
+        if modes == {"mapping", "attribute"} and base in annotated:
             findings.append(
                 facts.make_finding(
                     node,
@@ -382,18 +388,6 @@ def check_runtime_contract_rules(
     parameters = {argument.arg for argument in all_parameters(function)}
     findings: list[Finding] = []
     for item in nodes:
-        if isinstance(item, ast.BoolOp) and is_contract_default_substitution(item):
-            findings.append(
-                facts.make_finding(
-                    item,
-                    "QG066",
-                    "内部契约值通过 `or` 回退为空容器、空字符串或固定默认值。",
-                    symbol=qualname,
-                    severity="info",
-                    confidence="medium",
-                    suggestion="可选值在类型和分支中表达；必填值缺失应直接失败。",
-                )
-            )
         if isinstance(item, ast.Assert):
             referenced = {
                 child.id
@@ -432,24 +426,6 @@ def check_runtime_contract_rules(
     return findings
 
 
-def contract_like_name(name: str) -> bool:
-    """
-    判断名称是否像内部契约对象。
-
-    Args:
-        name: 点分变量名称。
-
-    Returns:
-        最末名称命中常见契约词时返回 True。
-    """
-    if not name:
-        return False
-    tail = name.rsplit(".", 1)[-1].lower()
-    return tail in CONTRACT_NAME_HINTS or tail.endswith(
-        ("_state", "_result", "_config")
-    )
-
-
 def wraps_by_type_probe(node: ast.IfExp) -> bool:
     """
     判断条件表达式是否按类型探测临时包装容器。
@@ -461,9 +437,6 @@ def wraps_by_type_probe(node: ast.IfExp) -> bool:
         命中 `x if isinstance(x, list) else [x]` 等模式时返回 True。
     """
     if not isinstance(node.test, ast.Call) or call_name(node.test) != "isinstance":
-        return False
-    checked = dotted_name(node.test.args[0]) if node.test.args else ""
-    if not contract_like_name(checked):
         return False
     return isinstance(node.body, (ast.Name, ast.Attribute)) and isinstance(
         node.orelse, (ast.List, ast.Dict, ast.Tuple)
@@ -531,27 +504,6 @@ def is_alias_field_compatibility(node: ast.AST) -> bool:
     return len(receivers) == 1 and len(keys) > 1
 
 
-def is_contract_default_substitution(node: ast.BoolOp) -> bool:
-    """
-    判断 `or` 表达式是否对契约值使用固定默认结果。
-
-    Args:
-        node: 布尔表达式。
-
-    Returns:
-        左侧像契约对象且后续包含固定默认值时返回 True。
-    """
-    if (
-        not isinstance(node.op, ast.Or)
-        or len(node.values) < MIN_DEFAULT_FALLBACK_VALUES
-    ):
-        return False
-    first = dotted_name(node.values[0])
-    if not contract_like_name(first):
-        return False
-    return any(is_default_literal(item) for item in node.values[1:])
-
-
 def is_default_literal(node: ast.expr) -> bool:
     """
     判断表达式是否为常见兜底字面量。
@@ -578,39 +530,27 @@ def is_default_literal(node: ast.expr) -> bool:
 
 
 def ignored_immutable_result(node: ast.Call, facts: ModuleFacts) -> str:
-    """
-    判断调用是否丢弃常见不可变对象实例方法返回值。
+    """Require an exact builtin receiver before proving discarded immutable result.
 
-    Args:
-        node: 调用表达式。
-        facts: 当前模块事实，用于排除 ``os.replace`` 等导入模块函数。
-
-    Returns:
-        命中的方法名称，否则返回空字符串。
+    A freely named receiver or method cannot establish immutability. Only a
+    source literal has a known exact type without additional compiler facts.
+    Restrict actuals to constants to exclude observable argument evaluation.
     """
     if not isinstance(node.func, ast.Attribute):
         return ""
-    receiver = dotted_name(node.func.value)
-    receiver_root = receiver.partition(".")[0]
-    if receiver_root in facts.imports:
+    receiver = node.func.value
+    if not (isinstance(receiver, ast.Constant) and type(receiver.value) is str):
         return ""
-    immutable_methods = {
-        "capitalize",
-        "casefold",
-        "expandtabs",
-        "format",
-        "joinpath",
-        "lower",
-        "lstrip",
-        "replace",
-        "resolve",
-        "rstrip",
-        "strip",
-        "upper",
-        "with_name",
-        "with_suffix",
-    }
-    return node.func.attr if node.func.attr in immutable_methods else ""
+    if any(not isinstance(arg, ast.Constant) for arg in node.args) or any(
+        keyword.arg is None or not isinstance(keyword.value, ast.Constant)
+        for keyword in node.keywords
+    ):
+        return ""
+    # The receiver is an exact Python builtin str, not a user-defined class
+    # that happens to implement a method with the same spelling.
+    if node.func.attr not in str.__dict__ or not callable(str.__dict__[node.func.attr]):
+        return ""
+    return node.func.attr
 
 
 def check_side_effect_rules(
@@ -635,7 +575,6 @@ def check_side_effect_rules(
     findings: list[Finding] = []
     findings.extend(check_parameter_mutation(facts, node, nodes, qualname))
     findings.extend(check_exception_flow(facts, nodes, qualname))
-    findings.extend(check_dynamic_attribute_access(facts, nodes, qualname))
     if not allow_print:
         findings.extend(check_print_calls(facts, nodes, qualname))
     return findings
@@ -659,30 +598,17 @@ def check_parameter_mutation(
     Returns:
         参数修改相关发现列表。
     """
-    parameter_names = {argument.arg for argument in all_parameters(node)} - {
-        "self",
-        "cls",
-    }
-    parameter_names -= {"accumulator", "collector", "findings", "output", "signals"}
-    mutating_prefixes = (
-        "append_",
-        "apply_",
-        "clear_",
-        "collect_",
-        "consume_",
-        "filter_",
-        "merge_",
-        "mutate_",
-        "pop_",
-        "populate_",
-        "record_",
-        "remove_",
-        "set_",
-        "update_",
-        "write_",
-    )
-    if node.name.lstrip("_").startswith(mutating_prefixes):
-        parameter_names.clear()
+    parameter_names = {argument.arg for argument in all_parameters(node)}
+    # A direct class-body method's first positional formal may be a receiver.
+    # Without descriptor-binding evidence, even decorated methods cannot
+    # justify classifying this formal as an ordinary external input.
+    if facts.tree is not None and any(
+        isinstance(owner, ast.ClassDef) and node in owner.body
+        for owner in ast.walk(facts.tree)
+    ):
+        positional = (*node.args.posonlyargs, *node.args.args)
+        if positional:
+            parameter_names.discard(positional[0].arg)
     mutated: set[str] = set()
     findings: list[Finding] = []
     for item in nodes:
@@ -766,51 +692,6 @@ def check_exception_flow(
     return findings
 
 
-def check_dynamic_attribute_access(
-    facts: ModuleFacts, nodes: list[ast.AST], qualname: str
-) -> list[Finding]:
-    """
-    检查对契约对象的动态属性修改和 __dict__ 访问。
-
-    Args:
-        facts: 当前模块静态事实。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
-
-    Returns:
-        动态属性发现列表。
-    """
-    findings: list[Finding] = []
-    for item in nodes:
-        if isinstance(item, ast.Call) and call_name(item) in {"setattr", "delattr"}:
-            target = dotted_name(item.args[0]) if item.args else ""
-            if contract_like_name(target):
-                findings.append(
-                    facts.make_finding(
-                        item,
-                        "QG057",
-                        f"对契约对象 `{target}` 使用动态属性修改。",
-                        symbol=qualname,
-                        severity="warning",
-                        suggestion="通过声明字段和显式赋值维护契约。",
-                    )
-                )
-        if isinstance(item, ast.Attribute) and item.attr == "__dict__":
-            target = dotted_name(item.value)
-            if contract_like_name(target):
-                findings.append(
-                    facts.make_finding(
-                        item,
-                        "QG057",
-                        f"直接访问契约对象 `{target}.__dict__`。",
-                        symbol=qualname,
-                        severity="warning",
-                        suggestion="使用正式序列化接口或声明字段访问。",
-                    )
-                )
-    return findings
-
-
 def check_print_calls(
     facts: ModuleFacts, nodes: list[ast.AST], qualname: str
 ) -> list[Finding]:
@@ -860,13 +741,15 @@ def mutated_parameter_names(node: ast.AST, parameters: set[str]) -> set[str]:
             if base in parameters:
                 result.add(base)
     if isinstance(node, ast.AugAssign):
-        base = mutation_base_name(node.target)
-        if base in parameters:
-            result.add(base)
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-        base = dotted_name(node.func.value).split(".", 1)[0]
-        if base in parameters and node.func.attr in MUTATING_METHODS:
-            result.add(base)
+        # A bare parameter name is rebound after augmented assignment. Whether
+        # __iadd__ also mutates the caller's object requires a resolved type
+        # and operator implementation; syntax alone cannot prove that effect.
+        # An attribute/subscript target, by contrast, writes through the
+        # original reference and is a valid source-level state-write witness.
+        if isinstance(node.target, (ast.Attribute, ast.Subscript)):
+            base = mutation_base_name(node.target)
+            if base in parameters:
+                result.add(base)
     return result
 
 

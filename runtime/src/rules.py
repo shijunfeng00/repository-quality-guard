@@ -8,7 +8,7 @@ from .config import GuardConfig, is_test_path
 from .facts import ModuleFacts
 from .graph_utils import strongly_connected_components
 from .model import Definition, Finding
-from .topology_facts import RepositoryTopology, UsageKind, Visibility
+from .topology_facts import RepositoryTopology, UsageEdge, UsageKind, Visibility
 from .topology_policy import (
     HelperUsageEvidence,
     ephemeral_helper_candidate,
@@ -46,6 +46,15 @@ class RuleEvaluator:
             if topology is not None
             else {}
         )
+        # Per-evaluation fact indices: shared by QG001, QG013, and QG168.
+        # Keep the topology's edge order, since it is observable audit evidence.
+        self._incoming_edges: dict[str, list[UsageEdge]] = defaultdict(list)
+        self._outgoing_edges: dict[str, list[UsageEdge]] = defaultdict(list)
+        if topology is not None:
+            for edge in topology.edges:
+                self._incoming_edges[edge.target_id].append(edge)
+                self._outgoing_edges[edge.source_id].append(edge)
+        self._usage_evidence_cache: dict[int, tuple[Definition, dict[str, object]]] = {}
 
     def evaluate(
         self, definitions: list[Definition], facts: list[ModuleFacts]
@@ -242,11 +251,19 @@ class RuleEvaluator:
         Returns:
             Stable direct-call, callback/reference, protocol and visibility evidence.
         """
+        cache_key = id(definition)
+        if cache_key in self._usage_evidence_cache:
+            cached = self._usage_evidence_cache[cache_key]
+            if cached[0] is definition:
+                return cached[1]
         if self.topology is None or definition.symbol_id not in self._symbols:
             direct_callers = definition.calls
             direct_call_sites = definition.calls
             callable_consumers = definition.references
-            protocol_edges = 1 if definition.externally_invoked else 0
+            # Preserve the lexical helper candidate when a normalized Provider
+            # is unavailable; mark the evidence as legacy/open-world below.
+            # Do not invent a PROTOCOL_HOOK edge that was never observed.
+            protocol_edges = 0
             incoming_overrides = 0
             outgoing_overrides = 0
             visibility = (
@@ -264,8 +281,8 @@ class RuleEvaluator:
             nested = definition.nested
         else:
             symbol = self._symbols[definition.symbol_id]
-            incoming_edges = self.topology.incoming(definition.symbol_id)
-            outgoing_edges = self.topology.outgoing(definition.symbol_id)
+            incoming_edges = self._incoming_edges[definition.symbol_id]
+            outgoing_edges = self._outgoing_edges[definition.symbol_id]
             direct = tuple(
                 edge for edge in incoming_edges if edge.kind is UsageKind.DIRECT_CALL
             )
@@ -295,7 +312,7 @@ class RuleEvaluator:
             resolution = "normalized"
             owner_id = symbol.owner_id
             nested = symbol.nested
-        return {
+        evidence = {
             "direct_callers": direct_callers,
             "direct_call_sites": direct_call_sites,
             "callable_consumers": callable_consumers,
@@ -309,6 +326,8 @@ class RuleEvaluator:
             "nested": nested,
             "topology_resolution": resolution,
         }
+        self._usage_evidence_cache[cache_key] = (definition, evidence)
+        return evidence
 
     def _small_class_findings(self, definition: Definition) -> list[Finding]:
         """检查短小且低实例化频次的类定义。
@@ -378,7 +397,11 @@ class RuleEvaluator:
                 topology_resolution=str(topology_evidence["topology_resolution"]),
             ),
             self.config,
-            definition.externally_invoked,
+            bool(
+                definition.externally_invoked
+                or topology_evidence["protocol_edges"]
+                or topology_evidence["callable_consumers"]
+            ),
         ):
             return []
         evidence = {
@@ -535,7 +558,12 @@ class RuleEvaluator:
                         topology_resolution=str(evidence["topology_resolution"]),
                     ),
                     self.config,
-                    definition.externally_invoked,
+                    bool(
+                        definition.decorators
+                        or evidence["protocol_edges"]
+                        or evidence["callable_consumers"]
+                        or evidence["topology_resolution"] == "legacy"
+                    ),
                 )
             ]
             helper_count = len(helpers)
@@ -602,25 +630,25 @@ class RuleEvaluator:
             in {"property", "cached_property", "setter", "deleter"}
             for decorator in definition.decorators
         )
-        node_visitor_hook = (
-            private_facade
-            and definition.name.startswith("visit_")
-            and definition.externally_invoked
-            and any(base.endswith("NodeVisitor") for base in definition.bases)
-        )
-        critical_facade = (
-            private_facade and not property_facade and not node_visitor_hook
-        )
         usage = self._usage_topology(definition)
+        # A subclass override is an implementation relation, not automatically
+        # a framework entry point. Root slots with incoming overrides are
+        # protected separately; a redundant override remains reviewable.
+        protocol_hooks = (
+            int(usage["protocol_edges"]) - int(usage["outgoing_overrides"])
+        )
+        external_edges = bool(
+            definition.externally_invoked
+            or protocol_hooks
+            or usage["callable_consumers"]
+        )
+        critical_facade = private_facade and not property_facade and not external_edges
         report_wrapper = (
             definition.wrapper_target
             and not property_facade
             and (
                 critical_facade
-                or (
-                    not definition.externally_invoked
-                    and not bool(usage["polymorphic_root_slot"])
-                )
+                or (not external_edges and not bool(usage["polymorphic_root_slot"]))
             )
         )
         return (
@@ -746,18 +774,21 @@ class RuleEvaluator:
                     **common,
                 )
             )
-        if definition.branch_count > self.config.max_branches:
+        if definition.branch_count >= self.config.max_branches:
             findings.append(
                 Finding(
                     code="QG017",
-                    severity="warning",
+                    severity="info",
                     confidence="medium",
                     message=(
                         f"`{definition.qualname}` 估算分支数 {definition.branch_count}，"
-                        f"超过阈值 {self.config.max_branches}。"
+                        f"达到语义提示阈值 {self.config.max_branches}。"
                     ),
-                    suggestion="检查是否混入模式选择、兼容路径或多阶段职责；优先收窄状态和输入契约。",
-                    evidence={"branches": definition.branch_count},
+                    suggestion="按上下游契约评估是否能原地简化，必要状态机不必机械拆分。",
+                    evidence={
+                        "branches": definition.branch_count,
+                        "structural_advisory": True,
+                    },
                     **common,
                 )
             )
@@ -957,7 +988,15 @@ class RuleEvaluator:
                     definition.name.startswith("__") and definition.name.endswith("__")
                 )
             )
-            if not private_callable or definition.externally_invoked:
+            if not private_callable:
+                continue
+            usage = self._usage_topology(definition)
+            if (
+                usage["topology_resolution"] != "normalized"
+                or definition.decorators
+                or usage["callable_consumers"]
+                or usage["protocol_edges"]
+            ):
                 continue
             if definition.calls > 0 or definition.references > 0:
                 continue

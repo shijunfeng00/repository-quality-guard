@@ -75,6 +75,45 @@ python scripts/quality_guard.py doc-search <repo> "state transaction ownership"
 
 `--mode ignore-diff/cleanup` 不允许与 `--diff-base` / `--staged` 并用。旧 `--debt-mode progressive/cleanup` 保留兼容映射。`audit` 和 `verify` 必须使用相同模式；报告首页记录模式、基线可用性和当前关系图。**无 `.git` 不构成用户授权忽略 diff 的证据。**
 
+### 默认自动语言识别与原生事实（v0.22.5 WIP，未发布）
+
+`audit <repo>`、`verify <repo>` **不要求** `--language`、`-std=...` 或手工指定 Python/C++/JS。
+Python 的源文件中唯一、无装饰器、无重绑定的模块级调用默认自动检查 QG209
+参数绑定；不要求配置 Pyright/Pyrefly。该能力只给出 OPEN_WORLD Warning，
+动态调用和不确定目标保留 UNKNOWN，不推断封闭世界。
+Python/JS/TS/CSS/HTML 及 C/C++ 通过仓库快照识别，只有权威编译数据库
+中的 C++ 翻译单元可用原项目编译器复查语法并输出 `QG212 ERROR`。
+没有构建契约、缺依赖或不可用时输出 `QG208` 并要求 REVIEW_REQUIRED，
+不可擅自猜 C++ 标准或把零发现当成无缺陷。CMake/Make/Meson 自动准备
+原始编译契约、Java Provider 与完整跨语言语义 IR 仍在计划中，不得宣称完成。
+
+**QG177 已退役（v0.22.5 WIP）：** 该规则错误地把未改动的历史 helper
+fallback 当成本次迁移，使正确删除兜底的变更反遭 Critical/QG179 阻断。
+正式入口不再执行 QG177，历史残余须按自身契约作为独立债务判断，不允许
+恢复伪 ID、默认空值或重复 Consumer 校验来迁就规则。QG179 本身保留，
+仅对真实新增或恶化的有效规则 Finding 起作用。
+
+**回归验收唯一有效事实源：** 使用经完整性检验的 Skill 官方启动器执行
+`audit`，保存真实自动生成的 `修改说明.md`，完成必要人工裁决后运行只读
+`verify`，记录源码与 Skill 身份、Profile **名称及来源**、CLI、产物 SHA256、退出码、裁决。
+Portable 的专用 Profile 只在发布目录中实际存在且项目目录名精确匹配时自动启用；
+Installed Profile 必须是已封存的授权 Profile。报告元数据中的 `Profile` 和
+`Profile 来源` 来自真正的扫描配置，而不是目录猜测或 CLI 预期值。
+若运行包缺少应有的 Profile，通用报告只代表通用规则，**不能充当专用 Profile 验收**；
+未知 Profile 解析状态必须显式失败，禁止谎称通用。隔离扫描 worker 必须从同一
+完整性封印的 Skill 加载代码和 Profile，不得从调用者工作目录导入另一份 RQG。
+Pyright、GCC、CTest、pytest 和内部 `scan_target` 只能作为独立 Oracle 或研发
+定位信息，不能冒充正式 QG Findings、已生成报告或 `verify` 通过。
+
+研发中的受限 QG210 只审查可证实的直线构造顺序；QG214 只证明
+宽泛异常被处理器无记录地转换为静态可知 fallback。两者均为
+OPEN_RUNTIME WARNING，必须人工核对业务协议，不得把候选数量当作真实 BUG 数量。
+QG216 以权威 TypedDict Schema 与确定的关闭字典字面量生产者验证必需字段缺失；
+动态展开/动态键和容器化返回必须保留 UNKNOWN。
+QG215 对源码明确的宽异常 `pass`/`continue`/局部哨兵赋值单语句处理器
+出具未观察到异常的路径证书，仅列条件性 WARNING，不把 best-effort 当成已证实 BUG。
+开发阶段针对部分仓库的抽检独立于正式全仓回归节点，不得折算完成度。
+
 ### `audit`
 
 扫描当前仓库与固定 Git baseline，生成/刷新仓库根目录的 `修改说明.md`：

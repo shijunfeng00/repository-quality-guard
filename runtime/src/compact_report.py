@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from .behavior_families import family_rows
 from .commit_policy import validate_commit_command
 from .gate_status import absolute_blocker_codes, code_status
 from .model import Finding, ScanReport
@@ -364,6 +366,7 @@ def _append_metadata_and_changes(
                 "metadata",
                 [
                     f"- Profile：`{report.project_name or '通用'}`",
+                    f"- Profile 来源：`{report.profile_source or '未提供'}`",
                     f"- Git 基线：`{revision or 'N/A'}`",
                     (
                         f"- Accepted design baseline：Git `{revision}`（设计权威来自冻结 revision，不来自 author/committer identity）。"
@@ -596,6 +599,50 @@ def _relation_recall_rows(report: ScanReport) -> list[str]:
     return rows
 
 
+def _behavior_family_rows(report: ScanReport) -> list[str]:
+    """Group existing official findings; do not generate extra defects."""
+    rows = [
+        "| 行为族 | QG Finding | 确定契约证据 | 条件性风险 | 证据不足 | 唯一位置 | 源码样本 |",
+        "|---|---:|---:|---:|---:|---:|---|",
+    ]
+    for family, total, proven, conditional, unknown, distinct, samples in family_rows(
+        report.findings
+    ):
+        rows.append(
+            f"| {escape(family)} | {total} | {proven} | {conditional} | "
+            f"{unknown} | {distinct} | {escape(samples)} |"
+        )
+    return rows
+
+
+def _source_bound_witness_rows(report: ScanReport) -> list[str]:
+    """Print the actual emitted R1/R2/R3 QG evidence, excluding Graph-only facts."""
+    rows = [
+        "| Rule | Path | Source-bound QG evidence | Capability / limit |",
+        "|---|---|---|---|",
+    ]
+    for finding in sorted(
+        (
+            item
+            for item in report.findings
+            if item.code
+            in {"QG209", "QG210", "QG211", "QG213", "QG214", "QG215", "QG216"}
+        ),
+        key=lambda item: (item.code, item.path, item.line, item.column),
+    ):
+        evidence = dict(finding.evidence)
+        capability = str(evidence.pop("capability", "OPEN_WORLD"))
+        state = str(evidence.pop("status", "REVIEW_NOT_CONFIRMED"))
+        witness = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+        rows.append(
+            f"| {finding.code} | `{escape(finding.path)}:{finding.line}` | "
+            f"`{escape(witness)}` | `{escape(capability)}` / `{escape(state)}` |"
+        )
+    if len(rows) == _TABLE_HEADER_ROWS:
+        rows.append("| — | — | 无新编号正式 QG Finding；Graph UNKNOWN 不计入 | — |")
+    return rows
+
+
 def _append_static_and_additions(
     lines: list[str], report: ScanReport, existing: str | None, facts: ReportFacts
 ) -> None:
@@ -618,6 +665,36 @@ def _append_static_and_additions(
     )
     if len(delta_rows) == _TABLE_HEADER_ROWS:
         delta_rows.append("| — | — | — | 无普通 C/E/W 增量 | — |")
+    native_rows = [
+        "| Rule | Source | Native command | Provider evidence |",
+        "|---|---|---|---|",
+    ]
+    for finding in report.findings:
+        if finding.code == "QG208":
+            evidence = finding.evidence
+            unavailable = (
+                evidence.get("unavailable_paths") or evidence.get("missing_paths") or ()
+            )
+            native_rows.append(
+                f"| `QG208` | `{escape(finding.path)}:{finding.line}` | — | "
+                f"`{escape(str(evidence['capability']))}`; "
+                f"{len(unavailable)} translation units; "
+                f"`NOT_MEASURED`; "
+                f"sample={escape(', '.join(str(path) for path in unavailable[:3]))} |"
+            )
+            continue
+        if finding.code != "QG212":
+            continue
+        command = finding.evidence["command"]
+        detail = finding.evidence["stderr"]
+        native_rows.append(
+            f"| `QG212` | `{escape(finding.path)}:{finding.line}` | "
+            f"`{escape(' '.join(str(arg) for arg in command)[:500])}` | "
+            f"exit={finding.evidence['returncode']}; "
+            f"`{escape(str(detail)[:600])}` |"
+        )
+    if len(native_rows) == _TABLE_HEADER_ROWS:
+        native_rows.append("| — | — | — | 没有原生编译错误或覆盖缺口记录 |")
     lines.extend(
         [
             "## 3. 静态质量门禁",
@@ -627,6 +704,22 @@ def _append_static_and_additions(
             *_auto("quality_deltas", delta_rows),
             "",
             *_auto("current_absolute_blockers", _absolute_blocker_rows(report)),
+            "",
+            "### C/C++ 原生编译事实（仅来自 RQG 正式扫描）",
+            "",
+            *_auto("native_cpp_diagnostics", native_rows),
+            "",
+            "### 跨语言可复用行为族（仅对 Skill 已输出的 QG 分组）",
+            "",
+            "分组仅统计已输出的 Core QG，不推测私有 Profile 的规则含义；这是证据分层而非已训练的缺陷分类器。确定契约证据 ≠ 生产事故；条件性风险及证据不足不得计作 BUG。唯一位置不是去重后的 BUG 数。",
+            "",
+            *_auto("behavior_families", _behavior_family_rows(report)),
+            "",
+            "### R1/R2/R3 源绑定专项见证（不是新增 BUG 数）",
+            "",
+            "仅列 Skill 自身正式生成的 QG209/QG210/QG211/QG213/QG214/QG215/QG216；确定的 Schema 违约和条件性风险分账，条件性风险不得升级为已证实生产故障；旧 QG 单独计数，不与这些见证叠加当成独立 BUG。",
+            "",
+            *_auto("source_bound_witnesses", _source_bound_witness_rows(report)),
             "",
             *_auto("relation_impact", _relation_rows(report)),
             "",

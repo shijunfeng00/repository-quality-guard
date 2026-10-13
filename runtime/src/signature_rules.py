@@ -2,25 +2,20 @@ from __future__ import annotations
 
 import ast
 import re
-from collections import defaultdict
 
 from .ast_utils import dotted_name
 from .config import GuardConfig
 from .facts import ModuleFacts
+from .external_api_binding import BLOCKING_APIS, NETWORK_APIS, bound_external_api
 from .model import Finding
 from .policy_common import (
-    BLOCKING_CALL_PREFIXES,
     BOOL_INT_VALUES,
     BOOL_TEXT_VALUES,
-    NETWORK_CALL_PREFIXES,
-    FunctionSignature,
-    ParsedModule,
     all_parameters,
     annotation_names,
     call_name,
     direct_body_nodes,
     is_bool_literal,
-    is_bool_name,
     is_boundary_module,
     literal_value,
     parameter_defaults,
@@ -78,7 +73,7 @@ def check_parameter_defaults(
         names = annotation_names(argument.annotation)
         default = defaults[argument.arg]
         value = literal_value(default)
-        bool_like = is_bool_name(argument.arg) or "bool" in names
+        bool_like = "bool" in names
         if bool_like and (
             (type(value) is str and value in BOOL_TEXT_VALUES)
             or (type(value) is int and value in BOOL_INT_VALUES)
@@ -460,7 +455,7 @@ def check_boolean_coercion(
     bool_parameters = {
         argument.arg
         for argument in all_parameters(node)
-        if is_bool_name(argument.arg) or "bool" in annotation_names(argument.annotation)
+        if "bool" in annotation_names(argument.annotation)
     }
     findings: list[Finding] = []
     for item in direct_body_nodes(node):
@@ -547,8 +542,13 @@ def check_call_safety_rules(
         if not isinstance(item, ast.Call):
             continue
         name = call_name(item)
+        bound_api = bound_external_api(facts, node, item)
         keyword_names = {keyword.arg for keyword in item.keywords}
-        if name == "subprocess.run" and "check" not in keyword_names:
+        if (
+            bound_api == "subprocess.run"
+            and "check" not in keyword_names
+            and None not in keyword_names
+        ):
             findings.append(
                 facts.make_finding(
                     item,
@@ -559,7 +559,11 @@ def check_call_safety_rules(
                     suggestion="检查返回码或使用 check=True，禁止把命令失败伪装成成功。",
                 )
             )
-        if name.startswith(NETWORK_CALL_PREFIXES) and "timeout" not in keyword_names:
+        if (
+            bound_api in NETWORK_APIS
+            and "timeout" not in keyword_names
+            and None not in keyword_names
+        ):
             findings.append(
                 facts.make_finding(
                     item,
@@ -570,9 +574,7 @@ def check_call_safety_rules(
                     suggestion="网络边界必须设置明确超时并传播失败。",
                 )
             )
-        if isinstance(node, ast.AsyncFunctionDef) and name.startswith(
-            BLOCKING_CALL_PREFIXES
-        ):
+        if isinstance(node, ast.AsyncFunctionDef) and bound_api in BLOCKING_APIS:
             findings.append(
                 facts.make_finding(
                     item,
@@ -613,52 +615,3 @@ def is_boolean_call_literal(node: ast.expr) -> bool:
     return (type(value) is int and value in BOOL_INT_VALUES) or (
         type(value) is str and value in BOOL_TEXT_VALUES
     )
-
-
-def check_positional_boolean_calls(
-    parsed: list[ParsedModule],
-    signatures: list[FunctionSignature],
-) -> list[Finding]:
-    """
-    检查向已知布尔参数传递位置 bool 字面量的调用。
-
-    Args:
-        parsed: 已解析模块列表。
-        signatures: 仓库函数签名列表。
-
-    Returns:
-        难以阅读的位置布尔实参发现列表。
-    """
-    by_name: dict[str, list[FunctionSignature]] = defaultdict(list)
-    for signature in signatures:
-        by_name[signature.name].append(signature)
-    findings: list[Finding] = []
-    for module in parsed:
-        for item in ast.walk(module.tree):
-            if not isinstance(item, ast.Call):
-                continue
-            target = dotted_name(item.func).rsplit(".", 1)[-1]
-            candidates = by_name[target]
-            if len(candidates) != 1:
-                continue
-            signature = candidates[0]
-            bad_positions = [
-                index
-                for index, argument in enumerate(item.args)
-                if index in signature.boolean_positions
-                and is_boolean_call_literal(argument)
-            ]
-            if not bad_positions:
-                continue
-            findings.append(
-                module.facts.make_finding(
-                    item,
-                    "QG041",
-                    f"调用 `{target}` 时以位置参数传递布尔值或兼容表示，语义不可读。",
-                    symbol=module.facts.module,
-                    severity="warning",
-                    suggestion="内部仅传递 False/True，并使用显式关键字参数。",
-                    evidence={"positions": bad_positions},
-                )
-            )
-    return findings

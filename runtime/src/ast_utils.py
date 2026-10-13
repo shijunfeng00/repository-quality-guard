@@ -13,72 +13,7 @@ MAPPING_ANNOTATIONS = {
     "Json",
     "JSON",
 }
-MAPPING_NAME_HINTS = {
-    "cfg",
-    "config",
-    "context",
-    "data",
-    "item",
-    "kwargs",
-    "metadata",
-    "options",
-    "payload",
-    "record",
-    "result",
-    "state",
-}
-
-LOOKUP_MAPPING_NAMES = {
-    "children",
-    "classes",
-    "contracts",
-    "expected",
-    "grouped",
-    "groups",
-    "handlers",
-    "indexes",
-    "methods",
-    "module_paths",
-    "parents",
-    "profiles",
-    "registry",
-    "routes",
-    "signatures",
-    "sources",
-    "target_sources",
-}
-LOOKUP_MAPPING_PREFIXES = ("by_",)
-LOOKUP_MAPPING_SUFFIXES = (
-    "_by_id",
-    "_by_name",
-    "_cache",
-    "_index",
-    "_indexes",
-    "_lookup",
-    "_map",
-    "_mapping",
-    "_registry",
-    "_table",
-)
-
 TRIVIAL_WRAPPER_ASSIGN_RETURN_STATEMENTS = 2
-
-
-def is_lookup_mapping_name(name: str) -> bool:
-    """判断映射名称是否明确表达键到值的查找表，而非字段记录。
-
-    Args:
-        name: 映射接收者的局部名称。
-
-    Returns:
-        名称具有 registry/index/by-key 等查找表语义时返回 True。
-    """
-    lowered = name.lower().lstrip("_")
-    return (
-        lowered in LOOKUP_MAPPING_NAMES
-        or lowered.startswith(LOOKUP_MAPPING_PREFIXES)
-        or lowered.endswith(LOOKUP_MAPPING_SUFFIXES)
-    )
 
 
 def dotted_name(node: ast.AST) -> str:

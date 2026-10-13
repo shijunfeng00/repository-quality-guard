@@ -450,7 +450,13 @@ def _worker_command(
     command.extend(["--resolved-profile-source", selection.source])
     command.extend(["--resolved-profile-name", selection.name])
     if selection.reference:
-        command.extend(["--resolved-profile-reference", selection.reference])
+        reference = Path(selection.reference).expanduser()
+        # The worker executes from the sealed Skill root, not the caller's
+        # working directory. Freeze an explicit relative directory before spawn.
+        authoritative = (
+            str(reference.resolve()) if reference.is_dir() else selection.reference
+        )
+        command.extend(["--resolved-profile-reference", authoritative])
     if args.diff_base:
         command.extend(["--diff-base", args.diff_base])
     if args.staged:
@@ -532,6 +538,7 @@ def _run_worker_in_dir(
     with log_path.open("wb") as log:
         process = subprocess.Popen(
             command,
+            cwd=skill_root,
             env=environment,
             stdout=log,
             stderr=log,

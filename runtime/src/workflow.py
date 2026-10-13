@@ -367,6 +367,8 @@ def _run_audit(options: argparse.Namespace) -> int:
     touched_historical = sum(item.touched_historical for item in sem)
     _write_cli_line(
         "audit GENERATED "
+        f"profile={report.project_name or 'generic'} "
+        f"profile_source={report.profile_source or 'unknown'} "
         f"static={code_status(report)} "
         f"C/E/W/I={counts['critical']}/{counts['error']}/{counts['warning']}/{counts['info']} "
         f"semantic_delta={delta_sem} touched_historical={touched_historical} "

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -21,21 +20,20 @@ from .topology_facts import (
 def script_topology(scripts: list[dict[str, Any]]) -> RepositoryTopology:
     """Adapt supported JS/TS parser facts to the language-neutral topology.
 
-    The bundled parser currently proves lexical definitions and simple call names, but
-    it does not prove module exports or TypeScript access modifiers. Those unsupported
-    facts remain ``UNKNOWN`` instead of being reconstructed from naming conventions.
-    Direct-call edges are emitted only for a unique same-file target.
+    The TypeScript Compiler API supplies source-located declaration targets.
+    All observed calls remain MAY-dispatch even when lexical binding is unique;
+    dynamic dispatch and external entries remain unknown.
 
     Args:
         scripts: Bundled parser facts for supported script-language source files.
 
     Returns:
-        Normalized JS/TS symbols, owners, and statically proven direct-call edges.
+        Normalized JS/TS symbols, owners, and compiler-bound MAY-dispatch edges.
     """
     owners: dict[str, OwnerFact] = {}
     symbols: dict[str, SymbolFact] = {}
-    by_file_name: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
     definition_rows: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+    locations: dict[tuple[str, int, int], str] = {}
 
     for script in scripts:
         if script["language"] not in SCRIPT_LANGUAGES:
@@ -91,28 +89,36 @@ def script_topology(scripts: list[dict[str, Any]]) -> RepositoryTopology:
                 name=definition["name"],
                 qualname=definition["qualname"],
             )
-            by_file_name[(script["path"], definition["name"])].append(symbol_id)
+            if "column" in definition:
+                position = (script["path"], definition["line"], definition["column"])
+                if position in locations:
+                    raise ValueError(
+                        f"duplicate authored script source location: {position}"
+                    )
+                locations[position] = symbol_id
             definition_rows.append((script, definition, symbol_id))
 
     edges: list[UsageEdge] = []
     for script, definition, source_id in definition_rows:
-        seen_targets: set[str] = set()
-        for name in definition["calls"]:
-            candidates = by_file_name[(script["path"], name)]
-            if len(candidates) != 1 or candidates[0] == source_id:
+        # A TypeScript symbol resolution locates a real authored declaration,
+        # never an identifier with coincidentally equal spelling. Its target
+        # is MAY dispatch because runtime method/variable rebinding is open.
+        for call in definition.get("callsites", ()):
+            target = call.get("target")
+            if target is None:
                 continue
-            target_id = candidates[0]
-            if target_id in seen_targets:
+            point = (target["path"], target["line"], target["column"])
+            target_id = locations.get(point)
+            if target_id is None:
                 continue
-            seen_targets.add(target_id)
             edges.append(
                 UsageEdge(
                     source_id=source_id,
                     target_id=target_id,
-                    kind=UsageKind.DIRECT_CALL,
+                    kind=UsageKind.MAY_DISPATCH,
                     path=Path(script["path"]),
-                    line=definition["line"],
-                    confidence="medium",
+                    line=call["line"],
+                    confidence="high",
                 )
             )
 

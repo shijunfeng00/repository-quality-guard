@@ -56,14 +56,10 @@ class TestScriptTopologyAdapter(unittest.TestCase):
         helper = next(item for item in topology.symbols if item.name == "helper")
         run = next(item for item in topology.symbols if item.name == "run")
         self.assertEqual(helper.visibility, Visibility.UNKNOWN)
-        self.assertTrue(
-            any(
-                edge.source_id == run.symbol_id
-                and edge.target_id == helper.symbol_id
-                and edge.kind is UsageKind.DIRECT_CALL
-                for edge in topology.edges
-            )
-        )
+        # Same-spelled calls in synthetic records cannot prove a target without
+        # a compiler declaration identity. Preserve UNKNOWN rather than DIRECT.
+        self.assertFalse(topology.edges)
+        self.assertNotEqual(helper.symbol_id, run.symbol_id)
 
     def test_css_html_do_not_emit_callable_topology(self) -> None:
         snapshot = RepositoryAnalysisSnapshot(

@@ -20,7 +20,6 @@ from .naming_rules import check_naming_rules
 from .policy_common import (
     RepositorySignals,
     StateContract,
-    collect_function_signatures,
     is_boundary_module,
     iter_scoped_definitions,
     parse_modules,
@@ -32,7 +31,6 @@ from .private_boundary_rules import (
 from .return_rules import check_return_rules
 from .signature_rules import (
     check_call_safety_rules,
-    check_positional_boolean_calls,
     check_signature_rules,
 )
 
@@ -80,6 +78,9 @@ class AdvancedRuleEvaluator:
         state_boundary = StateBoundaryEvaluator(parsed, self.config)
         findings: list[Finding] = []
         for module in parsed:
+            self.signals.callback_names_by_module[module.facts.module] = (
+                module.callback_names
+            )
             findings.extend(self._evaluate_module(module.facts, module.tree, contracts))
             findings.extend(check_module_rules(module, self.config, self.signals))
             findings.extend(
@@ -89,8 +90,6 @@ class AdvancedRuleEvaluator:
             )
             findings.extend(state_boundary.check_module(module))
             findings.extend(check_naming_rules(module.facts, module.tree))
-        signatures = collect_function_signatures(parsed)
-        findings.extend(check_positional_boolean_calls(parsed, signatures))
         findings.extend(check_state_write_types(self.signals))
         findings.extend(
             check_repository_architecture(definitions, self.signals, self.config)
@@ -115,6 +114,7 @@ class AdvancedRuleEvaluator:
             当前模块产生的高级规则发现列表。
         """
         findings: list[Finding] = []
+        boundary = is_boundary_module(facts.module, self.config.boundary_module_markers)
         for node, qualname, class_name in iter_scoped_definitions(tree):
             if isinstance(node, ast.ClassDef):
                 findings.extend(
@@ -127,9 +127,6 @@ class AdvancedRuleEvaluator:
                     )
                 )
                 continue
-            boundary = is_boundary_module(
-                facts.module, self.config.boundary_module_markers
-            )
             findings.extend(check_signature_rules(facts, node, qualname, self.config))
             findings.extend(check_return_rules(facts, node, qualname))
             if not boundary:

@@ -103,7 +103,7 @@ class GuardConfig:
     max_parameters: int = 8
     max_constructor_dependencies: int = 8
     max_nesting: int = 4
-    max_branches: int = 12
+    max_branches: int = 25
     docstring_min_lines: int = 2
     single_use_chain_min_helpers: int = 3
     require_docstrings: bool = True

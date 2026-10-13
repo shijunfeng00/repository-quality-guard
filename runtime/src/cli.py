@@ -38,7 +38,6 @@ from .architecture_diff import compare_git_architecture
 from .call_chain_rules import single_use_chain_findings
 from .config import GuardConfig, is_test_path
 from .fallback_laundering import fallback_laundering_findings
-from .git_utils import run_readonly_git
 from .integrity import INTEGRITY_RULE_CODE, verify_release_integrity
 from .interface_diff import GitWorktreeInterfaceComparator, PythonInterfaceExtractor
 from .interface_visibility import filter_interface_symbols, resolve_import_aliases
@@ -81,7 +80,6 @@ from .relation_graph import (
 from .python_dependency_facts import StaticPythonDependencyResolver
 from .ruff_runner import RuffRunner
 from .scanner import RepositoryScanner
-from .semantic_diff import semantic_repair_findings
 from .semantic_heuristic_candidates import semantic_heuristic_candidate_findings
 from .semantic_review import annotate_semantic_review, semantic_review_key
 
@@ -90,7 +88,7 @@ REPORT_GATE_EXIT_CODE = 3
 INTEGRITY_GATE_EXIT_CODE = 4
 REVIEW_REQUIRED_EXIT_CODE = 5
 _INTERFACE_DEFINITION_KINDS = frozenset({"class", "function", "method"})
-_INTERFACE_POLICY_CODES = frozenset({"QG161", "QG180", "QG181", "QG182"})
+_INTERFACE_POLICY_CODES = frozenset({"QG180", "QG181", "QG182"})
 
 
 def _filter_test_quality_findings(
@@ -944,146 +942,6 @@ def _run_interface_diff(
     )
 
 
-def _changed_readme_paths(target: AuditTarget, args: argparse.Namespace) -> set[str]:
-    """Collect changed tracked/untracked paths from the selected Git comparison."""
-    if not target.git_enabled:
-        return set()
-    command = [
-        "diff",
-        *(["--cached"] if args.staged else []),
-        "--name-only",
-        args.diff_base,
-        "--",
-    ]
-    result = run_readonly_git(target.root, command)
-    paths = set(result.stdout.splitlines()) if result.returncode == 0 else set()
-    if not args.staged:
-        untracked = run_readonly_git(
-            target.root, ("ls-files", "--others", "--exclude-standard")
-        )
-        if untracked.returncode == 0:
-            paths.update(untracked.stdout.splitlines())
-    return {path.strip() for path in paths if path.strip()}
-
-
-def _documented_public_symbols(
-    target: AuditTarget,
-    args: argparse.Namespace,
-    readme_paths: list[str],
-    public_changes: list[InterfaceChange],
-) -> set[str]:
-    """Only matching API names in newly added README lines count as synchronization."""
-    documented: set[str] = set()
-    if not target.git_enabled:
-        return documented
-    for path in readme_paths:
-        command = [
-            "diff",
-            *(["--cached"] if args.staged else []),
-            "--unified=0",
-            args.diff_base,
-            "--",
-            path,
-        ]
-        diff = run_readonly_git(target.root, command)
-        if diff.returncode != 0:
-            continue
-        added = "\n".join(
-            line[1:]
-            for line in diff.stdout.splitlines()
-            if line.startswith("+") and not line.startswith("+++")
-        )
-        for change in public_changes:
-            symbol = change.after if change.after is not None else change.before
-            if symbol is not None and symbol.qualname.rsplit(".", 1)[-1] in added:
-                documented.add(change.symbol)
-    return documented
-
-
-def _readme_sync_finding(
-    target: AuditTarget,
-    args: argparse.Namespace,
-    interface_diff: InterfaceDiffReport,
-    project_name: str,
-) -> Finding | None:
-    """检查公开接口变化是否同步修改 README。
-
-    Args:
-        target: 当前审计目标。
-        args: 已解析命令行参数。
-        interface_diff: 已生成的接口差异报告。
-        project_name: 当前启用的项目 profile。
-
-    Returns:
-        公开接口变化但 README 未同步时返回 QG161，否则返回 None。
-    """
-    public_changes: list[InterfaceChange] = []
-    for change in interface_diff.changes:
-        if any(
-            (
-                change.change == "removed",
-                change.kind == "file",
-                is_test_path(change.path, project_name),
-            )
-        ):
-            continue
-        symbol = change.after if change.after is not None else change.before
-        if symbol is None:
-            continue
-        components = [
-            *Path(change.path).with_suffix("").parts,
-            *symbol.qualname.split("."),
-        ]
-        if any(
-            part.startswith("_") and not (part.startswith("__") and part.endswith("__"))
-            for part in components
-        ):
-            continue
-        public_changes.append(change)
-    if not public_changes:
-        return None
-    changed_paths = _changed_readme_paths(target, args)
-    readme_paths = sorted(
-        item for item in changed_paths if Path(item).name.lower().startswith("readme")
-    )
-    documented_changes = _documented_public_symbols(
-        target, args, readme_paths, public_changes
-    )
-    missing_changes = [
-        change for change in public_changes if change.symbol not in documented_changes
-    ]
-    if not missing_changes:
-        return None
-    first = missing_changes[0]
-    symbol = first.after if first.after is not None else first.before
-    return Finding(
-        code="QG161",
-        severity="error",
-        confidence="high",
-        path=first.path,
-        line=symbol.line if symbol is not None else 1,
-        column=1,
-        message=(
-            f"检测到 {len(missing_changes)} 项公开接口变化尚无对应 README 更新说明。"
-        ),
-        suggestion=(
-            "更新仓库 README 中的公开能力、参数、返回结构、配置或使用示例，并同步测试与调用方；"
-            "如果接口不应公开，先修正接口边界而不是仅补文档。"
-        ),
-        evidence={
-            "public_changes": [
-                f"{change.change}:{change.kind}:{change.path}:{change.symbol}"
-                for change in missing_changes
-            ],
-            "readme_paths": readme_paths,
-            "documented_changes": sorted(documented_changes),
-            "changed_paths": sorted(changed_paths),
-            "qg179_exempt": True,
-            "governed_by": "interface-review",
-        },
-    )
-
-
 def _profile_selection(root: Path, explicit: str | None):
     """解析 Profile 并把自动/显式/通用来源明确打印给用户。"""
     selection = resolve_profile_reference(root, explicit)
@@ -1094,17 +952,19 @@ def _profile_selection(root: Path, explicit: str | None):
             f"[QG] Auto-selected profile '{selection.name}' because repository directory "
             "name matches an available profile. (source=auto-directory-name)"
         )
-    elif selection.source == "sealed-installed":
+    elif selection.source in {"sealed-installed", "sealed-installed-explicit"}:
         print(
             f"[QG] Using sealed installed profile '{selection.name}'. "
-            "(source=sealed-installed)"
+            f"(source={selection.source})"
         )
     elif selection.source == "sealed-installed-generic":
         print(
             "[QG] Using sealed installed generic policy. (source=sealed-installed-generic)"
         )
-    else:
+    elif selection.source == "generic":
         print("[QG] No profile selected; using generic policy. (source=generic)")
+    else:
+        raise ValueError(f"unknown Profile selection source: {selection.source}")
     return selection
 
 
@@ -1493,6 +1353,35 @@ def scan_target(
     production_topology = normalized_topology(
         current_relation_graph, StaticPythonDependencyResolver.from_environment()
     )
+    compiler_entry = os.environ.get("RQG_PYRIGHT_ENTRY")
+    checker = None
+    provider_identity: dict[str, str] = {}
+    if compiler_entry and not scan_args.staged:
+        from shutil import which
+        from tools.spike_core.provider_audit import collect
+        from .compiler_contracts import r2_initialization_observations
+
+        checker = collect(target.root, Path(compiler_entry))
+        pyrefly_executable = which("pyrefly")
+        if pyrefly_executable is None:
+            raise RuntimeError("Compiler provider was requested but pyrefly is missing")
+        provider_identity = {
+            "pyright_version": checker["version"],
+            "pyright_sha256": checker["provider_entry_sha256"],
+            "typeshed_sha256": checker["stdlib_builtins_sha256"],
+            "pyrefly_sha256": hashlib.sha256(
+                Path(pyrefly_executable).read_bytes()
+            ).hexdigest(),
+        }
+        production_topology = replace(
+            production_topology,
+            compiler_diagnostics=r2_initialization_observations(
+                current_analysis,
+                checker["observations"],
+                production_topology,
+                provider_identity=provider_identity,
+            ),
+        )
     production_scanner = RepositoryScanner(
         target.root,
         production_config,
@@ -1505,6 +1394,24 @@ def scan_target(
         else None
     )
     report = production_scanner.scan(selected_files=selected_files)
+    # Compiler evidence is optional until the offline toolchain is certified for
+    # every supported deployment. Explicit activation must fail visibly on an
+    # incomplete toolchain; never silently downgrade to name-based inference.
+    if checker is not None:
+        from tools.spike_core.python_compiler_provider import (
+            certified_static_call_mismatches,
+        )
+        from .compiler_contracts import r1_bound_call_findings
+
+        witnesses = certified_static_call_mismatches(
+            current_analysis, checker["observations"]
+        )
+        merge_findings(
+            report,
+            r1_bound_call_findings(
+                current_analysis, witnesses, provider_identity=provider_identity
+            ),
+        )
     report.interface_diff = interface_diff
     report.comparison_mode = f"{args.mode}: {comparison.mode}"
     report.comparison_target = comparison.target_label
@@ -1582,16 +1489,6 @@ def scan_target(
                 target_analysis=comparison_analysis,
             )
         )
-        architecture_findings.extend(
-            semantic_repair_findings(
-                target.root,
-                production_config,
-                scan_args.diff_base,
-                staged=scan_args.staged,
-                base_analysis=base_analysis,
-                target_analysis=comparison_analysis,
-            )
-        )
         if "semantic-heuristic-candidates" in production_config.profile_capabilities:
             architecture_findings.extend(
                 semantic_heuristic_candidate_findings(
@@ -1635,13 +1532,6 @@ def scan_target(
         report.relation_graph,
         interface_diff,
     )
-    readme_finding = _readme_sync_finding(
-        target, scan_args, interface_diff, base_config.project_name
-    )
-    if readme_finding is not None and not is_test_path(
-        readme_finding.path, base_config.project_name
-    ):
-        report.findings.append(readme_finding)
 
     ruff_runner = RuffRunner(
         target.root,

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from .config import GuardConfig
 from .model import Definition, Finding
-from .policy_common import RepositorySignals, definition_index
-
-MIN_FORWARDING_CHAIN_LENGTH = 3
+from .policy_common import RepositorySignals
 
 
 def check_repository_architecture(
@@ -28,8 +26,6 @@ def check_repository_architecture(
     findings.extend(check_duplicate_config_sources(signals))
     findings.extend(check_duplicate_config_defaults(signals))
     findings.extend(check_duplicate_prompts(signals))
-    findings.extend(check_forwarding_chains(definitions))
-    findings.extend(check_named_wrapper_classes(definitions, config))
     findings.extend(check_deprecated_unused(definitions))
     for name, locations in sorted(signals.module_constants.items()):
         if name in signals.referenced_names:
@@ -181,98 +177,6 @@ def check_duplicate_prompts(signals: RepositorySignals) -> list[Finding]:
                 evidence={
                     "characters": len(text),
                     "locations": [f"{p}:{ln}" for p, ln, _ in locations],
-                },
-            )
-        )
-    return findings
-
-
-def check_forwarding_chains(definitions: list[Definition]) -> list[Finding]:
-    """
-    检查连续多层单纯委托包装调用链。
-
-    Args:
-        definitions: 仓库内全部定义。
-
-    Returns:
-        长转发链发现列表。
-    """
-    by_symbol = {item.symbol_id: item for item in definitions}
-    by_name = definition_index(definitions)
-    graph: dict[str, str] = {}
-    for definition in definitions:
-        if not definition.wrapper_target:
-            continue
-        target_name = definition.wrapper_target.rsplit(".", 1)[-1]
-        candidates = by_name[target_name]
-        same_module = [item for item in candidates if item.module == definition.module]
-        if len(same_module) == 1:
-            graph[definition.symbol_id] = same_module[0].symbol_id
-        elif len(candidates) == 1:
-            graph[definition.symbol_id] = candidates[0].symbol_id
-    findings: list[Finding] = []
-    reported: set[str] = set()
-    for start in graph:
-        chain = [start]
-        current = start
-        while current in graph and graph[current] not in chain:
-            current = graph[current]
-            chain.append(current)
-        if len(chain) < MIN_FORWARDING_CHAIN_LENGTH or start in reported:
-            continue
-        reported.update(chain[:-1])
-        definition = by_symbol[start]
-        findings.append(
-            Finding(
-                code="QG090",
-                severity="warning",
-                confidence="high",
-                path=str(definition.path),
-                line=definition.line,
-                column=definition.column,
-                message=f"检测到 {len(chain)} 层连续转发调用链。",
-                symbol=start,
-                suggestion="删除没有独立契约、转换或副作用的中间层。",
-                evidence={"chain": chain},
-            )
-        )
-    return findings
-
-
-def check_named_wrapper_classes(
-    definitions: list[Definition], config: GuardConfig
-) -> list[Finding]:
-    """
-    检查只有极少使用者的 Factory、Builder、Manager 和 Adapter。
-
-    Args:
-        definitions: 仓库内全部定义。
-        config: 当前仓库质量配置。
-
-    Returns:
-        命名式包装类候选列表。
-    """
-    findings: list[Finding] = []
-    suffixes = tuple(item.lower() for item in config.wrapper_class_suffixes)
-    for definition in definitions:
-        if definition.kind != "class" or not definition.name.lower().endswith(suffixes):
-            continue
-        if definition.calls + definition.references > 1:
-            continue
-        findings.append(
-            Finding(
-                code="QG089",
-                severity="info",
-                confidence="medium",
-                path=str(definition.path),
-                line=definition.line,
-                column=definition.column,
-                message=f"包装类 `{definition.qualname}` 在仓库内仅有 {definition.calls + definition.references} 个静态使用点。",
-                symbol=definition.symbol_id,
-                suggestion="确认是否存在真实构建、适配或生命周期职责；否则删除命名式抽象。",
-                evidence={
-                    "calls": definition.calls,
-                    "references": definition.references,
                 },
             )
         )

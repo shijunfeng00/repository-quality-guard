@@ -7,14 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .ast_utils import (
-    MAPPING_NAME_HINTS,
     ComplexityVisitor,
     annotation_is_mapping,
     assigned_names,
     decorator_names,
     dotted_name,
     is_constant_default,
-    is_lookup_mapping_name,
     is_trivial_wrapper,
     normalized_function_body,
 )
@@ -32,15 +30,6 @@ DICT_DEFAULT_ARG_COUNT = 2
 GETATTR_DEFAULT_ARG_COUNT = 3
 MANUAL_DICT_PROJECTION_MIN_FIELDS = 3
 TINY_METHOD_MAX_LINES = 5
-BEST_EFFORT_FUNCTION_MARKERS = (
-    "best_effort",
-    "health",
-    "ping",
-    "probe",
-    "safe_",
-    "try_",
-)
-BEST_EFFORT_SPECIAL_METHODS = {"__aexit__", "__del__", "__exit__"}
 TERMINATING_STATEMENTS = (ast.Return, ast.Raise, ast.Break, ast.Continue)
 SETDEFAULT_AGGREGATION_METHODS = {"add", "append", "extend", "update"}
 UNCHANGED_CN = "保持" + "不变"
@@ -297,24 +286,6 @@ def _static_truth_value(node: ast.expr) -> bool | None:
     return None
 
 
-def in_explicit_best_effort_scope(function_stack: list[str]) -> bool:
-    """
-    判断当前函数栈是否明确声明 best-effort 或清理语义。
-
-    Args:
-        function_stack: 当前词法函数名称栈。
-
-    Returns:
-        当前函数明确属于安全探测、健康检查或清理协议时返回 True。
-    """
-    if not function_stack:
-        return False
-    name = function_stack[-1].lower()
-    return name in BEST_EFFORT_SPECIAL_METHODS or any(
-        marker in name for marker in BEST_EFFORT_FUNCTION_MARKERS
-    )
-
-
 def manual_projection_field(
     key_node: ast.expr | None,
     value_node: ast.expr,
@@ -381,35 +352,25 @@ def manual_dict_projection(
         receiver_tail = receiver_name.rsplit(".", 1)[-1]
         if receiver_tail in mapping_names:
             return receiver_name, fields, "high"
-        if receiver_tail in MAPPING_NAME_HINTS:
-            return receiver_name, fields, "medium"
+        return receiver_name, fields, "medium"
     return None
 
 
 def is_decorator_inner_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-    outer_function_name: str,
+    enclosing: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> bool:
-    """
-    判断嵌套函数是否属于标准 decorator wrapper 结构。
+    """Identify a nested function returned by its actual enclosing declaration.
 
-    Args:
-        node: 当前嵌套函数定义。
-        outer_function_name: 直接外层函数名称。
-
-    Returns:
-        明确属于 decorator/decorate 工厂返回的 wrapper 时返回 True。
+    The names here are only compared as AST reference identity within a
+    lexical scope; no spelling such as ``wrapper`` or ``decorator`` is proof.
+    A reassigned or indirect return is left for review.
     """
-    outer = outer_function_name.lower()
-    if "decorator" not in outer and "decorate" not in outer:
-        return False
-    if node.name not in {"wrapper", "wrapped", "inner"}:
-        return False
     return any(
         isinstance(statement, ast.Return)
         and isinstance(statement.value, ast.Name)
         and statement.value.id == node.name
-        for statement in ast.walk(node)
+        for statement in enclosing.body
     )
 
 
@@ -425,6 +386,7 @@ class ModuleFacts:
     module: str
     source: str
     tree: ast.Module | None = None
+    repository_root: Path | None = None
     definitions: list[Definition] = field(default_factory=list)
     usages: list[Usage] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
@@ -479,9 +441,6 @@ class _MappingCallContext:
     receiver_name: str
     receiver_tail: str
     confirmed_mapping: bool
-    mapping_name_hint: bool
-    lookup_mapping: bool
-    boundary_module: bool
     test_context: bool
     ownership: ContractOwnership
     ownership_confidence: Confidence
@@ -513,6 +472,7 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         self.topology = topology
         self.class_stack: list[str] = []
         self.function_stack: list[str] = []
+        self.function_node_stack: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
         self.mapping_scope_stack: list[set[str]] = [set()]
         self.typed_scope_stack: list[set[str]] = [set()]
         self.annotation_scope_stack: list[dict[str, str]] = [{}]
@@ -691,8 +651,6 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
         Returns:
             所有权、置信度以及对应的事实证据。
         """
-        if self.is_contract_boundary_module():
-            return ContractOwnership.DYNAMIC_BOUNDARY, "high", ("boundary_module",)
         external_candidate = self._external_contract_candidate(receiver_name, selector)
         if external_candidate:
             resolved_external = self._resolved_external_contract_evidence()
@@ -761,21 +719,6 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             当前限定作用域字符串。
         """
         return ".".join(self.class_stack + self.function_stack)
-
-    def is_contract_boundary_module(self) -> bool:
-        """判断当前模块是否承担外部输入、配置或协议适配边界。
-
-        Returns:
-            模块名称包含配置的边界标记时返回 True。
-        """
-        module_parts = self.facts.module.lower().replace("-", "_").split(".")
-        return any(
-            marker.lower() in module_parts
-            for marker in (
-                *self.config.boundary_module_markers,
-                *self.config.config_module_markers,
-            )
-        )
 
     def add_finding(
         self,
@@ -910,22 +853,32 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
             for target in node.targets:
                 self.mapping_scope_stack[-1].update(assigned_names(target))
         if isinstance(node.value, ast.Dict):
-            projection = manual_dict_projection(node.value, self.mapping_names)
-            if projection is not None:
-                receiver_name, fields, confidence = projection
-                self.add_finding(
-                    node.value,
-                    "QG153",
-                    f"从映射 `{receiver_name}` 逐字段 .get() 手写构造新 dict，属于重复字段投影。",
-                    severity="warning" if is_test_path(self.facts.path) else "critical",
-                    confidence=confidence,
-                    suggestion=(
-                        "不要把 metadata/payload 等 dict 字段逐项抄写一遍；若需要完整传递，直接复用原 dict；"
-                        "若必须裁剪字段，集中声明字段白名单并用索引或专门模型表达契约。"
-                    ),
-                    evidence={"receiver": receiver_name, "fields": fields},
-                )
+            self._record_manual_projection(node.value)
         self.generic_visit(node)
+
+    def visit_Return(self, node: ast.Return) -> None:
+        """Report structural field projections in returned mapping literals."""
+        if isinstance(node.value, ast.Dict):
+            self._record_manual_projection(node.value)
+        self.generic_visit(node)
+
+    def _record_manual_projection(self, value: ast.Dict) -> None:
+        """Record a source-located projection candidate, not a contract violation."""
+        projection = manual_dict_projection(value, self.mapping_names)
+        if projection is None:
+            return
+        receiver_name, fields, confidence = projection
+        self.add_finding(
+            value,
+            "QG153",
+            f"从映射 `{receiver_name}` 逐字段 .get() 手写构造新 dict，建议核查投影契约。",
+            severity="warning",
+            confidence=confidence,
+            suggestion=(
+                "确认字段投影是否为明确的结构变换；只有上游与下游字段契约证实冗余时才能删除。"
+            ),
+            evidence={"receiver": receiver_name, "fields": fields},
+        )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """
@@ -1057,8 +1010,8 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         parameter_count, boolean_flags = self._function_signature_metrics(node)
         parameter_names = function_parameter_names(node)
         docstring = parse_docstring(node)
-        if self.function_stack and not is_decorator_inner_function(
-            node, self.function_stack[-1]
+        if self.function_node_stack and not is_decorator_inner_function(
+            node, self.function_node_stack[-1]
         ):
             self.add_finding(
                 node,
@@ -1150,6 +1103,7 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
                 if annotation_name:
                     parameter_annotations[node.args.kwarg.arg] = annotation_name
         self.function_stack.append(node.name)
+        self.function_node_stack.append(node)
         self.mapping_scope_stack.append(parameter_mappings)
         self.typed_scope_stack.append(typed_parameters)
         self.annotation_scope_stack.append(parameter_annotations)
@@ -1159,6 +1113,7 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         self.typed_scope_stack.pop()
         self.mapping_scope_stack.pop()
         self.function_stack.pop()
+        self.function_node_stack.pop()
 
     def _function_signature_metrics(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef
@@ -1233,8 +1188,6 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
                     severity=(
                         "warning"
                         if is_test_path(self.facts.path)
-                        else "info"
-                        if self.is_contract_boundary_module()
                         else "critical"
                         if confirmed_mapping
                         else "error"
@@ -1456,14 +1409,11 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
             swallowed = bool(handler.body) and all(
                 is_constant_default(item) for item in handler.body
             )
-            explicit_best_effort = in_explicit_best_effort_scope(self.function_stack)
             self.add_finding(
                 handler,
                 "QG007",
                 "宽泛异常被捕获" + ("并转换为默认结果。" if swallowed else "。"),
-                severity=(
-                    "error" if swallowed and not explicit_best_effort else "warning"
-                ),
+                severity="error" if swallowed else "warning",
                 suggestion=(
                     "捕获可预期的具体异常；失败若影响契约，应记录上下文并显式传播。"
                     "显式 best-effort 接口也应限制捕获范围并保留诊断信息。"
@@ -1471,7 +1421,6 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
                 evidence={
                     "exception": exception_name or "bare except",
                     "swallowed": swallowed,
-                    "explicit_best_effort": explicit_best_effort,
                 },
             )
         contract_exceptions = exception_names & {
@@ -1596,7 +1545,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
                 argument,
                 "QG153",
                 f"从映射 `{receiver_name}` 逐字段 .get() 手写构造新 dict，属于重复字段投影。",
-                severity="warning" if is_test_path(self.facts.path) else "critical",
+                severity="warning",
                 confidence=confidence,
                 suggestion=(
                     "不要把 metadata/payload 等 dict 字段逐项抄写一遍；若需要完整传递，直接复用原 dict；"
@@ -1715,13 +1664,11 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         confirmed_mapping = (
             isinstance(receiver, ast.Dict) or receiver_tail in self.mapping_names
         )
-        mapping_name_hint = receiver_tail in MAPPING_NAME_HINTS
         self._check_mapping_call(
             node,
             attribute,
             receiver_name,
             confirmed_mapping,
-            mapping_name_hint,
         )
         self._check_special_attribute_call(node, dotted_name(node.func))
 
@@ -1731,7 +1678,6 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         attribute: str,
         receiver_name: str,
         confirmed_mapping: bool,
-        mapping_name_hint: bool,
     ) -> None:
         """检查映射读取、聚合初始化与删除时的隐式兜底契约。"""
         receiver_tail = receiver_name.rsplit(".", 1)[-1]
@@ -1755,16 +1701,11 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             receiver_name=receiver_name,
             receiver_tail=receiver_tail,
             confirmed_mapping=confirmed_mapping,
-            mapping_name_hint=mapping_name_hint,
-            lookup_mapping=is_lookup_mapping_name(receiver_tail),
-            boundary_module=self.is_contract_boundary_module(),
             test_context=is_test_path(self.facts.path),
             ownership=ownership,
             ownership_confidence=ownership_confidence,
             ownership_evidence=ownership_evidence,
         )
-        if attribute == "get" and context.confirmed_mapping and context.lookup_mapping:
-            return
         if attribute == "get":
             self._check_mapping_get(node, context)
         elif attribute == "setdefault":
@@ -1792,12 +1733,11 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             context.ownership_evidence,
         )
         evidence: dict[str, object] = {
+            "requiredness": "UNKNOWN",
             "receiver": context.receiver_name,
             "selector": selector,
             "explicit_default": explicit_default,
             "confirmed_mapping": context.confirmed_mapping,
-            "lookup_mapping": context.lookup_mapping,
-            "boundary_module": context.boundary_module,
             "contract_ownership": context.ownership.value,
             "ownership_evidence": list(context.ownership_evidence),
         }
@@ -1826,7 +1766,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         if context.test_context:
             severity: Severity = "warning"
         elif context.ownership is ContractOwnership.INTERNAL_FORMAL:
-            severity = "critical"
+            severity = "warning"
         else:
             severity = "info"
         internal = context.ownership is ContractOwnership.INTERNAL_FORMAL
@@ -1834,7 +1774,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             node,
             code,
             (
-                "内部正式映射使用 .get() 兜底必需字段，可能把契约错误转换成正常路径。"
+                "已绑定内部映射类型，但字段必需性未证明；.get() 兜底需要核查字段契约。"
                 if internal
                 else ".get() 位于显式外部可选/动态边界；记录 owner 证据而不按内部 schema 失败处理。"
             ),
@@ -1853,30 +1793,20 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         """检查 setdefault 是否把读取、兜底与状态写入混成一个隐式入口。"""
         if not (context.confirmed_mapping or self.config.strict_get):
             return
-        if context.confirmed_mapping and context.lookup_mapping:
-            return
         if id(node) in self.aggregation_setdefault_calls:
             return
         self.add_finding(
             node,
             "QG012",
             "setdefault() 同时承担读取、兜底和写入，容易隐藏状态归并副作用。",
-            severity=(
-                "warning"
-                if context.test_context
-                else "info"
-                if context.boundary_module
-                else "critical"
-                if context.confirmed_mapping
-                and context.receiver_tail in MAPPING_NAME_HINTS
-                else "error"
-            ),
+            severity="warning" if context.confirmed_mapping else "info",
             suggestion=(
                 "不要把 setdefault() 机械展开成 `if key not in mapping: mapping[key] = default`。"
                 "若缺键是合法的聚合/缓存语义，保留 setdefault 或封装到唯一状态入口；"
                 "若字段按契约必需，直接索引并让缺失错误暴露。"
             ),
             confidence="high" if context.confirmed_mapping else "medium",
+            evidence={"requiredness": "UNKNOWN", "receiver": context.receiver_name},
         )
 
     def _check_mapping_pop(self, node: ast.Call, context: _MappingCallContext) -> None:
@@ -1885,25 +1815,14 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             return
         if not (context.confirmed_mapping or self.config.strict_get):
             return
-        if context.confirmed_mapping and context.lookup_mapping:
-            return
         self.add_finding(
             node,
             "QG025",
             "映射 pop(key, default) 在删除字段时静默忽略缺失。",
-            severity=(
-                "warning"
-                if context.test_context
-                else "info"
-                if context.boundary_module
-                else "critical"
-                if context.confirmed_mapping
-                and context.receiver_tail in MAPPING_NAME_HINTS
-                else "error"
-            ),
+            severity="warning" if context.confirmed_mapping else "info",
             confidence="high" if context.confirmed_mapping else "medium",
             suggestion="若字段按契约必须存在，使用 pop(key)；真正可选字段必须在类型中显式声明。",
-            evidence={"receiver": context.receiver_name},
+            evidence={"receiver": context.receiver_name, "requiredness": "UNKNOWN"},
         )
 
     def _check_special_attribute_call(self, node: ast.Call, full_name: str) -> None:

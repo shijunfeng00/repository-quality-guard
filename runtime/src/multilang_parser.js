@@ -1,6 +1,8 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
+const parserSha256 = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
 const path = require('path');
 const dependencyRoot = process.env.RQG_NODE_MODULES;
 if (!dependencyRoot) throw new Error('RQG_NODE_MODULES is required');
@@ -144,12 +146,104 @@ function normalizedShape(root) {
   return parts.join(' ');
 }
 
-function functionMetrics(node, sf) {
+// The TypeScript checker owns lexical/module binding. Only compiler-resolved
+// immutable authored functions are projected into the shared MAY call graph.
+// Arbitrary object methods, mutable variables and dynamic property access stay UNKNOWN.
+function referencedFunction(expr, checker, filesByAbsolutePath) {
+  const expression = unwrap(expr);
+  let lookup = expression;
+  if (ts.isPropertyAccessExpression(expression)) {
+    // TypeChecker supplies the declared candidate even for class and object
+    // methods. This is a MAY target, not a direct/closed runtime dispatch:
+    // subclasses, rebinding and proxies may supply another implementation.
+    lookup = expression.name;
+  } else if (!ts.isIdentifier(expression)) {
+    return null;
+  }
+  let symbol = checker.getSymbolAtLocation(lookup);
+  if (!symbol) return null;
+  if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+  if (!symbol) return null;
+  const declarations = symbol.declarations || [];
+  // Overloads have one actual implementation. Nested authored functions are
+  // compiler-resolved as reliably as top-level functions, and cannot be
+  // confused with same-name definitions in other lexical scopes.
+  const implementations = declarations.filter(node =>
+    (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.body && node.name);
+  let implementation = null;
+  let authoredName = '';
+  if (implementations.length === 1 && declarations.every(node =>
+      ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node))) {
+    implementation = implementations[0];
+    authoredName = implementation.name.getText(implementation.getSourceFile());
+  } else if (declarations.length === 1 && ts.isVariableDeclaration(declarations[0])) {
+    const variable = declarations[0];
+    const list = variable.parent;
+    if (ts.isIdentifier(variable.name) && ts.isVariableDeclarationList(list) &&
+        (list.flags & ts.NodeFlags.Const) !== 0 && variable.initializer &&
+        (ts.isArrowFunction(variable.initializer) || ts.isFunctionExpression(variable.initializer))) {
+      implementation = variable.initializer;
+      authoredName = variable.name.text;
+    }
+  }
+  if (!implementation) return null;
+  const file = implementation.getSourceFile();
+  const target = filesByAbsolutePath.get(path.posix.normalize(file.fileName));
+  if (!target) return null;
+  return {
+    path: target.path,
+    line: file.getLineAndCharacterOfPosition(implementation.getStart(file)).line + 1,
+    column: file.getLineAndCharacterOfPosition(implementation.getStart(file)).character + 1,
+    name: authoredName
+  };
+}
+
+function createSnapshotProgram(items) {
+  const scripts = items.filter(item => item.language === 'javascript' || item.language === 'typescript');
+  const byPath = new Map();
+  for (const item of scripts) {
+    const absolute = path.posix.normalize(path.posix.join('/__rqg_snapshot__', item.path));
+    if (!absolute.startsWith('/__rqg_snapshot__/') || byPath.has(absolute)) {
+      throw new Error('invalid or duplicate script path in snapshot');
+    }
+    byPath.set(absolute, item);
+  }
+  const existingDirectories = new Set(['/__rqg_snapshot__']);
+  for (const filename of byPath.keys()) {
+    let directory = path.posix.dirname(filename);
+    while (directory.startsWith('/__rqg_snapshot__') && !existingDirectories.has(directory)) {
+      existingDirectories.add(directory);
+      directory = path.posix.dirname(directory);
+    }
+  }
+  const options = {
+    allowJs: true, checkJs: false, noLib: true, noEmit: true,
+    module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ESNext
+  };
+  const host = ts.createCompilerHost(options);
+  host.getCurrentDirectory = () => '/__rqg_snapshot__';
+  host.fileExists = filename => byPath.has(path.posix.normalize(filename));
+  host.readFile = filename => byPath.get(path.posix.normalize(filename))?.source;
+  host.directoryExists = directory => existingDirectories.has(path.posix.normalize(directory));
+  host.getDirectories = () => [];
+  host.realpath = filename => path.posix.normalize(filename);
+  host.getSourceFile = (filename, languageVersion) => {
+    const item = byPath.get(path.posix.normalize(filename));
+    return item ? ts.createSourceFile(filename, item.source, languageVersion, true,
+      scriptKind(item.language, item.path)) : undefined;
+  };
+  const program = ts.createProgram([...byPath.keys()], options, host);
+  return {program, checker: program.getTypeChecker(), byPath};
+}
+
+function functionMetrics(node, sf, checker, filesByAbsolutePath) {
   let branches = 0;
   let maxNesting = 0;
   let nodeCount = 0;
   let nestedDefs = 0;
   const calls = [];
+  const callsites = [];
   const body = node.body || node;
   const branchKinds = new Set([
     ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForInStatement,
@@ -168,13 +262,23 @@ function functionMetrics(node, sf) {
     if (branchKinds.has(n.kind)) branches += 1;
     const nextDepth = depth + (nestingKinds.has(n.kind) ? 1 : 0);
     maxNesting = Math.max(maxNesting, nextDepth);
-    if (ts.isCallExpression(n)) calls.push(callName(n.expression, sf));
+    if (ts.isCallExpression(n)) {
+      calls.push(callName(n.expression, sf));
+      const start = sf.getLineAndCharacterOfPosition(n.getStart(sf));
+      const target = !n.questionDotToken
+        ? referencedFunction(n.expression, checker, filesByAbsolutePath) : null;
+      callsites.push({
+        line: start.line + 1, column: start.character,
+        callee: target ? target.name : '',
+        target
+      });
+    }
     ts.forEachChild(n, child => visit(child, nextDepth, false));
   }
   visit(body, 0, true);
   return {
     branches, max_nesting: maxNesting, node_count: nodeCount, nested_defs: nestedDefs,
-    calls, wrapper_target: wrapperTarget(node, sf), shape: normalizedShape(body)
+    calls, callsites, wrapper_target: wrapperTarget(node, sf), shape: normalizedShape(body)
   };
 }
 
@@ -296,12 +400,18 @@ function scriptOwnership(sf) {
   return {imports, bags, classes, compositions};
 }
 
-function parseScript(item) {
-  const sf = ts.createSourceFile(item.path, item.source, ts.ScriptTarget.Latest, true, scriptKind(item.language, item.path));
+function parseScript(item, programContext) {
+  const absolute = path.posix.normalize(path.posix.join('/__rqg_snapshot__', item.path));
+  const sf = programContext.program.getSourceFile(absolute);
+  if (!sf) throw new Error(`source omitted from TypeScript program: ${item.path}`);
   const definitions = [];
   const stack = [];
   function walk(node) {
     let pushed = false;
+    if ((ts.isClassDeclaration(node) || ts.isClassExpression(node)) && node.name) {
+      stack.push(node.name.text);
+      pushed = true;
+    }
     if (isFunctionLike(node)) {
       const name = nodeName(node, sf);
       const start = sf.getLineAndCharacterOfPosition(node.getStart(sf));
@@ -312,7 +422,7 @@ function parseScript(item) {
         scope_key: scopeKey(node, sf), line: start.line + 1, column: start.character + 1,
         end_line: end.line + 1, parameter_count: (node.parameters || []).length,
         parameter_names: (node.parameters || []).map(p => p.name.getText(sf)),
-        ...functionMetrics(node, sf)
+        ...functionMetrics(node, sf, programContext.checker, programContext.byPath)
       });
       stack.push(name); pushed = true;
     }
@@ -338,6 +448,18 @@ function parseScript(item) {
 
   return {
     path: item.path, language: item.language, bytes: Buffer.byteLength(item.source),
+    source_sha256: crypto.createHash('sha256').update(item.source, 'utf8').digest('hex'),
+    toolchain_id: `node-${process.version}`, provider_version: ts.version,
+    invocation_digest: crypto.createHash('sha256').update(JSON.stringify([
+      parserSha256, ts.version, process.version, item.language, item.path,
+      crypto.createHash('sha256').update(item.source, 'utf8').digest('hex'),
+      [...new Set(definitions.flatMap(definition => definition.callsites
+        .map(callsite => callsite.target?.path).filter(Boolean)))].sort().map(targetPath => {
+          const target = programContext.byPath.get(path.posix.normalize(
+            path.posix.join('/__rqg_snapshot__', targetPath)));
+          return [targetPath, crypto.createHash('sha256').update(target.source, 'utf8').digest('hex')];
+        })
+    ])).digest('hex'),
     lines: item.source.split(/\r?\n/).length,
     diagnostics: sf.parseDiagnostics.map(d => ({
       start: d.start || 0, length: d.length || 0,
@@ -377,9 +499,11 @@ function parseCss(item) {
 }
 
 const output = [];
-for (const item of readInput()) {
-  if (!item || typeof item.path !== 'string' || typeof item.source !== 'string') continue;
-  if (item.language === 'javascript' || item.language === 'typescript') output.push(parseScript(item));
+const items = readInput().filter(item => item && typeof item.path === 'string' && typeof item.source === 'string');
+const programContext = items.some(item => item.language === 'javascript' || item.language === 'typescript')
+  ? createSnapshotProgram(items) : null;
+for (const item of items) {
+  if (item.language === 'javascript' || item.language === 'typescript') output.push(parseScript(item, programContext));
   else if (item.language === 'css') output.push(parseCss(item));
 }
 process.stdout.write(JSON.stringify(output));

@@ -16,6 +16,8 @@ from typing import Any
 from .analysis_snapshot import RepositoryAnalysisSnapshot
 from .cpp_build_contract import (
     CompilerFamily,
+    NativeSyntaxState,
+    check_native_syntax,
     TranslationUnitBuildSpec,
     repository_path,
     load_compilation_database,
@@ -120,33 +122,22 @@ def node_facts(snapshot: RepositoryAnalysisSnapshot) -> list[dict[str, Any]]:
 
 def _script_usage(
     scripts: list[dict[str, Any]],
-) -> tuple[
-    list[tuple[dict[str, Any], dict[str, Any]]],
-    Counter[str],
-]:
-    """计算具名 JS/TS definition 及调用/符号引用使用次数。"""
-    definitions: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    references: Counter[str] = Counter()
-    declarations: Counter[str] = Counter()
-    calls: Counter[str] = Counter()
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], Counter[tuple[str, int, int]]]:
+    """Count only TypeChecker-bound observed MAY callsites, by source identity.
 
+    Observed calls are not all runtime calls; no missing-edge proof is inferred.
+    """
+    definitions: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    usage: Counter[tuple[str, int, int]] = Counter()
     for script in scripts:
-        references.update(script["identifier_refs"])
-        references.update(script["symbol_refs"])
         for definition in script["definitions"]:
             if definition["name"].startswith("<anonymous@"):
                 continue
             definitions.append((script, definition))
-            declarations[definition["name"]] += 1
-            calls.update(definition["calls"])
-
-    names = set(references) | set(declarations) | set(calls)
-    usage = Counter(
-        {
-            name: max(calls[name], max(0, references[name] - declarations[name]))
-            for name in names
-        }
-    )
+            for call in definition.get("callsites", ()):
+                target = call.get("target")
+                if target is not None:
+                    usage[(target["path"], target["line"], target["column"])] += 1
     return definitions, usage
 
 
@@ -244,6 +235,9 @@ def _definition_findings(
         lines = definition["end_line"] - definition["line"] + 1
         name = definition["name"]
         symbol = definition["qualname"]
+        observed_uses = usage[
+            (script["path"], definition["line"], definition["column"])
+        ]
         common = {
             "path": script["path"],
             "line": definition["line"],
@@ -309,7 +303,7 @@ def _definition_findings(
             )
         if (
             lines < config.short_max_lines
-            and usage[name] <= config.low_use_max_calls
+            and observed_uses <= config.low_use_max_calls
             and name not in config.ignored_names
         ):
             findings.append(
@@ -319,7 +313,7 @@ def _definition_findings(
                     confidence="medium",
                     message=(
                         f"{definition['kind']} `{symbol}` 仅 {lines} 行，"
-                        f"静态调用/引用 {usage[name]} 次。"
+                        f"编译器观察到 MAY 调用 {observed_uses} 次（不代表入口闭合）。"
                     ),
                     suggestion=(
                         "事件 handler、dispatch callback、稳定谓词可保留；"
@@ -328,7 +322,7 @@ def _definition_findings(
                     evidence={
                         "language": script["language"],
                         "lines": lines,
-                        "usage": usage[name],
+                        "observed_may_calls": observed_uses,
                     },
                     **common,
                 )
@@ -338,14 +332,14 @@ def _definition_findings(
             findings.append(
                 Finding(
                     code="QG010",
-                    severity="warning" if usage[name] <= 1 else "info",
+                    severity="info",
                     confidence="high",
                     message=f"`{symbol}` 只委托给 `{wrapper_target}`。",
                     suggestion=("若没有独立契约、校验、日志或语义转换，直接复用目标。"),
                     evidence={
                         "language": script["language"],
                         "target": wrapper_target,
-                        "usage": usage[name],
+                        "observed_may_calls": observed_uses,
                     },
                     **common,
                 )
@@ -1174,13 +1168,18 @@ def clang_ast_invocation(
     return command, cwd
 
 
-def _fallback_clang_invocation(
+def _exploratory_clang_invocation(
     clang: str | None,
     source: Path,
     root: Path,
     include_args: tuple[str, ...] | list[str],
 ) -> tuple[list[str], Path] | None:
-    """Build the legacy best-effort Clang invocation when no build contract exists."""
+    """Probe non-authoritative structural facts without inventing build truth.
+
+    The fixed frontend dialect is only a best-effort AST exploration. It does
+    not establish the project's native C++ standard, and must not suppress
+    missing build contracts (QG208) or create native syntax errors (QG212).
+    """
     if clang is None:
         return None
     return (
@@ -1210,22 +1209,18 @@ def cpp_semantic_invocation(
         relative_path: Repository-relative translation-unit path.
         materialized_root: Immutable source snapshot used by the provider.
         build_specs: Authoritative compilation-database contracts keyed by TU path.
-        fallback_clang: Legacy best-effort Clang executable used only without a build contract.
-        fallback_include_args: Legacy include arguments paired with the best-effort fallback.
+        fallback_clang: 保留已有私有调用形态；未声明构建契约时禁止用启发式 Clang 代替。
+        fallback_include_args: 保留调用形态；不再猜测编译 flags。
 
     Returns:
         Semantic-provider command and working directory, or ``None`` when authoritative
         build truth exists but no compatible provider is available.
     """
-    if relative_path in build_specs:
-        return clang_ast_invocation(
-            build_specs[relative_path], materialized_root, relative_path
-        )
-    return _fallback_clang_invocation(
-        fallback_clang,
-        (materialized_root / relative_path).resolve(),
-        materialized_root,
-        fallback_include_args,
+    if relative_path not in build_specs:
+        # 未知项目标准与编译选项：返回显式 UNKNOWN，不能猜一个 -std 再宣称语义正确。
+        return None
+    return clang_ast_invocation(
+        build_specs[relative_path], materialized_root, relative_path
     )
 
 
@@ -1423,6 +1418,122 @@ def multilang_findings(
     counts = Counter(unit.language for unit in target.language_units.values())
     cpp_build_specs = load_compilation_database(target)
     compiler_families = Counter(spec.family.value for spec in cpp_build_specs.values())
+    cpp_translation_units = tuple(
+        path
+        for path in target.language_paths
+        if Path(path).suffix.lower() in {".cpp", ".cc", ".cxx"}
+        and target.language_units[path].language == "cpp"
+        and not any(
+            part.lower() in {"3rd_party", "third_party", "vendor", "vendored"}
+            for part in PurePosixPath(path).parts[:-1]
+        )
+    )
+    missing_cpp_contracts = tuple(
+        path for path in cpp_translation_units if path not in cpp_build_specs
+    )
+    native_counts: Counter[str] = Counter()
+    native_unavailable: list[str] = []
+    # 编译数据库由项目构建系统生成；按原始语言标准和编译器验证，绝不凭文件名猜测 -std。
+    for path in cpp_translation_units:
+        spec = cpp_build_specs.get(path)
+        if spec is None:
+            continue
+        source = target.root / path
+        unit = target.language_units[path]
+        if (
+            not source.is_file()
+            or source.read_text(encoding="utf-8", errors="surrogateescape") != unit.source
+        ):
+            native_unavailable.append(path)
+            continue
+        result = check_native_syntax(spec)
+        native_counts[result.state.value] += 1
+        if result.state is NativeSyntaxState.UNAVAILABLE:
+            native_unavailable.append(path)
+        if result.state is not NativeSyntaxState.FAIL:
+            continue
+        findings.append(
+            Finding(
+                code="QG212",
+                severity="error",
+                confidence="high",
+                path=path,
+                line=1,
+                column=1,
+                message=(
+                    "项目编译数据库指定的原生编译器在该翻译单元的无产物语法检查中退出非零；"
+                    "无法确认失败属于源代码、生成文件还是构建环境。"
+                ),
+                suggestion=(
+                    "根据原始编译命令及编译器诊断核对本仓构建契约；"
+                    "RQG 本项仅报告实际非零退出，不推断修复策略。"
+                ),
+                evidence={
+                    "capability": "NATIVE_CPP_BUILD_CONTRACT_SYNTAX",
+                    "compiler_family": spec.family.value,
+                    "compile_database": spec.database.as_posix(),
+                    "command": result.command,
+                    "returncode": result.returncode,
+                    "stderr": result.stderr[:4000],
+                    "semantic_proof": "NATIVE_COMPILER_FAILURE",
+                },
+                source=_SOURCE,
+            )
+        )
+    if native_unavailable:
+        findings.append(
+            Finding(
+                code="QG208",
+                severity="info",
+                confidence="high",
+                path=native_unavailable[0],
+                line=1,
+                column=1,
+                message=(
+                    f"{len(native_unavailable)} 个 C++ 翻译单元虽有编译命令，"
+                    "但当前无法执行或无法证明与快照一致的原生语法检查。"
+                ),
+                suggestion="核对原始编译器、源码快照和构建环境，不得将此视为编译成功。",
+                evidence={
+                    "capability": "NATIVE_CPP_SYNTAX_NOT_MEASURED",
+                    "unavailable_paths": tuple(native_unavailable),
+                    "semantic_proof": "NOT_MEASURED",
+                },
+                source=_SOURCE,
+            )
+        )
+    if missing_cpp_contracts:
+        findings.append(
+            Finding(
+                code="QG208",
+                severity="info",
+                confidence="high",
+                path=missing_cpp_contracts[0],
+                line=1,
+                column=1,
+                message=(
+                    f"{len(missing_cpp_contracts)}/{len(cpp_translation_units)} 个 C++ "
+                    "翻译单元没有可认证的编译命令；当前静态检查不能证明其原生语义正确。"
+                ),
+                suggestion=(
+                    "提供项目真实 toolchain 生成的 compile_commands.json；"
+                    "在项目的正式编译器上运行实际构建和测试。"
+                ),
+                evidence={
+                    "capability": "MISSING_AUTHORITATIVE_CPP_TU_CONTRACT",
+                    "total_translation_units": len(cpp_translation_units),
+                    "missing_translation_units": len(missing_cpp_contracts),
+                    "missing_paths": missing_cpp_contracts,
+                    "semantic_proof": "NOT_MEASURED",
+                },
+                source=_SOURCE,
+            )
+        )
+    findings.sort(
+        key=lambda finding: (
+            finding.path, finding.line, finding.column, finding.code, finding.symbol
+        )
+    )
     summary = {
         "files": dict(sorted(counts.items())),
         "total_files": sum(counts.values()),
@@ -1432,5 +1543,10 @@ def multilang_findings(
         ),
         "cpp_build_contracts": len(cpp_build_specs),
         "cpp_compiler_families": dict(sorted(compiler_families.items())),
+        "cpp_translation_units": len(cpp_translation_units),
+        "cpp_missing_native_build_contracts": len(missing_cpp_contracts),
+        "cpp_semantic_coverage": "NOT_MEASURED",
+        "cpp_native_syntax": dict(sorted(native_counts.items())),
+        "cpp_native_unavailable": len(native_unavailable),
     }
     return findings, summary

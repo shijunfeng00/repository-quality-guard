@@ -356,7 +356,7 @@ def _reflection_context(
     fixed_names_by_scope, patch_owners = _fixed_contract_names(parsed, parents)
 
     invoked: set[int] = set()
-    for call in (node for node in parsed.nodes if isinstance(node, ast.Call)):
+    for call in parsed.calls:
         parent = parents.get(call)
         if isinstance(parent, ast.Call) and parent.func is call:
             invoked.add(id(call))
@@ -941,7 +941,9 @@ def check_private_boundary_rules(
     if ownership is None:
         ownership = private_class_ownership([parsed])
     for node in parsed.nodes:
-        if production_module:
+        if production_module and isinstance(
+            node, (ast.Call, ast.Assign, ast.AnnAssign, ast.AugAssign, ast.Delete)
+        ):
             findings.extend(
                 _runtime_contract_patch_findings(parsed, node, patch_owners)
             )

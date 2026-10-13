@@ -72,7 +72,10 @@ def code_status(report: ScanReport) -> str:
             )
             for finding in interface_diff.contract_findings
         )
-    has_review = bool(review_changes or protocol_review)
+    missing_cpp_build_contract = any(
+        finding.code in {"QG208", "QG212"} for finding in report.findings
+    )
+    has_review = bool(review_changes or protocol_review or missing_cpp_build_contract)
     current_quality = any(
         all(
             (

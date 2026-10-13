@@ -2,23 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ast_utils import decorator_leaf
 from .config import GuardConfig
 from .topology_facts import RepositoryTopology, SymbolFact, UsageKind, Visibility
-
-_EXTERNAL_DECORATOR_MARKERS = frozenset(
-    {
-        "callback",
-        "command",
-        "event",
-        "fixture",
-        "property",
-        "route",
-        "signal",
-        "task",
-        "validator",
-    }
-)
 
 
 @dataclass(slots=True, frozen=True)
@@ -87,32 +72,6 @@ def symbol_usage_evidence(
         exported=symbol.exported,
         owner_id=symbol.owner_id,
         nested=symbol.nested,
-    )
-
-
-def symbol_is_externally_invoked(symbol: SymbolFact) -> bool:
-    """Return whether static metadata marks framework/protocol invocation.
-
-    Args:
-        symbol: Authored symbol whose decorators/bases/name are inspected.
-
-    Returns:
-        True when the symbol is a declared hook/callback/protocol entry point.
-    """
-    if symbol.name.startswith("__") and symbol.name.endswith("__"):
-        return True
-    if symbol.name.startswith("visit_") and any(
-        base.endswith("NodeVisitor") for base in symbol.bases
-    ):
-        return True
-    if any(
-        decorator_leaf(decorator) == "abstractmethod" for decorator in symbol.decorators
-    ):
-        return True
-    return any(
-        marker in decorator.lower()
-        for marker in _EXTERNAL_DECORATOR_MARKERS
-        for decorator in symbol.decorators
     )
 
 

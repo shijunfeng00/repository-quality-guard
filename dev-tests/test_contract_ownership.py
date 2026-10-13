@@ -52,7 +52,7 @@ class TestContractOwnershipFacts(unittest.TestCase):
     def _finding(report, code: str):
         return next(item for item in report.findings if item.code == code)
 
-    def test_internal_mapping_remains_strict(self) -> None:
+    def test_internal_mapping_type_is_not_required_key_proof(self) -> None:
         report, topology = self._scan(
             "service.py",
             "from typing import Mapping\n\n"
@@ -61,7 +61,8 @@ class TestContractOwnershipFacts(unittest.TestCase):
         )
 
         finding = self._finding(report, "QG004")
-        self.assertEqual(finding.severity, "critical")
+        self.assertEqual(finding.severity, "warning")
+        self.assertEqual(finding.evidence["requiredness"], "UNKNOWN")
         self.assertEqual(
             finding.evidence["contract_ownership"],
             ContractOwnership.INTERNAL_FORMAL.value,
@@ -138,7 +139,8 @@ class TestContractOwnershipFacts(unittest.TestCase):
         )
 
         finding = self._finding(report, "QG004")
-        self.assertEqual(finding.severity, "critical")
+        self.assertEqual(finding.severity, "warning")
+        self.assertEqual(finding.evidence["requiredness"], "UNKNOWN")
         self.assertEqual(
             finding.evidence["contract_ownership"],
             ContractOwnership.INTERNAL_FORMAL.value,
@@ -176,7 +178,7 @@ class TestContractOwnershipFacts(unittest.TestCase):
         self.assertEqual(contracts[5].ownership, ContractOwnership.EXTERNAL_OPTIONAL)
         self.assertEqual(contracts[9].ownership, ContractOwnership.INTERNAL_FORMAL)
 
-    def test_explicit_boundary_records_dynamic_contract(self) -> None:
+    def test_directory_spelling_cannot_certify_dynamic_contract(self) -> None:
         report, topology = self._scan(
             "api/adapter.py",
             "from typing import Mapping\n\n"
@@ -185,13 +187,14 @@ class TestContractOwnershipFacts(unittest.TestCase):
         )
 
         finding = self._finding(report, "QG004")
-        self.assertEqual(finding.severity, "info")
+        self.assertEqual(finding.severity, "warning")
+        self.assertEqual(finding.evidence["requiredness"], "UNKNOWN")
         self.assertEqual(
             finding.evidence["contract_ownership"],
-            ContractOwnership.DYNAMIC_BOUNDARY.value,
+            ContractOwnership.INTERNAL_FORMAL.value,
         )
         contract = next(item for item in topology.contracts if item.line == 4)
-        self.assertEqual(contract.ownership, ContractOwnership.DYNAMIC_BOUNDARY)
+        self.assertEqual(contract.ownership, ContractOwnership.INTERNAL_FORMAL)
 
 
 if __name__ == "__main__":

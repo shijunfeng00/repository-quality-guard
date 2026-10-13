@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import re
 
-from .ast_utils import dotted_name
 from .config import GuardConfig
 from .facts import ModuleFacts
 from .model import Finding
@@ -11,8 +10,6 @@ from .policy_common import (
     CONFIG_CALLS,
     CONFIG_FILE_CALLS,
     GENERIC_FUNCTION_NAMES,
-    PROMPT_NAME_MARKERS,
-    PROMPT_NEGATIVE_MARKERS,
     ParsedModule,
     RepositorySignals,
     call_name,
@@ -149,7 +146,12 @@ def check_configuration_rules(
     )
     findings: list[Finding] = []
     for item in parsed.nodes:
-        findings.extend(check_config_ast_node(facts, item, is_config_boundary, signals))
+        if isinstance(item, (ast.Call, ast.BoolOp)) or (
+            isinstance(item, ast.Constant) and isinstance(item.value, str)
+        ):
+            findings.extend(
+                check_config_ast_node(facts, item, is_config_boundary, signals)
+            )
     return findings
 
 
@@ -392,12 +394,8 @@ def config_source_fallback_count(node: ast.BoolOp) -> int:
     count = 0
     for value in node.values:
         if (
-            (
-                isinstance(value, ast.Call)
-                and call_name(value) in CONFIG_CALLS | CONFIG_FILE_CALLS
-            )
-            or "config" in dotted_name(value).lower()
-            or "settings" in dotted_name(value).lower()
+            isinstance(value, ast.Call)
+            and call_name(value) in CONFIG_CALLS | CONFIG_FILE_CALLS
         ):
             count += 1
     return count
@@ -437,78 +435,24 @@ def check_prompt_rules(
     Returns:
         Prompt 结构发现列表。
     """
-    facts = parsed.facts
-    findings: list[Finding] = []
+    # A large repeated literal is evidence of duplication regardless of its
+    # variable identifier. No identifier implies that a string is a Prompt.
     for statement in parsed.tree.body:
         if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
             continue
-        names = assignment_names(statement)
         value = statement.value
-        prompt_named = any(
-            marker in name.lower() for marker in PROMPT_NAME_MARKERS for name in names
-        )
-        is_prompt_template = isinstance(value, (ast.Constant, ast.BinOp, ast.JoinedStr))
-        if prompt_named and is_prompt_template:
-            text = collect_string_text(value)
-            negative_count = sum(
-                text.count(marker) for marker in PROMPT_NEGATIVE_MARKERS
+        if not isinstance(value, (ast.Constant, ast.BinOp, ast.JoinedStr)):
+            continue
+        text = collect_string_text(value)
+        if len(text) >= config.duplicate_prompt_min_chars:
+            signals.prompt_literals[text].append(
+                (
+                    parsed.facts.path,
+                    statement.lineno,
+                    next(iter(assignment_names(statement)), ""),
+                )
             )
-            if negative_count >= config.prompt_constraint_threshold:
-                findings.append(
-                    facts.make_finding(
-                        statement,
-                        "QG110",
-                        f"Prompt 中累计 {negative_count} 个禁止/必须类约束。",
-                        symbol=facts.module,
-                        severity="info",
-                        suggestion="把稳定约束下沉到 schema、状态契约和工具接口。",
-                    )
-                )
-            fragment_count = count_string_fragments(value)
-            if fragment_count >= config.prompt_fragment_threshold:
-                findings.append(
-                    facts.make_finding(
-                        statement,
-                        "QG111",
-                        f"Prompt 由 {fragment_count} 个字符串碎片拼接。",
-                        symbol=facts.module,
-                        severity="info",
-                        suggestion="集中为少量可直接阅读的模板。",
-                    )
-                )
-            if len(text) >= config.duplicate_prompt_min_chars:
-                signals.prompt_literals[text].append(
-                    (facts.path, statement.lineno, next(iter(names), ""))
-                )
-        suspicious_case_table = any(
-            marker in name.lower()
-            for name in names
-            for marker in (
-                "case",
-                "fallback",
-                "pattern",
-                "prompt",
-                "rule",
-                "uncertainty",
-            )
-        )
-        if suspicious_case_table and isinstance(value, (ast.Tuple, ast.List, ast.Set)):
-            strings = [
-                child.value
-                for child in value.elts
-                if isinstance(child, ast.Constant) and isinstance(child.value, str)
-            ]
-            if len(strings) >= config.case_literal_threshold:
-                findings.append(
-                    facts.make_finding(
-                        statement,
-                        "QG112",
-                        f"常量集合枚举 {len(strings)} 个字符串案例，可能是失败样例特判表。",
-                        symbol=facts.module,
-                        severity="info",
-                        suggestion="确认它是稳定领域枚举，而不是 Prompt 或正则补丁。",
-                    )
-                )
+    findings: list[Finding] = []
     return findings
 
 
@@ -542,24 +486,6 @@ def collect_string_text(node: ast.expr | None) -> str:
         item.value
         for item in ast.walk(node)
         if isinstance(item, ast.Constant) and isinstance(item.value, str)
-    )
-
-
-def count_string_fragments(node: ast.expr | None) -> int:
-    """
-    统计表达式中的字符串常量数量。
-
-    Args:
-        node: 待检查表达式。
-
-    Returns:
-        字符串常量数量。
-    """
-    if node is None:
-        return 0
-    return sum(
-        isinstance(item, ast.Constant) and isinstance(item.value, str)
-        for item in ast.walk(node)
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import subprocess
 import tempfile
 import unittest
 import threading
@@ -31,6 +32,24 @@ def _settings(
 
 
 class TestDependencyBootstrap(unittest.TestCase):
+    def test_standalone_bootstrap_help_from_external_directory(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(root / "runtime/install_dependencies.py"),
+                    "--help",
+                ],
+                cwd=directory,
+                text=True,
+                capture_output=True,
+                timeout=20,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--offline", result.stdout)
+
     def test_network_probe_stops_after_three_short_failures(self) -> None:
         with patch.object(
             dependencies.urllib.request, "urlopen", side_effect=OSError("offline")

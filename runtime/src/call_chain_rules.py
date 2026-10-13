@@ -8,7 +8,6 @@ from .model import Finding
 from .topology_facts import RepositoryTopology, SymbolFact, UsageEdge, UsageKind
 from .topology_policy import (
     ephemeral_helper_candidate,
-    symbol_is_externally_invoked,
     symbol_usage_evidence,
 )
 
@@ -60,7 +59,11 @@ def _eligible_helpers(
             symbol.lines,
             evidence,
             config,
-            symbol_is_externally_invoked(symbol),
+            bool(
+                symbol.decorators
+                or evidence.protocol_edges
+                or evidence.callable_consumers
+            ),
         ):
             continue
         eligible[symbol.symbol_id] = (symbol, evidence.as_dict())

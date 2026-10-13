@@ -6,11 +6,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from runtime.src.cli import _apply_profile_rule_policy, build_parser, resolve_target
+from runtime.src.cli import (
+    _apply_profile_rule_policy,
+    _interface_policy_finding,
+    build_parser,
+    resolve_target,
+)
 from runtime.src.compact_report import _absolute_blocker_rows, _has_placeholder
 from runtime.src.config import GuardConfig
 from runtime.src.gate_status import code_status
-from runtime.src.model import Finding, ScanReport
+from runtime.src.model import Finding, InterfaceChange, InterfaceSymbol, ScanReport
 from runtime.src.project_profiles import load_quality_profile
 from runtime.src.scan_snapshot import _relevant_worktree_paths, scan_target_cached
 from runtime.src.scan_worker import _legacy_args, build_parser as build_worker_parser
@@ -38,6 +43,24 @@ class TestRuleLevelsAndTargets(unittest.TestCase):
             definitions=0,
             baseline=baseline,  # type: ignore[arg-type]
         )
+
+    def test_interface_review_remains_a_distinct_quality_gate(self) -> None:
+        symbol = InterfaceSymbol(
+            kind="function", path="src/entry.py", qualname="action", line=3
+        )
+        change = InterfaceChange(
+            change="modified",
+            kind="function",
+            path="src/entry.py",
+            symbol="action",
+            before=symbol,
+            after=symbol,
+            details={"parameters": {"before": [], "after": ["value"]}},
+        )
+        finding = _interface_policy_finding(change)
+        self.assertEqual(finding.code, "QG180")
+        self.assertEqual(finding.severity, "warning")
+        self.assertTrue(finding.evidence["qg179_exempt"])
 
     def test_json_only_profile_can_define_rule_levels(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

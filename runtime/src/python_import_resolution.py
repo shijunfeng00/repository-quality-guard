@@ -50,3 +50,11 @@ def resolve_local_import_symbol(
         if expanded is None or expanded == current:
             return None
         current = expanded
+
+
+def python_module_name(path: str) -> str:
+    """Return the normalized Python module identity from an authored relative path."""
+    module = path[:-3].replace("/", ".")
+    if module == "__init__":
+        return ""
+    return module[: -len(".__init__")] if module.endswith(".__init__") else module

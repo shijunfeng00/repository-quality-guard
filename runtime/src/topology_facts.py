@@ -47,6 +47,7 @@ class UsageKind(StrEnum):
     """
 
     DIRECT_CALL = "direct_call"
+    MAY_DISPATCH = "may_dispatch"
     CALLABLE_REFERENCE = "callable_reference"
     CALLBACK_REGISTRATION = "callback_registration"
     PROTOCOL_HOOK = "protocol_hook"
@@ -151,6 +152,171 @@ class ContractFact:
 
 
 @dataclass(slots=True, frozen=True)
+class CompilerDiagnosticFact:
+    """Compiler-origin candidate in the same immutable repository topology.
+
+    A type-checker diagnostic is an observation, not a runtime proof or a QG
+    BLOCKER. The declaration and field are bound by AST/typed symbol identity,
+    never by interpreting a developer-chosen identifier as an effect.
+    """
+
+    path: Path
+    line: int
+    column: int
+    source_sha256: str
+    native_rule: str
+    owner_symbol_id: str
+    member: str
+    binding: str
+    provider_identity: tuple[tuple[str, str], ...]
+    capability: str = "TYPECHECKER_OBSERVATION_ONLY"
+
+
+@dataclass(slots=True, frozen=True)
+class InstanceFieldAccessFact:
+    """A located authored instance-parameter field operation, not a MUST proof.
+
+    The owner and method come from one normalized symbol graph.  Binding means
+    the first formal parameter was not rebound within its lexical method body;
+    runtime dispatch, aliases and inherited implementations remain open.
+    """
+
+    path: Path
+    line: int
+    column: int
+    source_sha256: str
+    owner_symbol_id: str
+    method_symbol_id: str
+    receiver_parameter_index: int
+    member: str
+    operation: str
+    capability: str = "LEXICAL_INSTANCE_RECEIVER_OPEN_DISPATCH"
+
+
+@dataclass(slots=True, frozen=True)
+class FieldInitializationFact:
+    """Located definite-field witness from a bounded static CFG.
+
+    ``UNKNOWN`` is absence of proof, not evidence of absent runtime state.
+    """
+
+    path: Path
+    line: int
+    column: int
+    source_sha256: str
+    owner_symbol_id: str
+    method_symbol_id: str
+    member: str
+    verdict: str
+    witness_lines: tuple[int, ...]
+    capability: str = "BOUNDED_SOURCE_NORMAL_CFG_OPEN_RUNTIME"
+
+
+@dataclass(slots=True, frozen=True)
+class ConstructorLifecycleFact:
+    """Authored constructor and C3 observation, not a runtime MUST claim."""
+
+    path: Path
+    line: int
+    source_sha256: str
+    owner_symbol_id: str
+    constructor_symbol_id: str
+    mro_symbol_ids: tuple[str, ...]
+    super_init_calls: tuple[tuple[str, int], ...]
+    capability: str
+    # Authored post-construction entry name -> unique C3 declaration identity.
+    # This is a source-bound candidate; runtime dispatch remains OPEN.
+    post_init_method_entries: tuple[tuple[str, str], ...] = ()
+    unknown_method_entries: tuple[str, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class TypedSchemaFieldFact:
+    """One authored TypedDict field; spelling is never a type/effect proof."""
+
+    schema_symbol_id: str
+    path: Path
+    line: int
+    source_sha256: str
+    field: str
+    annotation: str
+    required: bool
+    type_binding: str
+    capability: str = "SOURCE_AUTHORED_SCHEMA_OPEN_RUNTIME"
+
+
+@dataclass(slots=True, frozen=True)
+class TypedProducerFact:
+    """A source-located producer declaration, not verified runtime output."""
+
+    schema_symbol_id: str
+    producer_symbol_id: str
+    path: Path
+    line: int
+    source_sha256: str
+    kind: str
+    observed_literal_keys: tuple[str, ...] = ()
+    capability: str = "SOURCE_DECLARED_PRODUCER_OPEN_RUNTIME"
+
+
+@dataclass(slots=True, frozen=True)
+class TypedConsumerFact:
+    """Located TypedDict field read with syntactic guard, never a runtime proof."""
+
+    schema_symbol_id: str
+    consumer_symbol_id: str
+    path: Path
+    line: int
+    column: int
+    source_sha256: str
+    receiver: str
+    field: str
+    required: bool
+    declared_type: str
+    observation: str
+    guard_observation: str = "NONE"
+    guard_line: int = 0
+    presence_witness_line: int = 0
+    capability: str = "SOURCE_BOUND_CONSUMER_OPEN_CFG_AND_RUNTIME"
+
+
+@dataclass(slots=True, frozen=True)
+class ParameterForwardingFact:
+    """Authored formal-to-formal possible forwarding, never a content guarantee.
+
+    Both function bodies and their actual source hashes are pinned. Dynamic
+    dispatch and external input completeness remain explicitly open.
+    """
+
+    source_symbol_id: str
+    source_parameter_index: int
+    target_symbol_id: str
+    target_parameter_index: int
+    path: Path
+    line: int
+    column: int
+    caller_sha256: str
+    callee_sha256: str
+    capability: str = "SOURCE_BOUND_MAY_FORWARD_OPEN_RUNTIME"
+
+
+@dataclass(slots=True, frozen=True)
+class ExceptionHandlerReadFact:
+    """Conditional local-unbound read on a caught RHS-exception path."""
+
+    path: Path
+    line: int
+    column: int
+    source_sha256: str
+    owner_symbol_id: str
+    local_name: str
+    assignment_line: int
+    try_line: int
+    handler_line: int
+    capability: str = "SOURCE_BOUND_EXCEPTION_PATH_OPEN_PROVIDER"
+
+
+@dataclass(slots=True, frozen=True)
 class RepositoryTopology:
     """Hold the repository-level normalized ownership and reuse graph.
 
@@ -161,6 +327,15 @@ class RepositoryTopology:
     owners: tuple[OwnerFact, ...]
     edges: tuple[UsageEdge, ...]
     contracts: tuple[ContractFact, ...] = ()
+    compiler_diagnostics: tuple[CompilerDiagnosticFact, ...] = ()
+    instance_field_accesses: tuple[InstanceFieldAccessFact, ...] = ()
+    constructor_lifecycles: tuple[ConstructorLifecycleFact, ...] = ()
+    field_initializations: tuple[FieldInitializationFact, ...] = ()
+    typed_schema_fields: tuple[TypedSchemaFieldFact, ...] = ()
+    typed_producers: tuple[TypedProducerFact, ...] = ()
+    typed_consumers: tuple[TypedConsumerFact, ...] = ()
+    parameter_forwardings: tuple[ParameterForwardingFact, ...] = ()
+    exception_handler_reads: tuple[ExceptionHandlerReadFact, ...] = ()
 
     def incoming(
         self, target_id: str, kinds: tuple[UsageKind, ...] = ()
@@ -269,6 +444,15 @@ def merge_topologies(topologies: tuple[RepositoryTopology, ...]) -> RepositoryTo
     owners: dict[str, OwnerFact] = {}
     edges: set[UsageEdge] = set()
     contracts: set[ContractFact] = set()
+    compiler_diagnostics: set[CompilerDiagnosticFact] = set()
+    instance_field_accesses: set[InstanceFieldAccessFact] = set()
+    constructor_lifecycles: set[ConstructorLifecycleFact] = set()
+    field_initializations: set[FieldInitializationFact] = set()
+    typed_schema_fields: set[TypedSchemaFieldFact] = set()
+    typed_producers: set[TypedProducerFact] = set()
+    typed_consumers: set[TypedConsumerFact] = set()
+    parameter_forwardings: set[ParameterForwardingFact] = set()
+    exception_handler_reads: set[ExceptionHandlerReadFact] = set()
 
     for topology in topologies:
         for symbol in topology.symbols:
@@ -281,6 +465,15 @@ def merge_topologies(topologies: tuple[RepositoryTopology, ...]) -> RepositoryTo
             owners[owner.owner_id] = owner
         edges.update(topology.edges)
         contracts.update(topology.contracts)
+        compiler_diagnostics.update(topology.compiler_diagnostics)
+        instance_field_accesses.update(topology.instance_field_accesses)
+        constructor_lifecycles.update(topology.constructor_lifecycles)
+        field_initializations.update(topology.field_initializations)
+        typed_schema_fields.update(topology.typed_schema_fields)
+        typed_producers.update(topology.typed_producers)
+        typed_consumers.update(topology.typed_consumers)
+        parameter_forwardings.update(topology.parameter_forwardings)
+        exception_handler_reads.update(topology.exception_handler_reads)
 
     return RepositoryTopology(
         symbols=tuple(sorted(symbols.values(), key=lambda item: item.symbol_id)),
@@ -306,6 +499,105 @@ def merge_topologies(topologies: tuple[RepositoryTopology, ...]) -> RepositoryTo
                     item.receiver,
                     item.operation,
                     item.selector,
+                ),
+            )
+        ),
+        compiler_diagnostics=tuple(
+            sorted(
+                compiler_diagnostics,
+                key=lambda item: (
+                    item.path.as_posix(),
+                    item.line,
+                    item.column,
+                    item.native_rule,
+                    item.owner_symbol_id,
+                    item.member,
+                ),
+            )
+        ),
+        instance_field_accesses=tuple(
+            sorted(
+                instance_field_accesses,
+                key=lambda item: (
+                    item.path.as_posix(),
+                    item.line,
+                    item.column,
+                    item.method_symbol_id,
+                    item.member,
+                    item.operation,
+                ),
+            )
+        ),
+        constructor_lifecycles=tuple(
+            sorted(
+                constructor_lifecycles,
+                key=lambda x: (x.path.as_posix(), x.line, x.owner_symbol_id),
+            )
+        ),
+        field_initializations=tuple(
+            sorted(
+                field_initializations,
+                key=lambda x: (
+                    x.path.as_posix(),
+                    x.line,
+                    x.column,
+                    x.owner_symbol_id,
+                    x.member,
+                ),
+            )
+        ),
+        typed_schema_fields=tuple(
+            sorted(
+                typed_schema_fields,
+                key=lambda x: (x.path.as_posix(), x.line, x.schema_symbol_id, x.field),
+            )
+        ),
+        typed_consumers=tuple(
+            sorted(
+                typed_consumers,
+                key=lambda x: (
+                    x.path.as_posix(),
+                    x.line,
+                    x.column,
+                    x.schema_symbol_id,
+                    x.consumer_symbol_id,
+                ),
+            )
+        ),
+        typed_producers=tuple(
+            sorted(
+                typed_producers,
+                key=lambda x: (
+                    x.path.as_posix(),
+                    x.line,
+                    x.producer_symbol_id,
+                    x.schema_symbol_id,
+                ),
+            )
+        ),
+        parameter_forwardings=tuple(
+            sorted(
+                parameter_forwardings,
+                key=lambda x: (
+                    x.path.as_posix(),
+                    x.line,
+                    x.column,
+                    x.source_symbol_id,
+                    x.target_symbol_id,
+                    x.source_parameter_index,
+                    x.target_parameter_index,
+                ),
+            )
+        ),
+        exception_handler_reads=tuple(
+            sorted(
+                exception_handler_reads,
+                key=lambda x: (
+                    x.path.as_posix(),
+                    x.line,
+                    x.column,
+                    x.owner_symbol_id,
+                    x.local_name,
                 ),
             )
         ),

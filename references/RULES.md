@@ -32,16 +32,16 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 |---|---|---|---|
 | **内部字段 / Mapping 契约**：`QG003`、`QG004`、`QG012`、`QG023`、`QG025`、`QG026`、`QG061`–`QG066`、`QG144`、`QG153`、`QG157` | consumer 在猜字段是否存在、形状是否稳定，或把契约错误当成正常缺省。 | 先追 producer、schema、canonicalizer 和所有合法构造路径。required 字段由 owner 保证并直接索引；真正 optional 字段在正式 contract 中声明，优先在唯一边界归一化；普通 lookup table 的 miss 则作为明确业务分支处理。 | 不要把 `.get()` 机械换成 `if key in`、三元式、`try/except KeyError`、`optional_*` helper 或默认合并；除非已证明 optional/lookup 语义，否则这些只是问题换皮。 |
 | **动态属性 / 反射 / 类型猜测**：`QG005`、`QG006`、`QG057`、`QG060`、`QG065`、`QG183`、`QG184`、`QG186` | caller 不知道自己拿到的到底是什么对象，或绕过静态接口修改/探测正式对象。 | 追构造来源和 declared type；单一类型就修正式接口，多个合法类型就建立 Protocol/ABC/discriminated union/typed dispatch；第三方或插件对象只允许在唯一 adapter 边界收敛成内部稳定类型。 | 不要在 `hasattr`、`getattr(default)`、`isinstance`、`__dict__`、`setattr`、反射 helper 之间互换，也不要把动态探测搬进“安全访问器”。 |
-| **异常、失败与 fallback**：`QG007`、`QG009`、`QG023`、`QG024`、`QG048`、`QG049`、`QG066`、`QG130`、`QG176`、`QG177` | 程序错误、外部输入错误和预期业务失败被混成同一条“继续运行”路径。 | 先判断失败属于内部 invariant、外部边界还是合法业务结果；内部错误应暴露或在 owner 修复，外部错误在 ingestion/adapter 转成正式 validation/domain error，合法失败用明确结果类型或状态表达。 | 不要从 `.get()` 换 `try/except`、从异常换空对象、从 fallback branch 换 helper；也不要仅因为测试期望旧兜底就保留旧路径。 |
+| **异常、失败与 fallback**：`QG007`、`QG009`、`QG023`、`QG024`、`QG048`、`QG049`、`QG066`、`QG130`、`QG176` | 程序错误、外部输入错误和预期业务失败被混成同一条“继续运行”路径。 | 先判断失败属于内部 invariant、外部边界还是合法业务结果；内部错误应暴露或在 owner 修复，外部错误在 ingestion/adapter 转成正式 validation/domain error，合法失败用明确结果类型或状态表达。 | 不要从 `.get()` 换 `try/except`、从异常换空对象、从 fallback branch 换 helper；也不要仅因为测试期望旧兜底就保留旧路径。 |
 | **重复实现 / helper / 抽象层**：`QG001`、`QG002`、`QG008`、`QG010`、`QG013`–`QG019`、`QG021`、`QG080`–`QG098`、`QG154`、`QG156`、`QG162`–`QG168`、`QG185` | 能力 ownership 不清，或者复杂度只是在 helper、wrapper、子类和兼容层之间搬家。 | 先确认 authoritative owner；重复能力归并到真正 owner，shadow override 删除，长流程按独立职责拆 owner；若两个领域只是偶然相似则保持分离。优先删除/内联/复用，再考虑新增 abstraction。 | 不要为了降行数制造一次性 helper，不要为了 DRY 强行合并不同领域，也不要把旧实现包进 shared helper 后同时保留新旧两条路径。 |
-| **接口 / 参数 / 返回契约**：`QG031`–`QG050`、`QG145`–`QG152`、`QG159`–`QG161`、`QG169`、`QG180`–`QG182`、`QG191` | public/internal contract 漂移，调用方被迫兼容多种形状或新接口没有证明必要性。 | 先检索已有 owner 与调用方；能复用就不新增。必须修改时保持单一、显式、typed 的新契约，并同步所有 caller、文档和稳定行为测试；破坏性迁移按已授权目标删除旧形状。 | 不要用 `*args/**kwargs`、别名参数、兼容 wrapper、双返回结构或“旧/新都支持”来降低迁移痛感；不要把历史实现形状当成必须永久兼容的接口。 |
+| **接口 / 参数 / 返回契约**：`QG031`–`QG050`、`QG145`–`QG152`、`QG159`–`QG160`、`QG169`、`QG180`–`QG182`、`QG191` | public/internal contract 漂移，调用方被迫兼容多种形状或新接口没有证明必要性。 | 先检索已有 owner 与调用方；能复用就不新增。必须修改时保持单一、显式、typed 的新契约，并同步所有 caller、文档和稳定行为测试；破坏性迁移按已授权目标删除旧形状。 | 不要用 `*args/**kwargs`、别名参数、兼容 wrapper、双返回结构或“旧/新都支持”来降低迁移痛感；不要把历史实现形状当成必须永久兼容的接口。 |
 | **配置 / Prompt / 环境边界**：`QG011`、`QG100`–`QG113` | 配置所有权分散、默认值掩盖部署错误，或本应由 schema/代码保证的约束泄漏进 Prompt。 | 配置集中到权威入口，必需项启动时 fail-fast；外部表示只在配置/adapter 边界解析。可机器表达的 Prompt 约束下沉到 schema、类型和代码。 | 不要在多个业务模块重复读同一环境变量，不要叠默认值链，也不要用更多 Prompt 禁令弥补代码契约缺失。 |
 | **Tool / State / History / Trace**：`QG120`–`QG135`、`QG189` | 状态写入、Tool 返回和执行历史缺少唯一 owner，导致多个组件直接修改同一事实。 | 找到统一 state transition / merge owner；Tool 返回稳定结构化结果，由唯一入口归并；读写模型字段由正式 schema 定义，History 与 Trace 保持职责分离。 | 不要让每个 Tool 自己 patch State，不要增加“兼容各种返回”的 merge helper，也不要用反射或容器别名绕过状态写入边界。 |
 | **测试变更**：`QG170`–`QG175`、`QG192`–`QG194` | 测试可能被当前实现牵着走，或把历史源码形状当成长期 contract。 | 先运行 accepted-baseline 测试，再判断旧断言保护的是仍有效的行为、明确废弃的形状还是测试自身缺陷；修改后验证稳定输入输出、协议和不变量。 | 不要为了过测试恢复已废弃实现，不要只删断言/skip/xfail，也不要以源码字符串、函数名、旧文件路径替代真实行为验证。 |
 | **多语言与结构复杂度**：`QG195`–`QG205`、`QG207` | 动态 owner、隐藏循环、重复结构、版本身份或复杂度恶化可能逃过单一语言的表面检查。 | 追真实 owner、调用/dispatch 关系和稳定协议语义；对版本/digest 区分项目 release identity 与合法依赖/API/schema/完整性契约；只在语义 owner 一致时合并重复结构。 | 不要为了清 finding 重命名版本字符串、拆小函数或机械合并相似 AST；不要把合法协议 digest 和项目 release lineage 混为一谈。 |
 | **运行环境 / 报告 / Release 完整性**：`QG000`、`QG900`–`QG902`、`QG980`–`QG985`、`QG990`、`QG998`、`RUF:FORMAT` | 审计事实、执行环境或交付证据本身不可信。 | 先修工具链、Git 基线、报告证据或 release seal，再讨论代码是否通过；所有结论必须来自最新源码和可重放验证。 | 不要删规则、改 manifest、降低断言、手填假 PASS 或绕过 hook 来让门禁变绿。 |
 
-特别地，**一个 finding 从扫描结果中消失，不等于 remediation 成功**。如果 diff 显示同一风险被迁移到新 helper、新 wrapper、新 fallback 或另一处 consumer，仍应按原规则继续追 owner；`QG176/QG177` 能自动识别的一部分只是这个全局原则的机器化子集。
+特别地，**一个 finding 从扫描结果中消失，不等于 remediation 成功**。如果 diff 显示同一风险被迁移到新 helper、新 wrapper、新 fallback 或另一处 consumer，仍应按原规则继续追 owner；`QG176` 只针对同一局部行为的特定等价改写；跨函数迁移不得仅凭相似度推断为新债务。
 
 ## 完整规则索引
 
@@ -66,7 +66,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG014` | 单个函数超过配置阈值，属于函数职责臃肿；按 Critical，且不得机械拆成碎片 helper。 |
 | `QG015` | 函数参数总数过多，可能混合多项职责。 |
 | `QG016` | 控制流嵌套层级过深。 |
-| `QG017` | 函数分支数量过高。 |
+| `QG017` | 默认达到 25 个分支时输出 INFO 语义建议；不因为分支计数直接阻断。 |
 | `QG018` | 函数接收多个布尔开关，形成隐式模式矩阵。 |
 | `QG019` | 模块物理行数超过配置阈值，属于模块职责臃肿；按 Critical。 |
 | `QG020` | 源码包含静态检查抑制标记，需要确认其必要性和范围。 |
@@ -91,7 +91,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG034` | 函数签名使用 bare `*` 或 `*args`：前者引入额外 keyword-only 调用契约，后者接受未逐项声明的可变位置参数。项目默认优先固定显式参数；参数总量由 QG015 独立检查。 |
 | `QG039` | 参数使用 list/dict/set 可变默认值。 |
 | `QG040` | 参数默认值为 `None`，但类型标注未声明可空。 |
-| `QG041` | 向已知布尔参数位置传入布尔兼容字面量，降低调用可读性。 |
+| `QG041` | 旧同名函数参数匹配已停止；需编译器认证调用目标和参数绑定后才能恢复正式诊断。 |
 | `QG042` | 使用开放 `**kwargs`，或虽声明有限 key 但在当前函数中读取/改写而非纯透明透传。仅机器可验证的有限契约（优先 `Unpack[TypedDict]`；兼容场景可用 `# RQG-KWARGS: keys=...; mode=forward-only`）且实际只原样 `**kwargs` 透传时不报告。 |
 | `QG045` | 同一函数返回互不兼容的顶层类型。 |
 | `QG046` | 非可空返回契约存在隐式落到函数末尾返回 `None` 的路径。 |
@@ -105,7 +105,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG054` | 网络调用未设置明确 `timeout`。 |
 | `QG055` | 异步函数直接调用同步阻塞 API。 |
 | `QG056` | 使用 `eval/exec/compile` 动态执行 Python。 |
-| `QG057` | 使用 `setattr/delattr/__dict__` 动态修改契约对象。 |
+| `QG057` | 仅凭目标名称认定契约对象的旧检测已停止；待类型/所有权绑定后的结构检测。 |
 
 ### 内部数据契约
 
@@ -134,8 +134,8 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG086` | 构造函数依赖数量过多或机械保存过多参数。 |
 | `QG087` | 构造字段只被极少方法使用，类职责可能可局部收窄。 |
 | `QG088` | 抽象类在仓库内只有一个实现。 |
-| `QG089` | Factory/Builder/Manager/Adapter 等包装类使用点很少。 |
-| `QG090` | 存在连续多层无独立契约的转发调用链。 |
+| `QG089` | 根据 Factory/Builder/Manager/Adapter 名称后缀推断包装职责的旧检测已停止；必须依据调用图、真实职责和出口契约判断。 |
+| `QG090` | 依据转发目标的同名字符串构图已停止；必须采用绑定的调用边与可重放的控制流事实。 |
 | `QG091` | `utils/common/helpers` 通用模块定义持续膨胀。 |
 | `QG092` | 模块级可变容器形成隐式共享状态。 |
 | `QG093` | 使用 `from ... import *`，符号来源不透明。 |
@@ -156,9 +156,9 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG104` | 配置键由动态表达式生成，无法确认权威来源。 |
 | `QG106` | 同一表达式在多个配置来源之间长期回退。 |
 | `QG107` | 同一配置项默认值在多个模块重复定义。 |
-| `QG110` | Prompt 中禁止/必须类约束过多，应优先下沉到 schema 或代码契约。 |
-| `QG111` | Prompt 由过多字符串碎片拼接。 |
-| `QG112` | 常量集合枚举大量案例，疑似失败样例特判表。 |
+| `QG110` | Prompt 名称/词表/语言中否定词数量不能证明规则滥用，旧检测已停止。 |
+| `QG111` | 仅凭 Prompt 字符串拼接碎片数不能证明实现不当，旧检测已停止。 |
+| `QG112` | 仅凭常量集合规模或变量名猜失败样例特判已停止，须验证具体消费行为。 |
 | `QG113` | 同一长 Prompt 在多个模块重复实现。 |
 
 ### Profile 状态、Tool、History 与 Trace
@@ -168,7 +168,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG120` | Tool 直接修改 Agent State，而非返回结构化结果交给统一入口归并。 |
 | `QG121` | Tool 存在多种返回结构。 |
 | `QG122` | Tool 返回裸字符串而不是稳定 JSON 结构。 |
-| `QG123` | 读取型 Tool 调用了写操作。 |
+| `QG123` | 不能因 Tool 以 get/read 命名或调用 save/update 命名而推断只读/写入；旧检测已停止。 |
 | `QG124` | 写入状态模型未声明字段。 |
 | `QG125` | 读取状态模型未声明字段。 |
 | `QG126` | 同一状态字段被写入多种静态结构。 |
@@ -201,7 +201,6 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG158` | 运行时代码、Prompt 或字段描述声称接口、返回结构或行为“保持不变/兼容”，却没有可验证的 Git before/after 基线。 |
 | `QG159` | **Critical，精确名称回归**：生产声明、参数或属性新引入 `top_k`、`file_name`、`file_names`、`cfg` 等已明确废弃的完整名称时拒绝。只做完整标识符匹配，不做子串、相似词或模糊关键词扩展；稳定作用域指纹避免代码移行造成假新增。 |
 | `QG160` | 函数或方法滥用 `normalize*` 命名；除向量、矩阵、概率、分数、张量等明确数学归一化外，按 Critical 处理并要求改为真实动作名称。 |
-| `QG161` | public 接口发生变化，但当前变更没有同步 README 中的公开能力、参数、返回结构或使用示例。属于接口审查账本，不由 QG179 重复拒绝；必须在 QG180/INTERFACE 的 `同步=` 证据中处理。 |
 
 ### 多语言结构事实
 
@@ -220,7 +219,10 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG203` | **Critical，baseline-aware**：非 README 资产的仓库路径/文件名包含 release-like identity（如 `vX.Y`、`rcN` 及其组合）。它只针对结构性 identity，不扫描内容中的 API/协议/依赖版本；历史已有 Critical 继续按 baseline/history-aware 规则处理。 |
 | `QG205` | **Semantic**：非 README 正式资产的文件内容包含版本、Git tag、commit/SHA、固定 digest 或依赖版本身份。必须判断它是依赖/API/协议/schema/迁移/完整性等稳定契约，还是把项目自身某次 release lineage 固化成当前项目契约；默认静态命中不直接 REJECT。Profile 可用 JSON `rules.levels` 将其提升为普通 severity 或绝对 BLOCKER。 |
 | `QG204` | **Warning/Critical**：真实发生变更的 C/C++ function 经 Clang AST 证明函数长度/分支/嵌套越过阈值或相对基线恶化。`-Werror` 负责编译/类型 warning，QG204 负责结构复杂度，两者互不替代。 |
+| `QG208` | **Info / REVIEW_REQUIRED**：当前源码快照存在本项目 C++ 翻译单元，但缺少针对部分单元的真实编译数据库条目时，聚合报告缺失数量及源码身份。它只证明 **构建语义覆盖缺口**，不是 C++ 源码错误；可用的编译命令也不能代替实际 native compile 或证明已通过全部语义测试。跳过 vendored 翻译单元，历史未变化的当前源码仍要纳入。 |
 | `QG207` | **Info**：JS/TS 显式 `any` JSDoc 逃逸数量较多，提醒 `checkJs PASS` 不能代替动态 owner contract 证明。 |
+| `QG209` | **Warning / REVIEW，开发中**：Pyright 源定位 `reportCallIssue` + Pyrefly 唯一真实源码声明绑定 + `inspect.Signature.bind` 独立确认实参缺失，才报告 R1 调用契约冲突。证书必须绑定调用方、被调用方路径及 SHA256；`OPEN_WORLD` 永远不能等同运行时封闭或 BLOCKER。未部署已认证离线编译器时不得推断为无问题。现有 Pyright/Pyrefly 认证路径仍需显式配置；另有默认启用的源码快照唯一模块级函数签名绑定（不导入/执行目标代码），支持直接调用和明确 import 绑定。装饰器、动态重绑定、方法分派、星号实参及不可解析来源保持 UNKNOWN；两类 QG209 均为 OPEN_WORLD Warning，不可直接升级 BLOCKER。 |
+| `QG211` | **Warning / REVIEW，开发中**：对唯一源码绑定的 Python 函数，识别 `try` 内 `await` 赋值右侧尚未完成时进入匹配异常处理器、处理器又直接读取目标局部变量的条件性路径。只证明该路径的局部变量未绑定风险；外部 API 是否抛出相应异常仍须有独立执行或 Provider 契约证据。不会依据变量/方法名称或缺失调用边升级为 BLOCKER；同步调用、预先初始化和未覆盖的 CFG 返回 UNKNOWN。 |
 
 多语言 parser 失败属于事实层失败，必须 fail-loud。JS/TS usage 同时统计直接 call 与 dispatch/callback symbol reference；`return items.map(callback).join(...)` 这类 callback 内含真实逻辑的表达式，以及 `Boolean(a && b === c)` 这类带非平凡参数表达式的语义谓词，都不得误判为单层 wrapper。C++ 默认只对真实变化文件生成 Clang AST，避免把全仓数百 MB AST dump 塞进每次 scan；完整编译和测试仍在项目验证阶段执行。
 
@@ -286,7 +288,6 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG168` | **Critical，绝对阻断**：normalized topology 证明当前生产代码存在连续三层以上 one-shot helper 链；每个中间节点都必须同时满足 QG001 的 ephemeral-helper 条件，链边只能是高置信普通 `DIRECT_CALL`。callback/callable reference、protocol/override、共享 primitive、公开 API 或其他真实复用会断开链，不能被当成普通 helper 分解。即使 Git 基线已存在也直接 REJECT；修复时默认压缩纯转发链，但保留真实事务、资源、并发或生命周期边界。 |
 | `QG169` | 相对 Git `--diff-base` 新增缺失 docstring 的生产定义；比较稳定定义指纹而非覆盖率百分比。删除已记录定义或改变分母不命中，结构完整性由 QG028/QG030 独立审计。 |
 | `QG176` | **Critical**：质量问题只被换了语法。比较 Git before/after 的 fallback 行为指纹；`.get/hasattr/getattr(default)/setdefault/异常兜底` 改成 membership、三元式、`try/except`、默认合并或显式初始化，而同一 receiver/selector 缺失时仍继续执行。 |
-| `QG177` | **Critical**：规范 AST、APTED 函数映射与跨函数调用摘要证明旧修复义务仍存在。覆盖函数改名、跨文件移动、把问题搬入 helper，以及参数改名后的同一 receiver/selector 行为。 |
 | `QG178` | **Info 语义候选**：Git 新增行出现正则、模糊相似度、字符串词表 membership、多字面量前后缀，或把固定关键词/词表用于 `query/question/message/text/content/prompt/instruction` 等语义文本判断。确定性的 `role == Literal/Enum` 分派和显式 bool 控制参数不因普通分支本身命中。授权只读取 Git 基线中预先存在的账本；报告模型无权自行豁免文件、函数或规则。启用严格语义审判的 Profile 第 10 项必须逐项处理，未授权候选只能 BLOCKING。 |
 | `QG179` | **Critical，不可豁免**：按稳定问题指纹比较自动或显式 Git 基线，任一普通生产 Critical、Error、Warning `INTRODUCED` 或 `WORSENED` 直接 REJECT；历史问题删除/降级不得抵消，DELTA 只能 BLOCKING。 |
 | `QG180` | **Warning，接口专用**：新增生产函数/方法/类、private→public，或存量参数、返回、装饰器/property 等接口声明发生变化。必须证明绝对必要、不可替代、最小方案、兼容、全部调用方和新鲜验证；只豁免 QG179 的重复计罪。 |
@@ -339,3 +340,74 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 
 
 > RQG-generated `docs/api-reference/` is a disposable tool artifact and is excluded before QG203/QG205 and changed-file accounting. This exemption is path-scoped to the canonical generated output; it does not exempt ordinary project documentation.
+
+### QG212 · 项目原生 C/C++ 编译事实（v0.22.5 开发态）
+
+对自动发现的 `compile_commands.json` 中可匹配的第一方 C++ 翻译单元，
+以**原项目编译器和已声明的语言标准/宏/include** 执行无产物语法检查。
+退出非零生成 `QG212 ERROR`，附原始编译命令、退出码、诊断与编译器族；
+不能证明是源码缺陷还是构建依赖问题，不自动裁决 REJECT。
+不存在权威编译命令或工具链不可用仍以 `QG208 INFO` + `REVIEW_REQUIRED`
+显式报告。默认 CLI 自动识别；不得要求用户填写语言或猜 `-std=c++20`。
+**QG212 属于 Skill 自身 Findings，但其独立 GCC/Clang 真值只作为 Oracle，
+正式回归须核对官方 `audit` 生成的 `修改说明.md` 和只读 `verify`。**
+
+### QG210 / QG214 · 受限 R2/R3 源绑定审计（v0.22.5 开发态）
+
+`QG210 WARNING` 只在无父类、未装饰、无自定义动态属性入口的
+构造方法直线语句中，确认同一实例字段在任何可见写入之前被读取，
+且此直线段随后确实写入该字段。调用、控制分支、形参接收者重绑定、
+类级成员与复杂动态构造返回 UNKNOWN。Python 的运行时开放世界不因
+AST 顺序而变成封闭世界；这是条件性来源证书，不是生产崩溃证明。
+
+`QG214 WARNING` 只记录 `except Exception` / `except BaseException` / 裸
+`except` 的处理器**直接**返回静态可确认的字面量/显式默认参数，
+且该处理器没有其他记录动作。`__del__` 的 CPython 析构协议例外。
+它只证明发生了静默降级，**业务是否允许必须人工裁决**。窄异常处理、
+存在日志/状态记录或无法确定的返回表达式不据此下结论；不与 QG007
+简单累计为独立 Bug。这是一个有明确覆盖边界的检测子集，不能代替
+一般性跨函数/副作用/提交状态分析。
+
+所有 QG210/QG214 的有效检测验收必须由封印的官方 `audit` 写入
+`修改说明.md` 的可复核 Finding（含原始源码 SHA256），并经只读
+`verify` 核对产物；外部 Oracle 和 Scanner 直调不能取代该闭环。
+
+### QG213 · 状态部分提交后异常转结果（v0.22.5 开发态）
+
+对于同一个类中由构造函数源码直接初始化的内置 `set` 与 `dict` 状态，
+只有在单个 `try` 的连续顶层语句中观察到两个**不同状态字段**的
+`set.add` / `dict` 下标写入、且其 `except Exception` 或 `except BaseException`
+存在不重新抛出的直接返回路径时，才产生 `QG213 WARNING`。
+报告保存原文件 SHA、两次写入位置、catch 位置和 `OPEN_RUNTIME` 标志。
+它证明的是“前一次已变更、后一次失败、随后返回”的**条件性路径**，
+不是生产环境已发生该故障，更不意味着每个 `return None` 都是错误。
+缺少构造端类型证据、字段重绑定不明、未知副作用和额外控制流均保持
+未证明，不能靠变量名推断。该规则不替代既有 `QG007` 的泛异常提示，
+也不得把两条规则简单计为两个独立 Bug。正式回归必须以经过封印的
+官方 `audit` 生成的 `修改说明.md` 和只读 `verify` 为准。
+
+### QG215 · 宽异常无记录吞没路径（v0.22.5 开发态）
+
+`QG215 WARNING` 只在源码确证 `except Exception` / `BaseException` / 裸
+`except` 处理器单条语句为 `pass`、`continue` 或将局部变量直接赋为
+`None`/`False` 时产生。此类处理器没有日志、调用或显式重抛。
+窄异常捕获、析构协议及嵌套函数错误归属不在证明范围。
+这是条件性 **异常不可观察路径** 证书，不代表吞没操作违反业务契约；
+合法的 best-effort、签名验证失败状态等必须在人工语义账本中判为 JUSTIFIED。
+不能与 QG007/QG214 简单相加称作独立真实 BUG。
+正式验收必须通过经完整性封印的官方 `audit` 将带源码 SHA 的 QG 写入
+`修改说明.md`，再由只读 `verify` 核对产物。
+
+### QG216 · 必需 TypedDict 字段的确定性生产者缺失（v0.22.5 开发态）
+
+`QG216 ERROR` 仅在同一权威源码 Snapshot 的 TypedDict 声明存在必需字段，
+且唯一绑定的返回类型为**直接** TypedDict（不包括 `list[TypedDict]` 等容器），
+或显式变量注解为该 TypedDict，并且生产者构造的是**所有键均为静态字符串字面量、
+无 `**` 展开**的字典时，才比较字段集合。漏掉必需字段构成该路径上的明确
+Schema 契约违例，源码、Schema 行号、生产者、必需字段差集写入正式 QG 见证。
+判定覆盖生产者自身的直接返回和 `if`/`try` 分支内的静态字典返回；
+嵌套函数、lambda 和类作用域属于其他词法 owner，不继承外层返回 Schema。
+`total=False`、`NotRequired`、动态键、字典展开、未绑定的跨模块/运行时别名和
+没有直接声明的生产者均不可据此认定缺字段。这里只判断局部静态确定的生产者，
+尚未证明后续所有调用路径或业务副作用。正式成果必须由封印 Skill 的
+`audit → 修改说明.md → verify` 产出，不能用内部 Graph 观测代替。

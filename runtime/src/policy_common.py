@@ -8,90 +8,9 @@ from pathlib import Path
 
 from .ast_utils import decorator_names, dotted_name
 from .facts import ModuleFacts
-from .model import Definition
 
 BOOL_TEXT_VALUES = {"0", "1", "false", "true", "False", "True", "FALSE", "TRUE"}
 BOOL_INT_VALUES = {0, 1}
-BOOL_NAME_PREFIXES = ("is_", "has_", "can_", "should_", "enable_", "disable_", "use_")
-BOOL_NAME_WORDS = {
-    "active",
-    "compress",
-    "debug",
-    "disabled",
-    "enabled",
-    "force",
-    "optional",
-    "recursive",
-    "replace",
-    "required",
-    "stream",
-    "strict",
-    "trace",
-    "verbose",
-}
-CONTRACT_NAME_HINTS = {
-    "config",
-    "metadata",
-    "payload",
-    "response",
-    "state",
-}
-MUTATING_METHODS = {
-    "add",
-    "append",
-    "clear",
-    "discard",
-    "extend",
-    "insert",
-    "pop",
-    "popitem",
-    "remove",
-    "reverse",
-    "setdefault",
-    "sort",
-    "update",
-}
-WRITE_CALL_MARKERS = {
-    "add",
-    "append",
-    "commit",
-    "create",
-    "delete",
-    "execute",
-    "insert",
-    "patch",
-    "post",
-    "put",
-    "remove",
-    "save",
-    "send",
-    "set",
-    "update",
-    "write",
-    "write_bytes",
-    "write_text",
-}
-READ_ONLY_NAME_PREFIXES = (
-    "find",
-    "fetch",
-    "get",
-    "list",
-    "load",
-    "query",
-    "read",
-    "search",
-)
-PROMPT_NAME_MARKERS = ("prompt", "instruction", "system_message", "system_prompt")
-PROMPT_NEGATIVE_MARKERS = (
-    "禁止",
-    "不得",
-    "不要",
-    "严禁",
-    "必须",
-    "只能",
-    "不可",
-    "务必",
-)
 GENERIC_FUNCTION_NAMES = {
     "do",
     "handle",
@@ -102,15 +21,6 @@ GENERIC_FUNCTION_NAMES = {
 }
 CONFIG_CALLS = {"os.getenv", "os.environ.get", "dotenv.get_key", "decouple.config"}
 CONFIG_FILE_CALLS = {"json.load", "tomllib.load", "yaml.load", "yaml.safe_load"}
-NETWORK_CALL_PREFIXES = ("requests.", "httpx.", "aiohttp.")
-BLOCKING_CALL_PREFIXES = (
-    "requests.",
-    "subprocess.run",
-    "subprocess.call",
-    "subprocess.check_call",
-    "subprocess.check_output",
-    "time.sleep",
-)
 
 
 @dataclass(slots=True, frozen=True)
@@ -130,6 +40,8 @@ class ParsedModule:
     tree: ast.Module
     nodes: tuple[ast.AST, ...]
     parents: dict[ast.AST, ast.AST]
+    calls: tuple[ast.Call, ...]
+    callback_names: frozenset[str]
 
 
 @dataclass(slots=True, frozen=True)
@@ -176,29 +88,6 @@ class StateContract:
     total: bool | None = None
 
 
-@dataclass(slots=True, frozen=True)
-class FunctionSignature:
-    """
-    保存函数调用规则需要的参数签名。
-
-    Args:
-        module: 函数所属模块。
-        qualname: 模块内限定名称。
-        name: 简单函数名称。
-        boolean_positions: 位置参数中声明为 bool 的索引集合。
-        boolean_keywords: 声明为 bool 的参数名称集合。
-
-    Returns:
-        None。
-    """
-
-    module: str
-    qualname: str
-    name: str
-    boolean_positions: frozenset[int]
-    boolean_keywords: frozenset[str]
-
-
 @dataclass(slots=True)
 class RepositorySignals:
     """
@@ -240,6 +129,7 @@ class RepositorySignals:
     )
     referenced_names: set[str] = field(default_factory=set)
     registered_tools: set[str] = field(default_factory=set)
+    callback_names_by_module: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 def parse_modules(facts: list[ModuleFacts]) -> list[ParsedModule]:
@@ -262,7 +152,26 @@ def parse_modules(facts: list[ModuleFacts]) -> list[ParsedModule]:
                 for parent in nodes
                 for child in ast.iter_child_nodes(parent)
             }
-            parsed.append(ParsedModule(module_facts, tree, nodes, parents))
+            calls = tuple(node for node in nodes if isinstance(node, ast.Call))
+            callback_names = frozenset(
+                name
+                for call in calls
+                for argument in (
+                    *call.args,
+                    *(keyword.value for keyword in call.keywords),
+                )
+                for name in (
+                    argument.id
+                    if isinstance(argument, ast.Name)
+                    else argument.attr
+                    if isinstance(argument, ast.Attribute)
+                    else "",
+                )
+                if name
+            )
+            parsed.append(
+                ParsedModule(module_facts, tree, nodes, parents, calls, callback_names)
+            )
     return parsed
 
 
@@ -388,20 +297,6 @@ def annotation_text(annotation: ast.expr | None) -> str:
         可读标注文本；无标注时返回空字符串。
     """
     return "" if annotation is None else ast.unparse(annotation)
-
-
-def is_bool_name(name: str) -> bool:
-    """
-    判断参数名是否具有明确布尔语义。
-
-    Args:
-        name: 参数或字段名称。
-
-    Returns:
-        命中布尔前缀或布尔词时返回 True。
-    """
-    lowered = name.lower()
-    return lowered.startswith(BOOL_NAME_PREFIXES) or lowered in BOOL_NAME_WORDS
 
 
 def is_bool_literal(node: ast.expr | None) -> bool:
@@ -539,51 +434,6 @@ def is_boundary_module(module: str, markers: tuple[str, ...]) -> bool:
     return any(marker.lower() in lowered for marker in markers)
 
 
-def collect_function_signatures(parsed: list[ParsedModule]) -> list[FunctionSignature]:
-    """
-    收集跨模块调用规则需要的布尔参数签名。
-
-    Args:
-        parsed: 已解析模块列表。
-
-    Returns:
-        仓库函数签名列表。
-    """
-    signatures: list[FunctionSignature] = []
-    for module in parsed:
-        for node, qualname, _ in iter_scoped_definitions(module.tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            positional = [*node.args.posonlyargs, *node.args.args]
-            if positional and positional[0].arg in {"self", "cls"}:
-                positional = positional[1:]
-            boolean_positions = {
-                index
-                for index, argument in enumerate(positional)
-                if "bool" in annotation_names(argument.annotation)
-                or is_bool_name(argument.arg)
-            }
-            boolean_keywords = {
-                argument.arg
-                for argument in all_parameters(node)
-                if argument.arg not in {"self", "cls"}
-                and (
-                    "bool" in annotation_names(argument.annotation)
-                    or is_bool_name(argument.arg)
-                )
-            }
-            signatures.append(
-                FunctionSignature(
-                    module=module.facts.module,
-                    qualname=qualname,
-                    name=node.name,
-                    boolean_positions=frozenset(boolean_positions),
-                    boolean_keywords=frozenset(boolean_keywords),
-                )
-            )
-    return signatures
-
-
 def is_compatibility_name(name: str) -> bool:
     """
     判断名称是否明确表示旧版、回退或兼容入口。
@@ -597,22 +447,6 @@ def is_compatibility_name(name: str) -> bool:
     prefixes = ("compat_", "deprecated_", "fallback_", "legacy_", "old_")
     suffixes = ("_compat", "_deprecated", "_fallback", "_legacy", "_old", "_v1", "_v2")
     return name.startswith(prefixes) or name.endswith(suffixes)
-
-
-def definition_index(definitions: list[Definition]) -> dict[str, list[Definition]]:
-    """
-    按简单名称建立定义索引。
-
-    Args:
-        definitions: 仓库内定义列表。
-
-    Returns:
-        简单名称到定义列表的映射。
-    """
-    result: dict[str, list[Definition]] = defaultdict(list)
-    for definition in definitions:
-        result[definition.name].append(definition)
-    return result
 
 
 def class_is_abstract(node: ast.ClassDef) -> bool:

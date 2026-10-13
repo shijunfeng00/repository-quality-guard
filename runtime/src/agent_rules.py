@@ -13,9 +13,6 @@ from .config import GuardConfig
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
-    MUTATING_METHODS,
-    READ_ONLY_NAME_PREFIXES,
-    WRITE_CALL_MARKERS,
     ParsedModule,
     RepositorySignals,
     StateContract,
@@ -138,11 +135,9 @@ def collect_dynamic_state_fields(
     )
     for module in modules:
         parents = module.parents
-        for node in module.nodes:
+        for node in module.calls:
             if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "update"
+                isinstance(node.func, ast.Attribute) and node.func.attr == "update"
             ):
                 continue
             receiver = dotted_name(node.func.value)
@@ -215,6 +210,8 @@ def collect_registered_tools(
         return
     for module in modules:
         for node in module.nodes:
+            if not isinstance(node, (ast.Call, ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
             name = registered_tool_name(
                 node,
                 module.facts.module,
@@ -378,7 +375,7 @@ def check_agent_rules(
         signals,
     )
     state_parameters = set(parameter_contracts)
-    findings.extend(check_state_scope(facts, node, qualname, accesses))
+    findings.extend(check_state_scope(facts, node, qualname, accesses, signals))
     findings.extend(
         check_state_update_entry(facts, node, qualname, state_parameters, config)
     )
@@ -784,7 +781,7 @@ def state_write(
     assignment = assignment_state_write(node, state_parameters)
     if assignment is not None:
         return assignment
-    return call_state_write(node, state_parameters)
+    return None
 
 
 def assignment_state_write(
@@ -810,28 +807,6 @@ def assignment_state_write(
     if target is None:
         return None
     return state_target_write(target, value, state_parameters, "assign")
-
-
-def call_state_write(
-    node: ast.AST,
-    state_parameters: set[str],
-) -> tuple[str, str, str, str] | None:
-    """
-    解析 append、extend、update 等方法形式的状态写入。
-
-    Args:
-        node: 待检查节点。
-        state_parameters: 状态参数名称集合。
-
-    Returns:
-        状态写入信息；不是容器修改调用时返回 None。
-    """
-    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-        return None
-    if node.func.attr not in MUTATING_METHODS:
-        return None
-    value = node.args[0] if node.args else None
-    return state_target_write(node.func.value, value, state_parameters, node.func.attr)
 
 
 def state_target_write(
@@ -899,30 +874,6 @@ def _state_parameter_escapes(
     return False
 
 
-def _used_as_callback(
-    facts: ModuleFacts, node: ast.FunctionDef | ast.AsyncFunctionDef
-) -> bool:
-    """判断定义是否被当前模块作为函数对象传给其他调用，识别图节点/路由等回调协议。
-
-    Args:
-        facts: 当前模块静态事实。
-        node: 待判断函数定义。
-
-    Returns:
-        函数对象作为 positional/keyword 参数出现时返回 True。
-    """
-    if facts.tree is None:
-        return False
-    for call in (item for item in ast.walk(facts.tree) if isinstance(item, ast.Call)):
-        values = [*call.args, *(keyword.value for keyword in call.keywords)]
-        for value in values:
-            if isinstance(value, ast.Name) and value.id == node.name:
-                return True
-            if isinstance(value, ast.Attribute) and value.attr == node.name:
-                return True
-    return False
-
-
 def _protocol_like_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """判断方法签名是否明显受 Python/框架 protocol 约束。"""
     if node.name.startswith("__") and node.name.endswith("__"):
@@ -948,6 +899,7 @@ def check_state_scope(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     qualname: str,
     accesses: dict[str, set[str]],
+    signals: RepositorySignals,
 ) -> list[Finding]:
     """
     检查函数是否接收整个状态却只读取极少字段。
@@ -957,6 +909,7 @@ def check_state_scope(
         node: 函数定义。
         qualname: 函数限定名称。
         accesses: 各状态参数读取的字段集合。
+        signals: 跨 QG 共享的模块级回调引用事实。
 
     Returns:
         依赖范围过宽发现列表。
@@ -967,7 +920,7 @@ def check_state_scope(
             continue
         high_confidence = (
             not _protocol_like_method(node)
-            and not _used_as_callback(facts, node)
+            and node.name not in signals.callback_names_by_module[facts.module]
             and not _state_parameter_escapes(node, parameter)
         )
         findings.append(
@@ -1118,23 +1071,6 @@ def check_tool_contract(
                 symbol=qualname,
                 severity="warning",
                 suggestion="返回包含状态、数据、错误和后续动作字段的固定 JSON 对象。",
-            )
-        )
-    write_calls = [
-        item
-        for item in nodes
-        if isinstance(item, ast.Call)
-        and call_name(item).rsplit(".", 1)[-1].lower() in WRITE_CALL_MARKERS
-    ]
-    if node.name.lower().startswith(READ_ONLY_NAME_PREFIXES) and write_calls:
-        findings.append(
-            facts.make_finding(
-                write_calls[0],
-                "QG123",
-                f"读取型 Tool `{qualname}` 调用了写操作 `{call_name(write_calls[0])}`。",
-                symbol=qualname,
-                severity="warning",
-                suggestion="查询工具保持只读和幂等；写操作使用明确命名及安全确认边界。",
             )
         )
     dict_keys = tool_return_dict_keys(returns)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections import defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
@@ -1412,7 +1412,15 @@ def normalized_topology(
         _populate_external_protocols(
             graph, source, dependency_resolver, owner_map, symbol_map, edges
         )
-    return RepositoryTopology(
+    from .instance_field_access import instance_field_accesses
+    from .constructor_lifecycle import constructor_lifecycle
+    from .typed_schema import typed_schema_facts
+    from .field_must_flow import field_initialization_facts
+    from .typed_consumers import typed_consumer_facts
+    from .parameter_forwarding import parameter_forwarding_facts
+    from .exception_handler_flow import exception_handler_read_facts
+
+    base = RepositoryTopology(
         symbols=tuple(sorted(symbol_map.values(), key=lambda item: item.symbol_id)),
         owners=tuple(sorted(owner_map.values(), key=lambda item: item.owner_id)),
         edges=tuple(
@@ -1427,6 +1435,24 @@ def normalized_topology(
                 ),
             )
         ),
+    )
+    fields, producers = typed_schema_facts(graph.snapshot, base)
+    schema_topology = replace(
+        base, typed_schema_fields=fields, typed_producers=producers
+    )
+    field_observations = instance_field_accesses(graph.snapshot, base)
+    constructors = constructor_lifecycle(graph.snapshot, base)
+    complete = replace(
+        schema_topology,
+        instance_field_accesses=field_observations,
+        constructor_lifecycles=constructors,
+    )
+    return replace(
+        complete,
+        typed_consumers=typed_consumer_facts(graph.snapshot, schema_topology),
+        field_initializations=field_initialization_facts(graph.snapshot, complete),
+        parameter_forwardings=parameter_forwarding_facts(graph.snapshot, complete),
+        exception_handler_reads=exception_handler_read_facts(graph.snapshot, complete),
     )
 
 

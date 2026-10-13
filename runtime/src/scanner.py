@@ -111,6 +111,8 @@ class RepositoryScanner:
             normalized = {path.resolve() for path in selected_files}
             files = [path for path in files if path.resolve() in normalized]
         facts = self._parse_files(files)
+        for item in facts:
+            item.repository_root = self.root
         definitions = [definition for item in facts for definition in item.definitions]
         usages = [usage for item in facts for usage in item.usages]
         resolved_edges = self._resolve_usage(definitions, usages, facts)
@@ -134,6 +136,85 @@ class RepositoryScanner:
                 ),
             )
         findings = [finding for item in facts for finding in item.findings]
+        if self.analysis_snapshot is not None and self.topology is not None:
+            from .typed_producer_contract import typed_producer_contract_findings
+
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                item for item in typed_producer_contract_findings(
+                    self.analysis_snapshot, self.topology
+                ) if item.path in audited_paths
+            )
+        if self.analysis_snapshot is not None:
+            from .partial_commit_flow import partial_commit_findings
+
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                finding for finding in partial_commit_findings(self.analysis_snapshot)
+                if finding.path in audited_paths
+            )
+        if self.analysis_snapshot is not None:
+            from .constructor_read_order import constructor_read_order_findings
+
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                item for item in constructor_read_order_findings(self.analysis_snapshot)
+                if item.path in audited_paths
+            )
+        if self.analysis_snapshot is not None:
+            from .silent_exception_fallback import silent_exception_fallback_findings
+
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                item for item in silent_exception_fallback_findings(self.analysis_snapshot)
+                if item.path in audited_paths
+            )
+        if self.analysis_snapshot is not None:
+            from .silent_handler_fallthrough import silent_handler_fallthrough_findings
+
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                item for item in silent_handler_fallthrough_findings(self.analysis_snapshot)
+                if item.path in audited_paths
+            )
+        if self.analysis_snapshot is not None:
+            from .source_call_contracts import source_bound_call_findings
+
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                item
+                for item in source_bound_call_findings(self.analysis_snapshot)
+                if item.path in audited_paths
+            )
+        # A caught exception may enter a handler before a local assignment's
+        # RHS completes. This is a conditional CFG witness, not a claim that
+        # an undocumented external API actually raises that exception.
+        if self.topology is not None:
+            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
+            findings.extend(
+                Finding(
+                    code="QG211",
+                    severity="warning",
+                    confidence="medium",
+                    path=fact.path.as_posix(),
+                    line=fact.line,
+                    column=fact.column,
+                    symbol=fact.owner_symbol_id,
+                    message="异常处理器可能在局部赋值完成前读取变量。",
+                    suggestion="检查真实被捕获异常能否从赋值 RHS 抛出；只在证实的分支修复初始化顺序。",
+                    evidence={
+                        "capability": fact.capability,
+                        "source_sha256": fact.source_sha256,
+                        "local_name": fact.local_name,
+                        "assignment_line": fact.assignment_line,
+                        "try_line": fact.try_line,
+                        "handler_line": fact.handler_line,
+                    },
+                    source="source-bound-r1",
+                )
+                for fact in self.topology.exception_handler_reads
+                if fact.path.as_posix() in audited_paths
+            )
         findings.extend(
             RuleEvaluator(self.config, self.topology).evaluate(definitions, facts)
         )

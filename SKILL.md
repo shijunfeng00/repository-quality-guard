@@ -2,13 +2,13 @@
 name: repository-quality-guard
 description: 对 Git 或无 Git 源码执行接口复用检索、增量接口文档、多语言质量审计、语义裁决、Reduction Pass 与最终只读门禁。
 metadata:
-  version: "0.22.4"
+  version: "0.22.5"
   status: stable
 ---
 
 # Repository Quality Guard
 
-**Version:** 0.22.4
+**Version:** 0.22.5
 **Status:** Stable
 **Distribution:** canonical full-repository ZIP / repository-installed `.agents`
 
@@ -65,7 +65,7 @@ python scripts/quality_guard.py doc-search <repo> "state transaction ownership"
 
 默认检索策略保持稳定；Profile 可以注册可选 `SearchStrategy` 对现有候选进行重排或过滤。
 
-### v0.22.4 审计模式（Agent 不得私自降低门禁）
+### 审计模式（Agent 不得私自降低门禁）
 
 默认不传 `--mode`，执行 `normal`。只有用户明确授权，才可以选择：
 
@@ -75,7 +75,7 @@ python scripts/quality_guard.py doc-search <repo> "state transaction ownership"
 
 `--mode ignore-diff/cleanup` 不允许与 `--diff-base` / `--staged` 并用。旧 `--debt-mode progressive/cleanup` 保留兼容映射。`audit` 和 `verify` 必须使用相同模式；报告首页记录模式、基线可用性和当前关系图。**无 `.git` 不构成用户授权忽略 diff 的证据。**
 
-### 默认自动语言识别与原生事实（v0.22.5 WIP，未发布）
+### 默认自动语言识别与原生事实（v0.22.5）
 
 `audit <repo>`、`verify <repo>` **不要求** `--language`、`-std=...` 或手工指定 Python/C++/JS。
 Python 的源文件中唯一、无装饰器、无重绑定的模块级调用默认自动检查 QG209
@@ -87,7 +87,7 @@ Python/JS/TS/CSS/HTML 及 C/C++ 通过仓库快照识别，只有权威编译数
 不可擅自猜 C++ 标准或把零发现当成无缺陷。CMake/Make/Meson 自动准备
 原始编译契约、Java Provider 与完整跨语言语义 IR 仍在计划中，不得宣称完成。
 
-**QG177 已退役（v0.22.5 WIP）：** 该规则错误地把未改动的历史 helper
+**QG177 已退役（v0.22.5）：** 该规则错误地把未改动的历史 helper
 fallback 当成本次迁移，使正确删除兜底的变更反遭 Critical/QG179 阻断。
 正式入口不再执行 QG177，历史残余须按自身契约作为独立债务判断，不允许
 恢复伪 ID、默认空值或重复 Consumer 校验来迁就规则。QG179 本身保留，
@@ -124,6 +124,20 @@ python scripts/quality_guard.py audit <repo> --diff-base <commit>
 
 `audit` 会写入机器事实，并保留需要人工完成的 ADD / SEM / TEST-CHANGE / Reduction / Commit 等语义字段。报告未完成时返回 `UNVERIFIED`，不能作为最终质量结论。
 
+### QG 编号查询（修复 Finding 的必经步骤）
+
+收到一个或多个 `QGxxx` Finding 后，**在修改生产代码、填写 JUSTIFIED 或批准修复前**，必须先按编号检索权威修复规则；不得仅依据报告中的短消息或严重度直接整改。
+
+```bash
+python "$QG/scripts/rule_lookup.py" -QG123 -QG153
+# 在解压后的 Skill 根目录下：
+python scripts/rule_lookup.py -QG153 -QG176
+```
+
+命令直接从 `references/RULES.md` 批量输出 Markdown：规则定义、对应规则族的真实风险、正确修复方向、禁止做法和原文行号。可离线执行，无须目标仓库、API catalog 或额外依赖。编号未知时明确失败，不猜测修复办法。
+
+查询后仍必须核验 Finding 的现场源码与上下游 Producer → Schema → Consumer、真实 Owner 和调用方；`RULES.md` 是修复指导而不是静态规则绝对正确的证明。结论矛盾时登记可复现的 RQG BUG，不得为了消掉 Finding 破坏正确契约。对同一 owner / 契约的批量 Finding 可合并检索和裁决，无须重复写长报告。
+
 ### `verify`
 
 只读重新扫描源码并校验最新报告：
@@ -142,7 +156,7 @@ RQG 的推荐闭环如下：
 2. 冻结 accepted design baseline。用户明确指定 revision 时使用该 revision；否则使用任务开始时最后一个可确认的目标分支基线。
 3. 新增 function / method / class / helper 前先执行 `doc-generate` 与 `doc-search`，检查已有 owner、调用方和可复用能力。
 4. 实现变更并先运行受影响的既有测试。测试默认代表稳定行为或契约，不应为了迁就当前实现而机械修改。
-5. 执行 `audit`，阅读机器事实和真实源码，完成新增接口、语义候选、测试契约和历史风险裁决。
+5. 执行 `audit`；按本节编号查询批量检索每条待处理 QG 的 `RULES.md` 修复方向，再阅读机器事实、真实源码和上下游，完成新增接口、语义候选、测试契约和历史风险裁决。
 6. 执行 Reduction Pass，检查新增 concept、branch、helper、mode、layer、state 或 coupling 是否仍能删除、内联、合并、复用、下沉或收紧。
 7. 冻结最终 patch，并在报告中填写覆盖整个 patch 的提交建议。
 8. 执行只读 `verify` 得到最终质量状态。

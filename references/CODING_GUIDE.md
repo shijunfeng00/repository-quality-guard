@@ -7,6 +7,10 @@
 内部上下游必须使用静态类型和固定字段契约。已确认的映射字段使用 `[]`，已确认的对象字段使用直接属性访问；生产代码不得用 `.get()`、`hasattr()`、`getattr()`、`setattr()`、`delattr()`、`vars()`、`__dict__`、`__getattribute__`、`inspect`/`operator` 反射、`setdefault()` 或成员存在性分支猜测正式契约。真正可选字段必须在 TypedDict、Pydantic、Protocol、Optional 或联合类型中显式表达，并只在唯一输入适配边界完成解析。外部 framework/plugin 的 optional contract 可以保留动态读取，但必须有静态依赖/stub/继承或唯一 adapter 证据；仅出现一个 import 名、变量名或缺少依赖都不能自动把内部契约降级为 external optional。
 
 
+### QG Finding 的标准修复入口
+
+任何 `QGxxx` 告警在修改代码前，先运行 `python scripts/rule_lookup.py -QG123 -QG153`（以实际编号替换；可批量），读取 `references/RULES.md` 的规则定义、修复方向及禁止做法。然后核实 Producer → Schema → Consumer / Owner → Caller → Adapter 的真实源码证据，确定问题与修复归属、编写对应行为验证并重审。不得把 Finding 消失当成修复成功；如规则本身与权威契约冲突，登记有正反 Case 的 RQG BUG，而不是改坏正确代码。
+
 ## 1. 总体原则
 
 1. 先理解现有生产方、消费方、调用链和公共接口，再修改代码。

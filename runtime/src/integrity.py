@@ -16,6 +16,7 @@ _PROTECTED_ROOT_FILES = frozenset(
         ".gitattributes",
         "SKILL.md",
         "scripts/quality_guard.py",
+        "scripts/rule_lookup.py",
         "scripts/git_hook_install.py",
         "references/RULES.md",
         "references/AUDIT.md",

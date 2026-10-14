@@ -17,7 +17,7 @@ from .multilang import (
     clang_include_args,
     clang_line_range,
     cpp_semantic_invocation,
-    _exploratory_clang_invocation,
+    exploratory_clang_invocation,
 )
 from .topology_facts import (
     OwnerFact,
@@ -1148,7 +1148,7 @@ def cpp_topology(
             if invocation is None and relative_path not in build_specs:
                 # Explicitly exploratory: not a native syntax or build-contract
                 # verdict. Preserve QG208 and no authoritative semantic coverage.
-                invocation = _exploratory_clang_invocation(
+                invocation = exploratory_clang_invocation(
                     fallback_clang,
                     root / relative_path,
                     root,

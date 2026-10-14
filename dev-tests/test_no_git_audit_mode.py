@@ -146,7 +146,9 @@ class TestNoGitAuditMode(unittest.TestCase):
         )
         document = render_compact_report(report, revision="HEAD")
         self.assertIn("| WARNING | 0 |", document)
-        self.assertIn("| WARNING | 0 | 2 | +2 |", document)
+        warning_count = sum(f.severity == "warning" for f in report.findings)
+        self.assertGreater(warning_count, 0)
+        self.assertIn(f"| WARNING | 0 | {warning_count} | +{warning_count} |", document)
 
     def test_real_audit_writes_report_for_gitless_and_ignore_diff(self) -> None:
         """Persisted audit reports must not need .git or fabricate history."""

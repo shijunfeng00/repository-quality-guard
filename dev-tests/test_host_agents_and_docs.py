@@ -27,6 +27,25 @@ class TestHostAgentsContract(unittest.TestCase):
                 _agents_source(bundle, selection, profile), expected.resolve()
             )
 
+    def test_renamed_host_resource_deploys_without_nested_agents(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp)
+            profile_dir = bundle / "profiles" / "sample"
+            profile_dir.mkdir(parents=True)
+            source = profile_dir / "HOST_INSTRUCTIONS.md"
+            source.write_text("one root instruction\n", encoding="utf-8")
+            chosen = _agents_source(
+                bundle,
+                SimpleNamespace(reference="sample"),
+                SimpleNamespace(agents_file="HOST_INSTRUCTIONS.md"),
+            )
+            self.assertEqual(chosen, source.resolve())
+            self.assertFalse((profile_dir / "AGENTS.md").exists())
+            host = bundle / "host"
+            host.mkdir()
+            self.assertTrue(_create_host_agents_if_missing(host, chosen))
+            self.assertEqual((host / "AGENTS.md").read_text(), "one root instruction\n")
+
     def test_generic_agents_source_uses_bootstrap_resource(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             bundle = Path(temp)

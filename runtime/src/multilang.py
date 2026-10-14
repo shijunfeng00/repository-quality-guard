@@ -1168,7 +1168,7 @@ def clang_ast_invocation(
     return command, cwd
 
 
-def _exploratory_clang_invocation(
+def exploratory_clang_invocation(
     clang: str | None,
     source: Path,
     root: Path,
@@ -1179,6 +1179,15 @@ def _exploratory_clang_invocation(
     The fixed frontend dialect is only a best-effort AST exploration. It does
     not establish the project's native C++ standard, and must not suppress
     missing build contracts (QG208) or create native syntax errors (QG212).
+
+    Args:
+        clang: Clang executable supplied by toolchain discovery.
+        source: Materialized translation unit to inspect.
+        root: Working directory for the syntax tree process.
+        include_args: Resolved include paths for structural exploration.
+
+    Returns:
+        Clang AST command and working directory, or None without Clang.
     """
     if clang is None:
         return None
@@ -1442,7 +1451,8 @@ def multilang_findings(
         unit = target.language_units[path]
         if (
             not source.is_file()
-            or source.read_text(encoding="utf-8", errors="surrogateescape") != unit.source
+            or source.read_text(encoding="utf-8", errors="surrogateescape")
+            != unit.source
         ):
             native_unavailable.append(path)
             continue
@@ -1531,7 +1541,11 @@ def multilang_findings(
         )
     findings.sort(
         key=lambda finding: (
-            finding.path, finding.line, finding.column, finding.code, finding.symbol
+            finding.path,
+            finding.line,
+            finding.column,
+            finding.code,
+            finding.symbol,
         )
     )
     summary = {

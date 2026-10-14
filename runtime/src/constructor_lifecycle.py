@@ -1,8 +1,8 @@
 """Source-authenticated constructor hierarchy observations in the shared IR.
 
 Only statically resolved, undecorated local class declarations enter the bounded
-C3 domain. Synthetic classes use CPython's own ``type`` MRO implementation and
-never execute analyzed repository code. This is not runtime dispatch closure.
+C3 domain. C3 merge is computed from proven source inheritance edges without constructing
+runtime types or inspecting MRO attributes. This is not runtime dispatch closure.
 """
 
 from __future__ import annotations
@@ -134,16 +134,15 @@ def constructor_lifecycle(
                 if symbol is not None and not symbol.nested:
                     declarations[symbol.symbol_id] = (path, node)
 
-    # Compiler-provided types are intentionally NOT imitated with fake business
-    # methods; CPython's native ``type`` computes just the C3 linearization.
-    synthetic: dict[str, type] = {}
-    reverse: dict[type, str] = {}
+    # C3 uses only proven lexical inheritance edges. Dynamic type creation and
+    # MRO reflection are unnecessary: these are source identities, not classes.
+    linearizations: dict[str, tuple[str, ...]] = {}
     unresolved: set[str] = set()
     resolving: set[str] = set()
 
-    def build(identity: str) -> type | None:
-        if identity in synthetic:
-            return synthetic[identity]
+    def build(identity: str) -> tuple[str, ...] | None:
+        if identity in linearizations:
+            return linearizations[identity]
         if identity in unresolved or identity in resolving:
             unresolved.add(identity)
             return None
@@ -180,34 +179,42 @@ def constructor_lifecycle(
                 return None
             direct.append(matching[0])
         resolving.add(identity)
-        parent_types = [build(x) for x in direct]
+        parents = [build(parent) for parent in direct]
         resolving.remove(identity)
-        if any(parent is None for parent in parent_types):
+        if any(parent is None for parent in parents):
             unresolved.add(identity)
             return None
-        try:
-            cls = type(identity, tuple(parent_types), {})
-        except TypeError:  # Invalid C3 linearization; no partial MRO evidence.
-            unresolved.add(identity)
-            return None
-        synthetic[identity] = cls
-        reverse[cls] = identity
-        return cls
+        sequences = [list(parent) for parent in parents if parent is not None]
+        sequences.append(list(direct))
+        result = [identity]
+        while any(sequences):
+            candidate = next(
+                (
+                    seq[0]
+                    for seq in sequences
+                    if seq and not any(seq[0] in tail[1:] for tail in sequences)
+                ),
+                None,
+            )
+            if candidate is None:  # C3 inconsistent; do not invent an MRO.
+                unresolved.add(identity)
+                return None
+            result.append(candidate)
+            for seq in sequences:
+                if seq and seq[0] == candidate:
+                    seq.pop(0)
+        linearizations[identity] = tuple(result)
+        return linearizations[identity]
 
     result: list[ConstructorLifecycleFact] = []
     for identity in sorted(declarations):
         path, node = declarations[identity]
-        cls = build(identity)
-        mro = (
-            tuple(reverse[x] for x in cls.__mro__ if x in reverse)
-            if cls is not None
-            else ()
-        )
+        mro = build(identity) or ()
         constructor = next(
             (f"{owner}.__init__" for owner in mro if f"{owner}.__init__" in methods), ""
         )
         calls: list[tuple[str, int]] = []
-        if cls is not None:
+        if mro:
             for owner in mro:
                 decl = declarations[owner][1]
                 for method in decl.body:
@@ -239,14 +246,14 @@ def constructor_lifecycle(
                     for line in _immediate_calls(method):
                         calls.append((f"{owner}.__init__", line))
         # Resolve authored post-construction method entries using the exact
-        # already-constructed C3 symbol order. Attribute *names* are Python's
+        # source-derived C3 symbol order. Attribute *names* are Python's
         # lookup keys, not indicators of purity, mutation or business purpose.
         # Any authored dynamic attribute hook or uncertain method descriptor
         # invalidates the source-only entry candidate; never infer a negative
         # runtime calling edge from a missing/unknown declaration.
         entries: dict[str, str] = {}
         uncertain: set[str] = set()
-        if cls is not None:
+        if mro:
             # A method in a base is not reachable if a descendant class body
             # shadows that name with a data attribute/descriptor. Conditional
             # class-body execution may also rewrite bindings. Never treat MRO
@@ -322,7 +329,7 @@ def constructor_lifecycle(
                 unknown_method_entries=tuple(sorted(uncertain)),
                 capability=(
                     "SOURCE_BOUND_CPYTHON_C3_OPEN_RUNTIME"
-                    if cls is not None
+                    if mro
                     else "UNKNOWN_DYNAMIC_OR_UNBOUND_HIERARCHY"
                 ),
             )

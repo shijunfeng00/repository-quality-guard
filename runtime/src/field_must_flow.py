@@ -110,9 +110,17 @@ class _Flow:
                 state.clear()
 
     @staticmethod
-    def _join(
+    def join(
         states: list[dict[str, frozenset[int]]],
     ) -> dict[str, frozenset[int]] | None:
+        """Intersect definitely initialized fields across reachable normal exits.
+
+        Args:
+            states: Field witness maps for all reachable normal branches.
+
+        Returns:
+            Shared field witnesses, or None when no normal branch survives.
+        """
         if not states:
             return None
         common = set(states[0])
@@ -140,7 +148,7 @@ class _Flow:
                     )
                     if result is not None
                 ]
-                state = self._join(branches)
+                state = self.join(branches)
             elif isinstance(stmt, (ast.Assign, ast.AnnAssign)):
                 if stmt.value is None:  # Bare attribute annotation is not a write.
                     continue
@@ -414,7 +422,7 @@ def field_initialization_facts(
                 normal = list(local.normal_exits)
                 if remaining is not None:
                     normal.append(remaining)
-                exits = {} if local.escaped else local._join(normal) or {}
+                exits = {} if local.escaped else local.join(normal) or {}
                 invalidated, escaped = _cross_method_invalidations(
                     methods_in_class,
                     init,

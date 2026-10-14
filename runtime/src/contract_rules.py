@@ -17,6 +17,59 @@ PAIR_ARGUMENT_COUNT = 2
 
 MIN_PARALLEL_CONTRACT_ITEMS = 2
 MIN_FIELD_ALIAS_CALLS = 2
+# Exact known methods on builtin ``str`` returning a fresh value or scalar.
+# They do not mutate a literal string; arbitrary receiver method names remain UNKNOWN.
+PURE_STRING_METHODS = frozenset(
+    {
+        "capitalize",
+        "casefold",
+        "center",
+        "count",
+        "encode",
+        "endswith",
+        "expandtabs",
+        "find",
+        "format",
+        "format_map",
+        "index",
+        "isalnum",
+        "isalpha",
+        "isascii",
+        "isdecimal",
+        "isdigit",
+        "isidentifier",
+        "islower",
+        "isnumeric",
+        "isprintable",
+        "isspace",
+        "istitle",
+        "isupper",
+        "join",
+        "ljust",
+        "lower",
+        "lstrip",
+        "partition",
+        "removeprefix",
+        "removesuffix",
+        "replace",
+        "rfind",
+        "rindex",
+        "rjust",
+        "rpartition",
+        "rsplit",
+        "rstrip",
+        "split",
+        "splitlines",
+        "startswith",
+        "strip",
+        "swapcase",
+        "title",
+        "translate",
+        "upper",
+        "zfill",
+    }
+)
+
 MAPPING_PROTOCOL_METHODS = {
     "clear",
     "copy",
@@ -548,7 +601,7 @@ def ignored_immutable_result(node: ast.Call, facts: ModuleFacts) -> str:
         return ""
     # The receiver is an exact Python builtin str, not a user-defined class
     # that happens to implement a method with the same spelling.
-    if node.func.attr not in str.__dict__ or not callable(str.__dict__[node.func.attr]):
+    if node.func.attr not in PURE_STRING_METHODS:
         return ""
     return node.func.attr
 

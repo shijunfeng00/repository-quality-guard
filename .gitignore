@@ -23,3 +23,6 @@ __pycache__/
 
 # Real-project regression evidence belongs in external checkpoints, not Git history.
 /references/STRUCTURE_TOPOLOGY_BASELINE.md
+
+# Generated local audit report; never publish in Git
+修改说明.md

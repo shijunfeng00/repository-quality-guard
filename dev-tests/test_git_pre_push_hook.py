@@ -59,13 +59,14 @@ class TestManagedPrePush(unittest.TestCase):
             capture_output=True,
         )
 
-    def _push(self, result: int) -> subprocess.CompletedProcess[str]:
+    def _push(self, result: int, mode: str | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["git", "-C", str(self.repo), "push", "origin", "HEAD:refs/heads/main"],
             env={
                 **os.environ,
                 "RQG_PREPUSH_TEST_RECORD": str(self.record),
                 "RQG_PREPUSH_TEST_EXIT": str(result),
+                "RQG_PREPUSH_AUDIT_MODE": mode or "",
             },
             text=True,
             capture_output=True,
@@ -77,6 +78,33 @@ class TestManagedPrePush(unittest.TestCase):
         hook = self.repo / ".git/hooks/pre-push"
         self.assertTrue(hook.is_file())
         self.assertTrue(os.access(hook, os.X_OK))
+
+    def test_existing_nonexecutable_hook_is_repaired(self) -> None:
+        self.assertEqual(self._install().returncode, 0)
+        hook = self.repo / ".git/hooks/pre-push"
+        hook.chmod(0o644)
+        self.assertFalse(os.access(hook, os.X_OK))
+        self.assertEqual(self._install().returncode, 0)
+        self.assertTrue(os.access(hook, os.X_OK))
+        self.assertNotEqual(self._push(3).returncode, 0)
+        self.assertIn("verify", self.record.read_text(encoding="utf-8"))
+
+    def test_explicit_ignore_diff_requires_matching_report_and_real_verify(self) -> None:
+        self.assertEqual(self._install().returncode, 0)
+        report = self.repo / "修改说明.md"
+        # The opt-in is not allowed to silently reinterpret a normal-mode report.
+        self.assertNotEqual(self._push(0, mode="ignore-diff").returncode, 0)
+        self.assertFalse(self.record.exists())
+        report.write_text("audit_mode: ignore-diff # 忽略diff模式\n", encoding="utf-8")
+        push = self._push(5, mode="ignore-diff")
+        self.assertEqual(push.returncode, 0, push.stderr)
+        self.assertIn("verify", self.record.read_text(encoding="utf-8"))
+        self.assertIn("--mode ignore-diff", self.record.read_text(encoding="utf-8"))
+        (self.repo / "source.py").write_text("VALUE = 2\n", encoding="utf-8")
+        _git(self.repo, "add", ".")
+        _git(self.repo, "commit", "-qm", "fix: 更新受测值")
+        self.assertNotEqual(self._push(3, mode="ignore-diff").returncode, 0)
+        self.assertNotEqual(self._push(0, mode="bogus").returncode, 0)
 
     def test_other_hooks_are_not_overwritten(self) -> None:
         hook = self.repo / ".git/hooks/pre-push"

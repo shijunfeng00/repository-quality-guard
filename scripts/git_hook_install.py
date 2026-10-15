@@ -53,8 +53,20 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     exit 1
   fi
 
-  echo "pre-push: QG verify + 修改说明.md validator (diff-base=$base)" >&2
-  python "$qg" verify "$repo_root" --diff-base "$base"
+  if [ "$RQG_PREPUSH_AUDIT_MODE" = "ignore-diff" ]; then
+    if ! grep -Fxq 'audit_mode: ignore-diff # 忽略diff模式' "$repo_root/修改说明.md"; then
+      echo "pre-push: 已请求 ignore-diff，但报告不是同一审计模式，拒绝 push" >&2
+      exit 1
+    fi
+    echo "pre-push: 显式迁移授权，执行完整 QG verify --mode ignore-diff" >&2
+    python "$qg" verify "$repo_root" --mode ignore-diff
+  elif [ -z "$RQG_PREPUSH_AUDIT_MODE" ] || [ "$RQG_PREPUSH_AUDIT_MODE" = "normal" ]; then
+    echo "pre-push: QG verify + 修改说明.md validator (diff-base=$base)" >&2
+    python "$qg" verify "$repo_root" --diff-base "$base"
+  else
+    echo "pre-push: 非法 RQG_PREPUSH_AUDIT_MODE，拒绝 push" >&2
+    exit 1
+  fi
   qg_status=$?
   case "$qg_status" in
     0)
@@ -101,6 +113,9 @@ def main() -> int:
             )
             return 1
         if current == _HOOK_TEXT:
+            hook_path.chmod(
+                hook_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
             print("Repository Quality Guard pre-push hook: READY")
             return 0
     hook_path.parent.mkdir(parents=True, exist_ok=True)

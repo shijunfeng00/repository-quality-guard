@@ -58,22 +58,16 @@ QG144 的不同返回结构只有在存在显式 union/discriminator/公开协�
 - 接口修改/删除显示可解析的直接调用方、传递依赖与受影响测试；动态框架关系未解析时不得伪装成“影响为零”。
 - affected tests 是优先原样运行的回归集合，不是允许自动修改 tests 的清单。
 - Graph 只证明结构与影响；职责合理性、需求授权和动态协议语义仍由规则或语义审计裁决。
-- 审计报告把三类结果分账：旧规则 finding 继续独立守住 legacy parity；可达性路径用于 resolution gain；QG193/QG194 只计入 RelationGraph new recall，新增召回不得掩盖旧 finding 消失。
 
 
 ## Test Contract
 
-Tests 与 production 分账，但变更 tests 不是默认动作。机器只对本轮变化的测试文件做 AST 差分：统计新增/修改/删除用例、断言/skip 变化，并记录每个修改用例中消失的可观察断言；因此“总断言数增加”也不能掩盖旧稳定断言被删除。源码读取、`inspect.getsource/signature`、源码字符串存在/不存在断言、历史 tombstone 命名等仍标为 QG192 候选。既有测试用例一旦修改或删除，以及命中 QG192 的新增用例，会生成稳定 `TEST-CHANGE-*`。
-
-每个 `TEST-CHANGE-*` 必须说明稳定行为/旧断言为什么失效、真实需求/Bug/测试缺陷证据和可观察验证路径，最终只裁决 `JUSTIFIED/BLOCKING`。`IMPLEMENTATION_COUPLED` 只能 BLOCKING；若源码结构断言实际表达长期架构不变量，只能以 `STABLE_ARCHITECTURE_CONTRACT` JUSTIFIED，并给出独立于本次实现的长期契约证据。普通新增行为测试不因为“新增”自动进入人工账本。
-
-既有测试默认应先原样运行：失败首先视为 production regression 候选，而不是自动修改 tests。历史删除记录不等于长期需求；“确保被删除参数/helper 永不出现”不得仅凭删除历史成为永久测试契约。应优先验证稳定可观察行为；确属长期架构不变量时由架构门禁表达。负向测试只有在验证长期稳定的安全、协议或公开行为不变量时才是正常回归测试。
+单元测试通过独立输入、公开接口可观察结果与已确认 Oracle 验证业务行为。测试执行失败必须记录并阻断实际交付。源文件身份、断言数量和历史实现形状不构成质量证明。
 
 ## Release identity coupling
 
 审计时把项目自身 release lineage 与稳定版本化契约分开。通用规则中，QG203 只检查**路径/文件名**里的 release identity，并以 CRITICAL 进入正常 baseline/history-aware 静态门禁；QG205 检查**文件内容**里的版本/provenance，并默认只进入 SEMANTIC 复核，不因静态命中直接 REJECT。语义裁决必须先识别 identity owner：外部 API、协议、schema、依赖、数据迁移/兼容、内容寻址或密码学测试向量可以合理。Profile 可以把任一规则通过 JSON `rules.levels` 提升为 BLOCKER；BLOCKER 是独立绝对门禁，不受历史 baseline 抵消。README.md 与 README_zh.md 明确豁免；其他资产不按目录名自动豁免。
 
-QG192 与 QG203/QG205 分账：`legacy/removed/no_longer` 等测试名主要是 implementation-history/change-detector 风险；只有当测试同时写入具体 `vX.Y/rcN/SHA/tag` 身份时才进入 release-identity 审计。
 
 ## Reduction Pass
 

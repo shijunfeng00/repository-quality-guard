@@ -55,6 +55,10 @@ Case 驱动单元测试应检查：对真实受影响源码运行 CLI 后，是�
 避免测试固定内部辅助函数名、实现步骤或 AST 解析器组织方式；只要证据的业务语义不变，内部实现可重构。
 当现有图不足以回答必需证据链时，应暴露缺口并保留 UNKNOWN，不能用猜测补齐或据此擅改稳定 QG。
 
+### 单元测试行为契约
+
+单元测试使用输入、公开接口、预期输出或异常和独立比较器验证可观察行为。正常实现重构不得要求修改原业务预期。有效缺陷回归 Cases 原则上持续追加；业务契约变化时允许有证据地更新预期。禁止将非契约内部函数、局部变量、调用路径、装饰器、源码字符串、私有属性是否存在作为通过条件。测试实现方式与业务功能正确性分开评价；实际执行失败仍由测试执行器阻断交付。
+
 ## 1. 总体原则
 
 1. 先理解现有生产方、消费方、调用链和公共接口，再修改代码。
@@ -359,7 +363,7 @@ Private 实现变化不机械要求修改 README。README 只描述公开能力�
 
 1. 运行 repository-quality-guard 生成或刷新自动事实。
 2. 全仓目标仍是尽可能达到 Critical/Error/Warning `0 / 0 / 0`；普通三档问题只要相对累计 Git 基线新增或升级就必须消除，`DELTA-*` 只能记录 BLOCKING 与处置方向，不允许例外保留。累计基线即本轮冻结的 accepted design baseline：用户指定 revision 优先，否则取任务开始时最后一次可确认 push/目标分支提交；不得移动到本轮中间 commit。对**本轮实际触达的生产 `.py` 文件**实行更严格的 touched-debt gate：既有 C/E/W 必须逐项复核并修复真实债务；仅有明确边界契约证据的语义候选可以 JUSTIFIED，不允许用 baseline 身份或语法洗白保留真实债务。
-3. 原样运行并保留目标项目既有回归测试；只有新增稳定行为或经 TEST-CHANGE 证明的真实契约变化才新增/修改测试，同时按需求同步 README 和调用方。
+3. 原样运行并保留目标项目既有回归测试；新增真实业务能力或修复缺陷时增加 Cases；仅在可观察业务契约变化时更新预期，同时按需求同步 README 和调用方。
 4. 逐项填写并通过 `修改说明.md` 固定契约。
 5. 执行 `python scripts/quality_guard.py verify <repo>`；Portable 模式仅在仓库目录名与实际存在的 Profile 名完全一致时自动选择并打印来源，也可显式追加 `--profile <profile>`；Installed 模式使用冻结策略且不接受运行期 `--profile`。`PASS` 表示质量门禁允许进入任务后续步骤，`REVIEW_REQUIRED` 表示质量裁决仍需人工确认，`REJECT` 必须继续修改。这里的“进入提交”只描述质量状态，不授予 Git 写权限：报告必须给出建议 `git commit -m`，但是否实际执行 `git commit` 只服从当前任务的明确授权。没有 `verify` 结果、缺失建议 Commit 或仅有 `audit GENERATED/UNVERIFIED` 都不算审计完成。
 6. 若本轮任务是升级仓库内受跟踪的 `.agents`，只使用当前正式 Skill 的 `python runtime/deploy.py <skill-root> <repo>/.agents/skills/repository-quality-guard [--profile <name-or-path>]`。**升级永远是全量原子替换**：旧版本号、旧目录结构或残缺状态都不是前置条件；staging 目标树必须与当前 release manifest 一致，旧版独有文件全部删除。根 `AGENTS.md` 为宿主共享文件：已有文件逐字节保留；仅在缺失时 create-if-missing，优先直接复制 Profile 提供的完整 `AGENTS.md`，否则使用 generic bootstrap 资源。Profile 在安装阶段冻结并参与 release seal，运行期不得切换。Canonical full-repository ZIP 必须携带 `.git`、本地 Profile catalog，并可以携带 `README.md`、`README_zh.md`、`dev-tests/` 与 authoring/release tools，并必须携带 `offline/wheelhouse` 与 `offline/node_modules.zip` 以支持断网 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须排除 README、测试、authoring tools、wheel、`node_modules`、`offline/` 与 Profile authoring 文件，但必须包含 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py` 与完整 `runtime/src`。fresh clone 缺第三方依赖时运行安装器联网 bootstrap；canonical full-repository ZIP 可用 `--offline` 完成离线 bootstrap。**deploy 只是安装，不是持久化完成**：deploy 后检查 `git status --short --untracked-files=all` / `git check-ignore`，再至少执行 `git add -A -- .agents/skills/repository-quality-guard`；仅当本轮 deploy 确实同步了根 `AGENTS.md` 时才把它一并 stage。把新增/修改/删除全部纳入独立升级 commit；随后用 `git ls-files` / `git cat-file` 和 fresh clone 证明完整运行时已在 `HEAD`。fresh clone 必须实际跑 `doc-generate → audit → 填写修改说明.md → audit READY_FOR_VERIFY → verify`；项目要求托管 pre-push 时再安装/触发 hook 验证报告门禁。提交内容可以对齐项目历史，但不得覆盖 Git author/committer 身份；新提交沿用实际执行者 identity。
@@ -381,21 +385,9 @@ accepted design baseline 是默认契约，但本轮明确需求可以有证据�
 
 代码关系审计同理：只从统一 RepositoryAnalysisSnapshot 派生关系事实，吸收 CodeGraph 的 callers/callees/impact/affected-tests 思路，不依赖外部 CodeGraph 数据库、daemon、MCP 或第二 parser。
 
-## 测试代码审计边界
+## 单元测试
 
-测试是稳定行为/契约的回归护栏，不是随 production 实现同步更新的镜像。遵循“行为优先、实现细节最小化、对未来重构有韧性”的单元测试原则：
-
-1. **既有 tests 默认稳定。** 修改 production 后，优先原样运行相关既有测试；失败先判断 production 是否回归，禁止把“修改 assertion 让 pytest 变绿”当作正常修复步骤。
-2. **允许改既有测试的原因只有明确类别。** `REQUIREMENT_CHANGE`：真实需求/公开契约有意变化；`BUG_FIX`：旧断言把已确认 Bug 当成正确行为；`TEST_DEFECT`：测试自身错误、flaky 或 fixture/替身缺陷；`TEST_REFACTOR`：只重构测试结构且稳定行为和断言强度不变。除此之外默认 BLOCKING。
-3. **测试公开行为，而不是当前实现形状。** 优先输入→输出、异常、状态转换、序列化、协议、可观察 side effect；接口的返回字段、格式、数值语义、默认值、错误码和已经修复的 Bug 应由稳定自动化回归锁住。不要把 private helper 名称、调用层数、源码字符串、某次重构后的函数位置当作产品行为。
-4. **历史删除不是永久契约。** `assert "old_helper" not in source`、`REMOVED_*` 名单、“确保刚删除参数永不回来”等 change-detector 测试默认视为实现耦合候选；除非它对应长期安全/协议/架构不变量，否则不得作为稳定回归契约。应优先改为可观察行为验证；确属长期架构不变量时由架构门禁表达。
-5. **负向测试必须保护稳定不变量。** 未授权操作必须失败、敏感字段不得泄漏、公开 response 不得含某字段等可以长期保持；“源码里不得出现某名字”本身通常不是稳定行为。
-6. **Mock/Stub 用于隔离依赖，不用于证明 mock 自己。** 只有 collaborator 调用本身就是公开契约/事务/资源生命周期要求时，才固定精确调用；不要因 private 调用顺序变化让测试机械失败。
-7. **测试变化由机器先静态化。** `QG170~175` 继续检查删除测试、断言下降、skip/xfail、空壳测试和语法错误；`QG192` 仅标记 implementation-coupled/change-detector 候选，不靠关键词直接定罪。既有用例修改/删除与高风险新增用例生成稳定 `TEST-CHANGE-*`，并记录旧可观察断言中本轮消失的表达式，避免“总断言数增加”掩盖某条稳定契约被删。`QG193` 再把真正位于 changed-production affected RUN set 的既有测试用例提升为关系语义候选；由语义审计决定 `JUSTIFIED/BLOCKING`。
-8. **实现耦合候选不能靠一句“需求变了”豁免。** 每个 `TEST-CHANGE-*` 必须给出稳定行为/旧断言失效原因、真实需求/Bug/测试缺陷证据和可观察验证路径；裁决只有 `JUSTIFIED/BLOCKING`。命中 QG192 而要 JUSTIFIED 时，只能证明它表达长期 `STABLE_ARCHITECTURE_CONTRACT`；否则必须 BLOCKING，修正测试后重新审计。
-9. **历史测试债不因 Skill 升级一次性阻塞。** QG192 只严格审计本轮新增/修改的测试；未触及的历史 implementation-coupled test 继续作为历史债务。任何后续修改一旦触及该测试，即按同一长期规则重新审计，不引入一次性清理状态或处置枚举。
-10. fixture、stub、mock、替身字段和嵌套 helper 不进入生产接口 `ADD-*`；不要为测试方便扩大 production public API。
-
+以独立的业务输入、公开接口输出、异常和状态转换 Cases 验证功能。测试不得使非契约的私有字段、内部调用路径、源码字符串或重构方式成为 PASS 条件。合法业务变更允许同步更新预期；有效回归 Cases 原则上持续积累。单元测试的实际执行失败由原生执行器判定，不以历史测试文件身份或断言数量替代接口验收。
 
 ## Release identity 不得成为项目契约
 
@@ -404,7 +396,6 @@ accepted design baseline 是默认契约，但本轮明确需求可以有证据�
 - `QG203` 是通用 CRITICAL：只检查路径/文件名中的 release-like identity，例如版本化测试、fixture、artifact、history/release 目录名；它继续服从 baseline/history-aware delta，不把历史 CRITICAL 自动升级成绝对阻断。
 - `QG205` 是通用 SEMANTIC 候选：依赖/API/协议/schema/迁移版本、普通源码/配置/正式文档中的版本、tag、commit/SHA/digest 可能完全合理，也可能是 release lineage 污染，必须逐项裁决；静态命中本身不直接 REJECT。
 - Git tag 会被读取为额外证据；项目代码或测试如果显式依赖仓库已有 tag，不能因为“tag 确实存在”就自动合理化。
-- `QG192` 与本规则不同：QG192 关注测试读取 production source、private helper、legacy/removed tombstone 等实现历史快照；QG203/QG205 关注具体 release identity。一个测试可以同时命中两类规则。
 
 ## 新增接口删除审判
 

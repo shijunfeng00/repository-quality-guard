@@ -2,7 +2,10 @@
 
 # Repository Quality Guard
 
-### A standardized high-quality development and audit workflow for Coding Agents
+#
+> 已退役：QG170–QG175 与 QG192–QG194 原单测形状审计不再生成 Finding；真实测试执行失败仍独立阻断交付。v0.22.6 将重建测试业务行为契约。
+
+## A standardized high-quality development and audit workflow for Coding Agents
 
 **Stop Agents from hiding surprises inside thousands of lines of `git diff`.**
 
@@ -240,8 +243,6 @@ RQG does not guarantee quality by saying “please review the code carefully.”
 | Example | What it focuses on |
 | --- | --- |
 | `QG001` | Ephemeral one-shot helper/wrapper topology; shared primitives, callbacks, protocol hooks, and public APIs are distinguished from decomposition helpers |
-| `QG170–QG175` | Deleted tests, reduced assertions, skip / xfail, or new tests with no meaningful assertion |
-| `QG192–QG194` | Production code changed without meaningful behavioral verification, or tests coupled too tightly to implementation details |
 | `QG980–QG985` | Whether `修改说明.md` is complete, whether the Agent's explanation matches the facts, and whether final verification is valid |
 | `QG990` | Whether RQG's own rules, configuration, or protected files were modified unexpectedly |
 

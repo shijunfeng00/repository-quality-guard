@@ -24,7 +24,6 @@ RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并�
 - `QG205`：通用 **SEMANTIC** 候选，覆盖文件内容中的依赖/API/协议/schema/迁移版本，以及其他版本、tag、commit/SHA/digest 引用；静态命中本身不直接触发 REJECT。
 - `README.md` 与 `README_zh.md` 是仅有的文档豁免；仓库内 migration/release/history 文档不因命名自动豁免。
 
-`QG192` 仍独立负责 implementation-history/change-detector test；只有写入具体版本、RC、tag 或 SHA 身份时，才同时进入 QG203/QG205。
 
 ### 仓库证据 CLI（只读定位，不代替裁决）
 
@@ -159,7 +158,7 @@ QG215 对源码明确的宽异常 `pass`/`continue`/局部哨兵赋值单语句�
 python scripts/quality_guard.py audit <repo> --diff-base <commit>
 ```
 
-`audit` 会写入机器事实，并保留需要人工完成的 ADD / SEM / TEST-CHANGE / Reduction / Commit 等语义字段。报告未完成时返回 `UNVERIFIED`，不能作为最终质量结论。
+`audit` 会写入机器事实，并保留需要人工完成的 ADD / SEM / Reduction / Commit 等语义字段。报告未完成时返回 `UNVERIFIED`，不能作为最终质量结论。
 
 ### QG 编号查询（修复 Finding 的必经步骤）
 

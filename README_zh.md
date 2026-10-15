@@ -2,7 +2,10 @@
 
 # Repository Quality Guard
 
-### 面向 Coding Agent 的标准化高质量代码开发流程与审计 Skill
+#
+> 已退役：QG170–QG175 与 QG192–QG194 原单测形状审计不再生成 Finding；真实测试执行失败仍独立阻断交付。v0.22.6 将重建测试业务行为契约。
+
+## 面向 Coding Agent 的标准化高质量代码开发流程与审计 Skill
 
 **拒绝 Agent 在几千行 `git diff` 里夹带私货。**
 
@@ -242,8 +245,6 @@ RQG 不是靠一句“请认真检查代码”保证质量，而是把多种检�
 | 示例 | 关注问题 |
 | --- | --- |
 | `QG001` | 短生命周期的一次性 helper / wrapper 拓扑；共享 primitive、callback、protocol hook、公共 API 会与拆分型 helper 区分 |
-| `QG170–QG175` | 测试删除、断言减少、skip / xfail、新测试无有效断言等 |
-| `QG192–QG194` | 正式代码已经修改，但相关测试没有验证真正行为，或测试过度绑定实现细节 |
 | `QG980–QG985` | `修改说明.md` 是否完整、Agent 的解释是否和事实一致、最终验证是否成立 |
 | `QG990` | RQG 自己的规则、配置和关键文件有没有被偷偷改掉 |
 

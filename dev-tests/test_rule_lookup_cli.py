@@ -114,12 +114,19 @@ class RuleLookupTests(unittest.TestCase):
 
     def test_duplicates_are_deduplicated_and_output_is_deterministic(self) -> None:
         """重复编号只显示一张卡，稳定输出不依赖运行环境。"""
-        first = self.run_lookup("-QG173", "-QG173")
-        second = self.run_lookup("-QG173")
+        first = self.run_lookup("-QG060", "-QG060")
+        second = self.run_lookup("-QG060")
         self.assertEqual(first.returncode, 0)
         self.assertEqual(first.stdout, second.stdout)
-        self.assertEqual(first.stdout.count("## QG173"), 1)
-        self.assertIn("测试变更", first.stdout)
+        self.assertEqual(first.stdout.count("## QG060"), 1)
+
+    def test_retired_test_shape_rules_fail_closed(self) -> None:
+        """退役编号不得仅因旧测试存在而恢复有效性。"""
+        for code in ("QG170", "QG171", "QG172", "QG173", "QG174", "QG175", "QG192", "QG193", "QG194"):
+            with self.subTest(code=code):
+                result = self.run_lookup(f"-{code}")
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
 
     def test_invalid_argument_is_not_silently_ignored(self) -> None:
         """错误的编号与任意未声明参数均不可被解释成有效查询。"""

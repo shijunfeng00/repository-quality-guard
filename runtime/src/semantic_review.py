@@ -16,8 +16,6 @@ _REVIEW_ROUTES = {
     "QG144": ("Q2,Q6", "return-contract"),
     "QG178": ("Q10", "heuristic"),
     "QG191": ("Q3,Q5", "manual-protocol-construction"),
-    "QG193": ("Q11", "affected-test-mutated"),
-    "QG194": ("Q2,Q11", "interface-test-coverage-unknown"),
     "QG196": ("Q4,Q5,Q9", "giant-owner-worsening"),
     "QG197": ("Q3,Q4,Q5,Q9", "nested-helper-laundering"),
     "QG203": ("Q1,Q2,Q6,Q11", "release-identity-coupling-high-signal"),

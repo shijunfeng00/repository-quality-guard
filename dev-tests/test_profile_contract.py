@@ -45,7 +45,7 @@ class TestProfileContract(unittest.TestCase):
 
         profile = Profile(
             manifest={
-                "rules": {"disable": ["QG173"]},
+                "rules": {"disable": ["QG060"]},
                 "capabilities": ["base"],
                 "nonblocking_paths": ["tests/**"],
                 "test_baseline_passthrough_paths": ["utils/tracing.py"],
@@ -54,7 +54,7 @@ class TestProfileContract(unittest.TestCase):
         self.assertFalse(profile._configured)
         built = profile.build()
         self.assertTrue(profile._configured)
-        self.assertEqual(built.disabled_rules, ("QG173",))
+        self.assertEqual(built.disabled_rules, ("QG060",))
         self.assertEqual(built.capabilities, ("base", "python"))
         self.assertEqual(built.nonblocking_paths, ("tests/**",))
         self.assertEqual(built.test_baseline_passthrough_paths, ("utils/tracing.py",))

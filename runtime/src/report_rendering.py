@@ -143,41 +143,6 @@ def _inventory_lines(facts: ReportFacts) -> list[str]:
     if not facts.artifact_changed_files:
         lines.append("| — | 无交付附件变化 | NOT_APPLICABLE | NOT_APPLICABLE |")
 
-    test_rows = [
-        "| 测试文件ID | 状态 | 测试文件 | +行/-行 | 用例 Before→After | 断言 Before→After | Skip Before→After | Mock Before→After |",
-        "|---|---|---|---:|---:|---:|---:|---:|",
-    ]
-    for audit in facts.test_audits:
-        test_rows.append(
-            f"| {audit.item_id} | `{report_schema.escape(audit.status)}` | `{report_schema.escape(audit.path)}` | +{audit.added}/-{audit.removed} | "
-            f"{len(audit.before.test_cases)}→{len(audit.after.test_cases)} | "
-            f"{audit.before.assertions}→{audit.after.assertions} | "
-            f"{audit.before.skips}→{audit.after.skips} | {audit.before.mocks}→{audit.after.mocks} |"
-        )
-    if not facts.test_audits:
-        test_rows.append("| — | — | 无测试文件变化 | 0 | 0→0 | 0→0 | 0→0 | 0→0 |")
-    lines.extend(
-        ["", "### 测试文件独立审计", "", *_auto("test_inventory", test_rows), ""]
-    )
-    lines.extend(
-        [
-            "> 测试仍必须审计，但不进入生产 FILE/ADD/ARCH/DELTA 预算。每个 TEST-FILE 只按文件级解释测试目标、断言强度、隔离方式和风险。",
-            "",
-            "| 测试文件ID | 文件 | 测试目的与覆盖行为 | 断言变化与是否弱化 | Mock/Stub 与真实生产路径 | 风险与结论 | 状态 |",
-            "|---|---|---|---|---|---|---|",
-        ]
-    )
-    lines.extend(
-        f"| {audit.item_id} | `{report_schema.escape(audit.path)}` | 目的=待填写；覆盖=待填写 | "
-        "断言=待填写；弱化=待填写 | Mock=待填写；生产路径=待填写 | "
-        "风险=待填写；结论=待填写 | PENDING |"
-        for audit in facts.test_audits
-    )
-    if not facts.test_audits:
-        lines.append(
-            "| — | 无测试文件变化 | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |"
-        )
-    lines.append("")
     return lines
 
 

@@ -69,7 +69,7 @@ QUESTION_TITLES = (
     "Q8. 是否破坏缓存、append-only、session/loop、事务、并发、锁或资源生命周期顺序；相关状态更新是否保持必要原子性，独立步骤是否被无意义串行编排并制造额外中间态？",
     "Q9. Critical/Error/Warning 是否独立核算；新增债务是否为零，diff 文件内存量是否已修复或给出具体延期闭环，非 diff 存量是否仅作为 inventory，Reduction 是否真正减少复杂度而非重排？",
     "Q10. 是否存在未经授权的正则、关键词、词表、阈值或硬编码启发式替代协议、领域算法或语义模型判断？",
-    "Q11. Tests 是否继续充当稳定行为/契约回归护栏：接口返回值、字段/格式/序列化、异常、状态副作用与已修复 Bug 是否由自动化测试保护；本轮是否先原样运行受影响既有测试，并且没有为迎合实现而机械修改断言？",
+    "Q11. 公开接口的输入、输出、异常、状态及副作用是否由独立预期的正反行为 Cases 检查，并保留已确认的 Bug 防回归责任？是否避免测试锁定内部实现形状？",
 )
 
 VALID_QUESTION_STATUS = frozenset({"PASS", "BLOCKING", "NOT_APPLICABLE"})
@@ -97,12 +97,6 @@ _ADD_ROW = re.compile(
 _SEM_ROW = re.compile(
     r"^\| (?P<id>SEM-[0-9a-f]{10}) \| (?P<verdict>[A-Z_]+) \| (?P<reason>.*?) \| "
     r"(?P<action>.*?) \| (?P<evidence>.*?) \|$",
-    re.MULTILINE,
-)
-_TEST_CHANGE_ROW = re.compile(
-    r"^\| (?P<id>TEST-CHANGE-[0-9a-f]{10}) \| (?P<kind>[A-Z_]+) \| "
-    r"(?P<reason>.*?) \| (?P<evidence>.*?) \| (?P<observable>.*?) \| "
-    r"(?P<status>[A-Z_]+) \|$",
     re.MULTILINE,
 )
 _DEBT_ROW = re.compile(
@@ -277,24 +271,6 @@ def _existing_sem_rows(existing: str | None) -> dict[str, tuple[str, str, str, s
     }
 
 
-def _existing_test_change_rows(
-    existing: str | None,
-) -> dict[str, tuple[str, str, str, str, str]]:
-    """按稳定 TEST-CHANGE ID 读取旧报告中的测试契约裁决。"""
-    if not existing:
-        return {}
-    return {
-        match.group("id"): (
-            match.group("kind"),
-            match.group("reason"),
-            match.group("evidence"),
-            match.group("observable"),
-            match.group("status"),
-        )
-        for match in _TEST_CHANGE_ROW.finditer(existing)
-    }
-
-
 def _existing_debt_rows(
     existing: str | None,
 ) -> dict[str, tuple[str, str, str, str]]:
@@ -310,12 +286,6 @@ def _existing_debt_rows(
         )
         for match in _DEBT_ROW.finditer(existing)
     }
-
-
-def _test_change_items(facts: ReportFacts) -> tuple[object, ...]:
-    """按稳定 ID 汇总需要语义说明的修改/删除测试和高风险新增测试。"""
-    items = [change for audit in facts.test_audits for change in audit.case_changes]
-    return tuple(sorted(items, key=lambda item: item.item_id))
 
 
 def _existing_questions(existing: str | None) -> dict[str, tuple[str, str, str]]:
@@ -447,7 +417,6 @@ def _append_metadata_and_changes(
         f"- 新增测试用例：{sum(len(item.added_cases) for item in facts.test_audits)}",
         f"- 修改既有测试用例：{sum(len(item.modified_cases) for item in facts.test_audits)}",
         f"- 删除既有测试用例：{sum(len(item.removed_cases) for item in facts.test_audits)}",
-        f"- 需语义裁决的 TEST-CHANGE：{len(_test_change_items(facts))}",
     ]
     lines.extend(
         [
@@ -562,41 +531,12 @@ def _relation_resolution_rows(report: ScanReport) -> list[str]:
 
 
 def _relation_recall_rows(report: ScanReport) -> list[str]:
-    """单列关系图新增召回，避免与 legacy finding parity 混账。"""
-    rows = [
+    """预留关系图事实域，不再产生历史测试形状规则的伪召回。"""
+    return [
         "| Rule | Kind | Path | Evidence |",
         "|---|---|---|---|",
+        "| — | — | 本轮无已认证的新关系规则召回候选 | — |",
     ]
-    for finding in sorted(
-        (item for item in report.findings if item.code in {"QG193", "QG194"}),
-        key=lambda item: (item.code, item.path, item.line, item.symbol),
-    ):
-        if finding.code == "QG193":
-            affected_by = ", ".join(
-                str(item) for item in finding.evidence["affected_by"][:3]
-            )
-            evidence = (
-                f"test_change={finding.evidence['test_change']}; "
-                f"affected_by={finding.evidence['affected_by_count']}; "
-                f"examples={affected_by or '—'}"
-            )
-        else:
-            interfaces = ", ".join(
-                str(item) for item in finding.evidence["interfaces"][:3]
-            )
-            evidence = (
-                f"interfaces={finding.evidence['interface_count']}; "
-                f"direct≤{finding.evidence['max_direct_caller_count']}; "
-                f"transitive≤{finding.evidence['max_transitive_dependent_count']}; "
-                f"examples={interfaces or '—'}"
-            )
-        rows.append(
-            f"| `{finding.code}` | `{escape(str(finding.evidence['semantic_review_kind']))}` | "
-            f"`{escape(finding.path)}:{finding.line}` | {escape(evidence)} |"
-        )
-    if len(rows) == _TABLE_HEADER_ROWS:
-        rows.append("| — | — | 本轮无 RelationGraph 新召回候选 | — |")
-    return rows
 
 
 def _behavior_family_rows(report: ScanReport) -> list[str]:
@@ -922,51 +862,7 @@ def _append_semantic_and_questions(
             "",
         ]
     )
-    test_items = _test_change_items(facts)
-    test_auto = [
-        "| TEST | Change | Case | Path | Assertions | Removed observable assertions | Static signals |",
-        "|---|---|---|---|---:|---|---|",
-    ]
-    for item in test_items:
-        signals = ", ".join(item.signals) if item.signals else "—"
-        removed = (
-            "; ".join(item.removed_assertions[:3]) if item.removed_assertions else "—"
-        )
-        test_auto.append(
-            f"| {item.item_id} | `{item.change}` | `{escape(item.case)}` | `{escape(item.path)}` | "
-            f"{item.before_assertions} → {item.after_assertions} | {escape(removed)} | {signals} |"
-        )
-    if len(test_auto) == _TABLE_HEADER_ROWS:
-        test_auto.append("| — | — | 无需测试契约语义裁决 | — | 0 | — | — |")
-    lines.extend(
-        [
-            "### 测试契约变化",
-            "",
-            *_auto("test_contract_changes", test_auto),
-            "",
-            "> 既有测试默认是稳定行为/契约基线。纯实现重构不得为了让测试通过而同步改断言；"
-            "只有真实需求变化、Bug 修复导致旧行为失效、测试自身缺陷或保持行为不变的测试重构可以 JUSTIFIED。"
-            "源码字符串、private helper、历史删除名称等实现耦合测试默认 BLOCKING；若它实际表达长期架构不变量，"
-            "必须明确标记 STABLE_ARCHITECTURE_CONTRACT，并给出独立于本次实现的长期契约证据。",
-            "",
-            "| TEST | 类型 | 稳定行为/旧断言失效原因 | 需求/Bug/测试缺陷证据 | 可观察验证路径 | 状态 |",
-            "|---|---|---|---|---|---|",
-        ]
-    )
-    previous_tests = _existing_test_change_rows(existing)
-    for item in test_items:
-        row = previous_tests.get(
-            item.item_id,
-            ("PENDING", "PENDING", "PENDING", "PENDING", "PENDING"),
-        )
-        lines.append(
-            f"| {item.item_id} | {row[0]} | {row[1]} | {row[2]} | {row[3]} | {row[4]} |"
-        )
-    if not test_items:
-        lines.append(
-            "| — | TEST_REFACTOR | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | JUSTIFIED |"
-        )
-    lines.append("")
+
 
     _append_debt_accountability(lines, existing, facts)
 
@@ -1018,7 +914,6 @@ def _append_reduction_and_final(
         f"- 当前 Warning：{counts['warning']}",
         f"- 当前语义 Delta：{delta_count if report.baseline is not None else 'N/A'}",
         f"- 当前新增接口：{len(facts.additions)}",
-        f"- 当前 TEST-CHANGE：{len(_test_change_items(facts))}",
         f"- 存量三档债务已减少：{facts.legacy_debt_reduced}",
         f"- touched historical remaining：{sum(item.scope == 'TOUCHED' for item in facts.historical_debt)}",
         f"- untouched historical remaining：{sum(item.scope == 'UNTOUCHED' for item in facts.historical_debt)}",
@@ -1077,7 +972,6 @@ def _append_commit(
         f"- 生产定义接口：新增 {facts.interface_added_definitions} / 删除 {facts.interface_removed_definitions} / 净变化 {facts.interface_definition_net}",
         f"- 普通 C/E/W Delta：{len(facts.quality_deltas)}",
         f"- 语义 Delta：{semantic_delta}",
-        f"- 测试契约变化：{len(_test_change_items(facts))}",
     ]
     lines.extend(
         [
@@ -1338,54 +1232,6 @@ def _debt_issues(text: str, facts: ReportFacts) -> list[str]:
     return issues
 
 
-def _test_contract_issues(text: str, facts: ReportFacts) -> tuple[list[str], bool]:
-    """验证既有测试变化和实现耦合新增测试均有可证据化语义裁决。"""
-    issues: list[str] = []
-    rows = _existing_test_change_rows(text)
-    blocking = False
-    invalid_test_findings = [
-        finding
-        for audit in facts.test_audits
-        for finding in audit.findings
-        if finding.code in {"QG174", "QG175"}
-    ]
-    issues.extend(
-        f"{finding.code}：{finding.path} 当前测试本身不可作为有效回归证据，必须先修复，不能语义豁免。"
-        for finding in invalid_test_findings
-    )
-    for item in _test_change_items(facts):
-        row = rows.get(item.item_id)
-        if row is None:
-            issues.append(f"缺少 {item.item_id} 测试契约裁决。")
-            continue
-        kind, reason, evidence, observable, status = row
-        if kind not in VALID_TEST_CHANGE_KINDS:
-            issues.append(f"{item.item_id} 类型非法：{kind}")
-        if status not in VALID_TEST_CHANGE_STATUS:
-            issues.append(f"{item.item_id} 状态必须为 JUSTIFIED 或 BLOCKING。")
-        blocking = blocking or status == "BLOCKING"
-        for label, value in (
-            ("稳定行为/旧断言失效原因", reason),
-            ("需求/Bug/测试缺陷证据", evidence),
-            ("可观察验证路径", observable),
-        ):
-            if _has_placeholder(value):
-                issues.append(f"{item.item_id} {label}未完成。")
-        if kind == "IMPLEMENTATION_COUPLED" and status != "BLOCKING":
-            issues.append(
-                f"{item.item_id} 已认定为 IMPLEMENTATION_COUPLED，只能 BLOCKING；先把测试改回稳定行为/契约验证后再重新审计。"
-            )
-        if (
-            item.signals
-            and status == "JUSTIFIED"
-            and kind != "STABLE_ARCHITECTURE_CONTRACT"
-        ):
-            issues.append(
-                f"{item.item_id} 命中实现耦合静态信号；若要 JUSTIFIED，只能证明其为长期 STABLE_ARCHITECTURE_CONTRACT，否则应 BLOCKING。"
-            )
-    return issues, blocking
-
-
 def _question_issues(
     text: str,
     facts: ReportFacts,
@@ -1436,7 +1282,7 @@ def _question_issues(
         (
             q11_required,
             "Q11",
-            "存在生产或测试变化时 Q11 不得 NOT_APPLICABLE；必须说明稳定行为/接口契约的自动化回归覆盖，以及受影响既有测试是否先原样运行。",
+            "存在生产契约变化时 Q11 不得 NOT_APPLICABLE；必须给出以接口可观察行为为对象的独立 Oracle 和正反 Case 证据，不得以历史测试实现形状作为证明。",
         ),
     )
     for required, key, message in obligations:
@@ -1498,8 +1344,6 @@ def validate_compact_report(
     semantic_issues, semantic_blocking = _semantic_issues(text, items)
     issues.extend(semantic_issues)
     issues.extend(_debt_issues(text, facts))
-    test_issues, test_blocking = _test_contract_issues(text, facts)
-    issues.extend(test_issues)
     question_issues, question_blocking = _question_issues(text, facts, items)
     issues.extend(question_issues)
     manual = _manual_values(text)
@@ -1510,6 +1354,6 @@ def validate_compact_report(
         issues.append("Reduction Pass 结论必须以 COMPLETE 开头；报告填写不是流程终点。")
     issues.extend(_commit_issues(text, report))
     status = (
-        "REJECT" if semantic_blocking or test_blocking or question_blocking else "PASS"
+        "REJECT" if semantic_blocking or question_blocking else "PASS"
     )
     return ReportValidation(tuple(issues), status)

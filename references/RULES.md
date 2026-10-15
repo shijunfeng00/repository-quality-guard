@@ -37,7 +37,6 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | **接口 / 参数 / 返回契约**：`QG031`–`QG050`、`QG145`–`QG152`、`QG159`–`QG160`、`QG169`、`QG180`–`QG182`、`QG191` | public/internal contract 漂移，调用方被迫兼容多种形状或新接口没有证明必要性。 | 先检索已有 owner 与调用方；能复用就不新增。必须修改时保持单一、显式、typed 的新契约，并同步所有 caller、文档和稳定行为测试；破坏性迁移按已授权目标删除旧形状。 | 不要用 `*args/**kwargs`、别名参数、兼容 wrapper、双返回结构或“旧/新都支持”来降低迁移痛感；不要把历史实现形状当成必须永久兼容的接口。 |
 | **配置 / Prompt / 环境边界**：`QG011`、`QG100`–`QG113` | 配置所有权分散、默认值掩盖部署错误，或本应由 schema/代码保证的约束泄漏进 Prompt。 | 配置集中到权威入口，必需项启动时 fail-fast；外部表示只在配置/adapter 边界解析。可机器表达的 Prompt 约束下沉到 schema、类型和代码。 | 不要在多个业务模块重复读同一环境变量，不要叠默认值链，也不要用更多 Prompt 禁令弥补代码契约缺失。 |
 | **Tool / State / History / Trace**：`QG120`–`QG135`、`QG189` | 状态写入、Tool 返回和执行历史缺少唯一 owner，导致多个组件直接修改同一事实。 | 找到统一 state transition / merge owner；Tool 返回稳定结构化结果，由唯一入口归并；读写模型字段由正式 schema 定义，History 与 Trace 保持职责分离。 | 不要让每个 Tool 自己 patch State，不要增加“兼容各种返回”的 merge helper，也不要用反射或容器别名绕过状态写入边界。 |
-| **测试变更**：`QG170`–`QG175`、`QG192`–`QG194` | 测试可能被当前实现牵着走，或把历史源码形状当成长期 contract。 | 先运行 accepted-baseline 测试，再判断旧断言保护的是仍有效的行为、明确废弃的形状还是测试自身缺陷；修改后验证稳定输入输出、协议和不变量。 | 不要为了过测试恢复已废弃实现，不要只删断言/skip/xfail，也不要以源码字符串、函数名、旧文件路径替代真实行为验证。 |
 | **多语言与结构复杂度**：`QG195`–`QG205`、`QG207` | 动态 owner、隐藏循环、重复结构、版本身份或复杂度恶化可能逃过单一语言的表面检查。 | 追真实 owner、调用/dispatch 关系和稳定协议语义；对版本/digest 区分项目 release identity 与合法依赖/API/schema/完整性契约；只在语义 owner 一致时合并重复结构。 | 不要为了清 finding 重命名版本字符串、拆小函数或机械合并相似 AST；不要把合法协议 digest 和项目 release lineage 混为一谈。 |
 | **运行环境 / 报告 / Release 完整性**：`QG000`、`QG900`–`QG902`、`QG980`–`QG985`、`QG990`、`QG998`、`RUF:FORMAT` | 审计事实、执行环境或交付证据本身不可信。 | 先修工具链、Git 基线、报告证据或 release seal，再讨论代码是否通过；所有结论必须来自最新源码和可重放验证。 | 不要删规则、改 manifest、降低断言、手填假 PASS 或绕过 hook 来让门禁变绿。 |
 
@@ -318,7 +317,7 @@ python scripts/evidence_lookup.py --rule QG033
 
 接口 diff 独立于普通结构规则并自动选择累计基线：显式 `--diff-base` 优先；否则先读取当前 upstream reflog 中最后一次明确 `update by push` 的提交，把该提交之后的 A/B/C 本地提交和工作树合并成一个审计批次。无法证明 push 基线时才回退到 upstream、dirty `HEAD -> WORKTREE/INDEX` 或 clean `HEAD~1 -> HEAD`，避免逐提交切片掩盖早期大改。报告覆盖文件、类、函数、方法、全局变量、成员变量、参数、默认值、注解、返回类型、装饰器、继承关系和同步/异步形态。公开和非公开符号都进入接口快照。
 
-生产接口变化必须逐项说明必要性、调用方同步和兼容风险；tests 独立分账：文件级保留 QG170~175 防弱化，本轮修改/删除既有用例和命中 QG192 的高风险新增用例生成 `TEST-CHANGE-*`，必须完成测试契约语义裁决。
+生产接口变化必须逐项说明必要性、调用方同步和兼容风险；测试质量由有效的独立接口行为 Cases 和原生测试执行结果承担，不按历史测试源码形状裁决。
 
 新增生产函数/方法/类前，开发流程必须先生成全库 API 目录并执行 BM25 复用检索。报告中的每个 `ADD-*` 必须披露 `接口目录=`、`查询=`、`候选=`、`源码=`，随后才进入 HEAD/父类/MRO/兄弟类/公共能力和四种减法实验。BM25 只提供候选排序，不得据其分数自动豁免、阻断或判断语义所有权。
 
@@ -350,7 +349,7 @@ python scripts/evidence_lookup.py --rule QG033
 - 静态规则只判定可复现事实和高置信形态，不用正则证明某项职责在语义上属于某层。
 - 工具生成 `tool_status`；模型阅读最新生产方、消费方、调用链和协议后填写 `final_status`。
 - 模型可以基于证据降级结论，不能把静态结论抬高。
-- `ADD/ARCH/DELTA/TEST-CHANGE/通用或 profile 专项审判` 任一项可标记 `BLOCKING`；此时最终状态必须为 `REJECT`。
+- `ADD/ARCH/DELTA/通用或 profile 专项审判` 任一项可标记 `BLOCKING`；此时最终状态必须为 `REJECT`。
 - `.patch/.diff/.log/.zip/.tar*` 等交付附件使用 `ARTIFACT-*` 单独披露，不进入生产接口和三档预算。
 
 ## 架构差分、报告与发布完整性硬门禁
@@ -384,15 +383,6 @@ python scripts/evidence_lookup.py --rule QG033
 
 | 规则 | 检查内容 |
 |---|---|
-| `QG170` | 删除含既有测试用例的测试文件。 |
-| `QG171` | 删除 Git 基线中已有的 `test_*` 测试用例。 |
-| `QG172` | 测试断言数量相对基线减少，需检查是否弱化回归门禁。 |
-| `QG173` | skip/xfail 数量相对基线增加，需检查是否掩盖失败。 |
-| `QG174` | 新增测试文件缺少可识别的 `test_*` 用例或有效断言。 |
-| `QG175` | 工作区测试源码存在语法错误，无法作为验证证据。 |
-| `QG192` | **Info 语义候选**：本轮新增或修改测试读取/解析 production source、检查源码字符串存在/不存在、使用 `inspect.getsource/signature`、历史 `REMOVED_*`/removed/deleted/no_longer/legacy tombstone 等，疑似把实现历史固化为测试。它不直接判错；命中用例必须进入 `TEST-CHANGE-*`，若不能证明长期稳定架构不变量则必须 BLOCKING，修正为稳定行为/契约验证后重新审计。 |
-| `QG193` | **Info 关系语义候选**：本轮修改或删除的既有测试用例，经 RepositoryRelationGraph 证明属于同轮生产变更的 affected RUN set。它不直接判定测试改错；Q11 必须说明旧断言为何因明确需求、Bug 修复或测试缺陷而失效，并给出先运行 accepted-baseline 测试的可观察证据，禁止把 affected tests 当成自动 EDIT set。 |
-| `QG194` | **Info 关系语义候选**：本轮函数/方法/类接口变化存在静态可达生产依赖，但 RepositoryRelationGraph 无法证明任何既有测试覆盖。该规则只声明 `coverage relation unknown`，不等于“没有测试”；Q2/Q11 必须给出动态注册、fixture、HTTP/框架入口等真实行为测试路径，或补充稳定接口/返回契约回归测试。 |
 
 ### 报告与完整性门禁
 
@@ -400,7 +390,7 @@ python scripts/evidence_lookup.py --rule QG033
 |---|---|
 | `QG980` | `修改说明.md` 缺少当前报告 schema 的固定章节、章节顺序错误，或应答的通用/profile 专项审判标题缺失、重复、改名。 |
 | `QG981` | 报告 schema、change digest、tool_status 或 `RQG:AUTO` 自动事实块与当前 Git/接口/架构事实不一致。 |
-| `QG982` | 生产 FILE/ARTIFACT/ADD/ARCH/DELTA/INTERFACE/PROTOCOL、测试 TEST-FILE/TEST-RISK/TEST-CHANGE、存量削减结论、通用/profile 专项审判或最终语义结论不完整；自动事实覆盖或符号不一致、重复套话、模型抬高静态状态、QG179 DELTA/QG168/正接口净额未标记 BLOCKING、新增/参数/核心协议变化缺少必要性与验证证据，或存量一个未减却没有范围级说明。 |
+| `QG982` | 生产 FILE/ARTIFACT/ADD/ARCH/DELTA/INTERFACE/PROTOCOL、存量削减结论、通用/profile 专项审判或最终语义结论不完整；自动事实覆盖或符号不一致、重复套话、模型抬高静态状态、QG179 DELTA/QG168/正接口净额未标记 BLOCKING、新增/参数/核心协议变化缺少必要性与验证证据，或存量一个未减却没有范围级说明。 |
 | `QG983` | 验证章节缺少 Guard、`git diff --check` 或项目验证命令，记录仍为空泛，或任一命令退出码非零。 |
 | `QG984` | 提交章节缺少描述整个 accepted-baseline→target patch 的可执行 `git commit -m` 命令、仍为占位/陈旧命令，或不符合当前 Profile 声明的 `commit_policy`。Core 不固定 Conventional Commits 类型、语言或正文格式；这些属于仓库级 Profile 策略。Git author/committer identity 不属于 QG984 的通用质量规范。 |
 | `QG985` | 模型抄写的生产新增函数、变量、类数量或二次减法复审 ADD 数量与工具事实不一致。 |

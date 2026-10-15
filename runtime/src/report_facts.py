@@ -11,7 +11,6 @@ from . import report_schema
 from .config import is_test_path, is_tool_generated_path
 from .git_utils import run_readonly_git
 from .model import Finding, InterfaceChange, ScanReport
-from .test_audit import TestChangeAudit, build_test_change_audits
 
 
 @dataclass(slots=True, frozen=True)
@@ -111,7 +110,7 @@ class ReportFacts:
     architecture: tuple[Finding, ...]
     quality_deltas: tuple[QualityDelta, ...]
     test_quality_deltas: tuple[QualityDelta, ...]
-    test_audits: tuple[TestChangeAudit, ...]
+    test_audits: tuple[object, ...]
     debt_mode: str
     historical_debt: tuple[HistoricalDebt, ...]
     legacy_debt_total: int
@@ -544,12 +543,7 @@ def build_report_facts(
     test_quality_deltas = _quality_delta_items(report, tests=True)
     changed_paths = frozenset(item.path for item in changed_files)
     historical_debt = _historical_debt_items(report, changed_paths)
-    test_audits = build_test_change_audits(
-        report.root,
-        test_changed_files,
-        test_interface_changes,
-        revision,
-    )
+    test_audits: tuple[object, ...] = ()
     legacy_debt_total = (
         len(report.baseline.finding_severities) if report.baseline is not None else 0
     )

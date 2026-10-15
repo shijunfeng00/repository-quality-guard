@@ -94,7 +94,7 @@ def executor_dispatch_edges(
     snapshot = graph.snapshot
     captures = {
         (nested, variable)
-        for nested, outer, variable, _line in graph._pending_closure_captures
+        for nested, outer, variable, _line in graph.topology_source.closure_captures
         if outer in graph.nodes and graph.nodes[outer].kind == "method"
     }
     registrations = [e for e in edges if e.kind == UsageKind.CALLBACK_REGISTRATION]

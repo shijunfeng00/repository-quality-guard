@@ -233,3 +233,135 @@ SOURCES_FOR_STATS = {
     "a.py": "def a():\n    return b()\ndef b(): return 1\n",
     "b.py": "def isolated():\n    return 42\n",
 }
+
+
+def test_invalid_duplicate_constructor_argument_never_fabricates_dispatch():
+    """Invalid Python input binding cannot establish a graph edge."""
+    source = {
+        "domain.py": PROVIDER,
+        "consumer.py": CONSUMER,
+        "root.py": """from consumer import Receiver
+from domain import Ledger, Other
+
+def build():
+    return Receiver(Ledger(), source=Other())
+""",
+    }
+    assert not any(
+        caller == "consumer.Receiver.work" for caller, _, _, _ in _edges(source)
+    )
+
+
+def test_invalid_positional_only_keyword_never_fabricates_dispatch():
+    """A keyword cannot bind a positional-only constructor parameter."""
+    source = {
+        "domain.py": PROVIDER,
+        "consumer.py": """class Receiver:
+    def __init__(self, source, /):
+        self.channel = source
+
+    def work(self):
+        return self.channel.record()
+""",
+        "root.py": """from consumer import Receiver
+from domain import Ledger
+
+def build():
+    return Receiver(source=Ledger())
+""",
+    }
+    assert not any(
+        caller == "consumer.Receiver.work" for caller, _, _, _ in _edges(source)
+    )
+
+
+def test_invalid_extra_constructor_keyword_never_fabricates_dispatch():
+    """An unsupported named parameter invalidates the entire source call."""
+    source = {
+        "domain.py": PROVIDER,
+        "consumer.py": CONSUMER,
+        "root.py": """from consumer import Receiver
+from domain import Ledger, Other
+
+def build():
+    return Receiver(Ledger(), bogus=Other())
+""",
+    }
+    assert not any(
+        caller == "consumer.Receiver.work" for caller, _, _, _ in _edges(source)
+    )
+
+
+def test_valid_keyword_only_constructor_binding_preserves_dispatch():
+    """Legitimate binding remains discoverable after rejecting invalid calls."""
+    source = {
+        "domain.py": PROVIDER,
+        "consumer.py": """class Receiver:
+    def __init__(self, *, source):
+        self.channel = source
+
+    def work(self):
+        return self.channel.record()
+""",
+        "root.py": """from consumer import Receiver
+from domain import Ledger
+
+def build():
+    return Receiver(source=Ledger())
+""",
+    }
+    assert (
+        "consumer.Receiver.work",
+        "domain.Ledger.record",
+        "consumer.py",
+        6,
+    ) in _edges(source)
+
+
+def test_missing_required_constructor_parameter_never_fabricates_dispatch():
+    """Partially bound constructor calls that cannot execute prove no receiver."""
+    source = {
+        "domain.py": PROVIDER,
+        "consumer.py": """class Receiver:
+    def __init__(self, source, required):
+        self.channel = source
+
+    def work(self):
+        return self.channel.record()
+""",
+        "root.py": """from consumer import Receiver
+from domain import Ledger
+
+def build():
+    return Receiver(Ledger())
+""",
+    }
+    assert not any(
+        caller == "consumer.Receiver.work" for caller, _, _, _ in _edges(source)
+    )
+
+
+def test_optional_constructor_parameter_does_not_block_valid_dispatch():
+    """A genuine default is sufficient for a valid partial binding."""
+    source = {
+        "domain.py": PROVIDER,
+        "consumer.py": """class Receiver:
+    def __init__(self, source, optional=None):
+        self.channel = source
+
+    def work(self):
+        return self.channel.record()
+""",
+        "root.py": """from consumer import Receiver
+from domain import Ledger
+
+def build():
+    return Receiver(Ledger())
+""",
+    }
+    assert (
+        "consumer.Receiver.work",
+        "domain.Ledger.record",
+        "consumer.py",
+        6,
+    ) in _edges(source)

@@ -216,11 +216,32 @@ def _constructor_injection_types(graph, classes, methods, known_fields):
             if len(call.args) > len(formal):
                 continue
             actual = dict(zip(formal, call.args))
+            keyword_names = {
+                item.arg
+                for item in (*args.args, *args.kwonlyargs)
+                if item.arg != "self"
+            }
+            if any(
+                keyword.arg in actual
+                or (keyword.arg not in keyword_names and args.kwarg is None)
+                for keyword in call.keywords
+            ):
+                # Invalid Python argument binding cannot prove receiver identity.
+                continue
             for keyword in call.keywords:
-                if keyword.arg in formal or keyword.arg in {
-                    x.arg for x in args.kwonlyargs
-                }:
+                if keyword.arg in keyword_names:
                     actual[keyword.arg] = keyword.value
+            required = {
+                item.arg for item in parameters[: len(parameters) - len(args.defaults)]
+            }
+            required.update(
+                item.arg
+                for item, default in zip(args.kwonlyargs, args.kw_defaults)
+                if default is None
+            )
+            if not required.issubset(actual):
+                # A constructor lacking mandatory inputs never establishes a type.
+                continue
             for parameter, expression in actual.items():
                 resolved = _receiver_class(
                     graph, owner, expression, local_types, field_types

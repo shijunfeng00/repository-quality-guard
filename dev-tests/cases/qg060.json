@@ -1,0 +1,250 @@
+{
+  "rule": "QG060",
+  "oracle": "declared-type-to-probe static relation, independent of actual scanner output",
+  "cases": [
+    {
+      "id": "ast-base-to-real-subtype",
+      "kind": "TN",
+      "expected": [],
+      "source": "import ast\ndef inspect_stmt(node: ast.stmt):\n    if isinstance(node, ast.Assign):\n        return node.targets\n    elif isinstance(node, ast.AnnAssign):\n        return [node.target]\n    return []\n"
+    },
+    {
+      "id": "ast-alias-real-subtype",
+      "kind": "metamorphic_equivalent",
+      "expected": [],
+      "source": "import ast as syntax\ndef inspect_stmt(node: syntax.stmt):\n    if isinstance(node, syntax.Assign):\n        return node.targets\n    return []\n"
+    },
+    {
+      "id": "ast-broad-exact-predicate",
+      "kind": "TN",
+      "expected": [],
+      "source": "import ast\ndef matches(node: ast.AST) -> bool:\n    return isinstance(node, ast.Call)\n"
+    },
+    {
+      "id": "builtin-bool-narrowing",
+      "kind": "TN",
+      "expected": [],
+      "source": "def discriminate(value: int):\n    if isinstance(value, bool):\n        return int(value)\n    return value\n"
+    },
+    {
+      "id": "source-local-subclass",
+      "kind": "TN",
+      "expected": [],
+      "source": "class Base: pass\nclass Child(Base): pass\ndef run(value: Base):\n    if isinstance(value, Child):\n        return 1\n    return 0\n"
+    },
+    {
+      "id": "explicit-union-boundary",
+      "kind": "TN",
+      "expected": [],
+      "source": "def convert(value: int | str) -> int:\n    if isinstance(value, str):\n        return int(value)\n    return value\n"
+    },
+    {
+      "id": "same-type-redundant",
+      "kind": "review",
+      "expected": [
+        "warning"
+      ],
+      "source": "def normalize(value: str) -> str:\n    if isinstance(value, str):\n        return value\n    return str(value)\n"
+    },
+    {
+      "id": "builtin-disjoint-under-contract",
+      "kind": "TP",
+      "expected": [
+        "critical"
+      ],
+      "source": "def normalize(value: int) -> int:\n    if isinstance(value, str):\n        return int(value)\n    return value\n"
+    },
+    {
+      "id": "builtin-disjoint-renamed",
+      "kind": "metamorphic_equivalent",
+      "expected": [
+        "critical"
+      ],
+      "source": "def func(data: int) -> int:\n    if isinstance(data, str):\n        return int(data)\n    return data\n"
+    },
+    {
+      "id": "nominal-incomparable",
+      "kind": "review",
+      "expected": [
+        "warning"
+      ],
+      "source": "class Contract: pass\nclass Other: pass\ndef consume(value: Contract):\n    return isinstance(value, Other)\n"
+    },
+    {
+      "id": "plugin-class-check",
+      "kind": "review",
+      "expected": [
+        "warning"
+      ],
+      "source": "class QualityRule: pass\ndef add_rule(rule: type[QualityRule]):\n    if not isinstance(rule, type):\n        raise TypeError('bad rule')\n    return rule\n"
+    },
+    {
+      "id": "ast-module-rebound",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "import ast\nclass Fake:\n    AST = object\n    Call = str\nast = Fake()\ndef consume(node: ast.AST):\n    return isinstance(node, ast.Call)\n"
+    },
+    {
+      "id": "ast-function-rebound",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "import ast\nclass Fake:\n    AST = object\n    Call = str\ndef consume(node: ast.AST):\n    ast = Fake()\n    return isinstance(node, ast.Call)\n"
+    },
+    {
+      "id": "ast-local-name-shadowed",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "import ast as syntax\nclass Fake:\n    AST = object\n    Call = str\ndef consume(node: syntax.AST):\n    syntax = Fake()\n    return isinstance(node, syntax.Call)\n"
+    },
+    {
+      "id": "ast-supertype-on-narrow-param",
+      "kind": "review",
+      "expected": [
+        "warning"
+      ],
+      "source": "import ast\ndef consume(node: ast.Call):\n    return isinstance(node, ast.AST)\n"
+    },
+    {
+      "id": "from-import-ast-subclass",
+      "kind": "metamorphic_equivalent",
+      "expected": [],
+      "source": "from ast import stmt, Assign\ndef decode(node: stmt):\n    if isinstance(node, Assign):\n        return node.targets\n    return []\n"
+    },
+    {
+      "id": "shadowed-isinstance-function",
+      "kind": "TN",
+      "expected": [],
+      "source": "def isinstance(value, kind):\n    return True\ndef run(value: int):\n    return isinstance(value, str)\n"
+    },
+    {
+      "id": "shadowed-isinstance-parameter",
+      "kind": "TN",
+      "expected": [],
+      "source": "def run(value: int, isinstance):\n    return isinstance(value, str)\n"
+    },
+    {
+      "id": "boolean-subtype-is-legitimate",
+      "kind": "TN",
+      "expected": [],
+      "source": "def normalize(value: int):\n    if isinstance(value, bool):\n        return 1 if value else 0\n    return value\n"
+    },
+    {
+      "id": "formal-reassigned-before-probe",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "def consume(value: int):\n    value = str(value)\n    return isinstance(value, str)\n"
+    },
+    {
+      "id": "builtin-name-shadowed",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "class Replacement: pass\nint = Replacement\ndef consume(value: int):\n    return isinstance(value, str)\n"
+    },
+    {
+      "id": "module-ast-class-shadowed",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "import ast\nclass Fake:\n    AST = object\n    Call = str\ndef ast():\n    return Fake()\ndef consume(node: ast.AST):\n    return isinstance(node, ast.Call)\n"
+    },
+    {
+      "id": "ast-parameter-shadowed",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "import ast\ndef consume(node: ast.AST, ast):\n    return isinstance(node, ast.Call)\n"
+    },
+    {
+      "id": "class-plugin-registration",
+      "kind": "TN",
+      "expected": [],
+      "source": "from abc import ABC, abstractmethod\nclass Extension(ABC):\n    @abstractmethod\n    def evaluate(self): pass\nclass Registry:\n    def register(self, cls: type[Extension]) -> None:\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('not a valid extension')\n        self._plugins.append(cls)\n"
+    },
+    {
+      "id": "class-strategy-registration",
+      "kind": "TN",
+      "expected": [],
+      "source": "from abc import ABC\nclass Strategy(ABC):\n    def rerank(self): pass\nclass Registry:\n    def set_strategy(self, strategy: type[Strategy]) -> None:\n        if not isinstance(strategy, type) or not issubclass(strategy, Strategy):\n            raise TypeError('not a valid strategy')\n        self._strategy = strategy\n"
+    },
+    {
+      "id": "class-report-extension-registration",
+      "kind": "TN",
+      "expected": [],
+      "source": "from abc import ABC\nclass Extension(ABC):\n    def metadata(self): return {}\nclass Registry:\n    def add(self, extension: type[Extension]) -> None:\n        if not isinstance(extension, type) or not issubclass(extension, Extension):\n            raise TypeError('not a valid extension')\n        self._extensions.append(extension)\n"
+    },
+    {
+      "id": "instance-rule-pack-registration",
+      "kind": "TN",
+      "expected": [],
+      "source": "from abc import ABC, abstractmethod\nclass Bundle(ABC):\n    @abstractmethod\n    def register(self, profile): pass\nclass Registry:\n    def include(self, bundle: Bundle) -> None:\n        if not isinstance(bundle, Bundle):\n            raise TypeError('invalid bundle')\n        bundle.register(self)\n"
+    },
+    {
+      "id": "unguarded-nonregistrar",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "from abc import ABC\nclass Strategy(ABC): pass\nclass Service:\n    def process(self, strategy: type[Strategy]):\n        if not isinstance(strategy, type) or not issubclass(strategy, Strategy):\n            raise TypeError('invalid')\n        return True\n"
+    },
+    {
+      "id": "not-a-failing-guard",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "from abc import ABC\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            return None\n        self._extensions.append(cls)\n"
+    },
+    {
+      "id": "type-check-without-subclass",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "from abc import ABC\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type):\n            raise TypeError('invalid')\n        self._extensions.append(cls)\n"
+    },
+    {
+      "id": "plain-class-not-ABC",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "class Extension: pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('invalid')\n        self._extensions.append(cls)\n"
+    },
+    {
+      "id": "compatible-unknown-class",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "from abc import ABC\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('invalid')\n        print(cls)\n"
+    },
+    {
+      "id": "abstract-base-rebound",
+      "kind": "adversarial",
+      "expected": [
+        "warning"
+      ],
+      "source": "from abc import ABC\nABC = object\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('invalid')\n        self._extensions.append(cls)\n"
+    },
+    {
+      "id": "unguarded-type-conflict-preserved",
+      "kind": "TP",
+      "expected": [
+        "critical"
+      ],
+      "source": "def run(x: int):\n    if isinstance(x, str):\n        return int(x)\n    return x\n"
+    }
+  ]
+}

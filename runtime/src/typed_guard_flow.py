@@ -14,6 +14,7 @@ ReadLocation = tuple[int, int, str, str]
 
 
 def _literal_membership(node: ast.expr, receivers: set[str]):
+    """Identify literal-key membership tests bound to an accepted mapping receiver."""
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         result = _literal_membership(node.operand, receivers)
         return None if result is None else (result[0], result[1], not result[2])
@@ -35,6 +36,7 @@ def _literal_membership(node: ast.expr, receivers: set[str]):
 
 
 def _reads(expr: ast.AST, receivers: set[str]):
+    """Yield source locations of immediate literal-key indexing reads of mapped parameters."""
     for node in ast.walk(expr):
         if (
             isinstance(node, ast.Subscript)
@@ -105,10 +107,24 @@ def presence_witnesses(
 
     The returned integer is a source line of a dominating membership guard.
     No witness means UNKNOWN, not absence, invalid data, or a missing-key BUG.
-    """
+
+    Args:
+        declaration: ast.FunctionDef | ast.AsyncFunctionDef supplied to the source-bound presence_witnesses analysis.
+        receivers: set[str] supplied to the source-bound presence_witnesses analysis.
+
+    Returns:
+        Literal field-presence guards and the statements where their scope is established."""
     observed: dict[ReadLocation, int] = {}
 
     def record(node: ast.AST, state: Presence) -> None:
+        """Record a supported presence witness with its actual branch provenance.
+
+        Args:
+            node: ast.AST passed to the source-bound record operation.
+            state: Presence passed to the source-bound record operation.
+
+        Returns:
+            None; appends the witnessed guard to the current fact collection."""
         available = {} if _unknown_effect(node, receivers) else state
         for location in _reads(node, receivers):
             witness = available.get((location[2], location[3]))
@@ -118,6 +134,14 @@ def presence_witnesses(
     def walk(
         statements: list[ast.stmt], input_state: Presence | None
     ) -> Presence | None:
+        """Propagate presence witnesses through supported lexical control-flow branches.
+
+        Args:
+            statements: list[ast.stmt] passed to the source-bound walk operation.
+            input_state: Presence | None passed to the source-bound walk operation.
+
+        Returns:
+            None; visits only the supported source statements and branch scopes."""
         state = input_state
         for stmt in statements:
             if state is None:

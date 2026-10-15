@@ -14,6 +14,7 @@ from .ast_utils import decorator_names
 from .docstrings import definition_code_lines, function_parameter_names
 from .config import is_test_path
 from .model import Finding, InterfaceChange, InterfaceDiffReport
+from .lexical_scope_facts import function_scope_names
 from .python_dependency_facts import StaticPythonDependencyResolver
 from .python_import_resolution import resolve_local_import_symbol
 from .topology_facts import (
@@ -83,162 +84,6 @@ def _resolve_relative_module(path: str, module: str, level: int) -> str:
     if module:
         base.extend(module.split("."))
     return ".".join(base)
-
-
-class _ScopeNameCollector(ast.NodeVisitor):
-    """Collect immediate function-scope bindings and loads without descending scopes."""
-
-    def __init__(self) -> None:
-        """Initialize one immediate lexical-scope accumulator.
-
-        Returns:
-            None.
-        """
-        self.bound: set[str] = set()
-        self.loaded: set[str] = set()
-        self.loaded_lines: dict[str, int] = {}
-        self.global_names: set[str] = set()
-        self.nonlocal_names: set[str] = set()
-
-    def visit_Name(self, node: ast.Name) -> None:
-        """Record one loaded or bound name in the current lexical scope.
-
-        Args:
-            node: Name expression owned by the current lexical scope.
-
-        Returns:
-            None.
-        """
-        if isinstance(node.ctx, ast.Load):
-            self.loaded.add(node.id)
-            self.loaded_lines[node.id] = node.lineno
-        else:
-            self.bound.add(node.id)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Treat a nested synchronous function name as a local binding.
-
-        Args:
-            node: Nested synchronous function declaration.
-
-        Returns:
-            None.
-        """
-        self.bound.add(node.name)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        """Treat a nested asynchronous function name as a local binding.
-
-        Args:
-            node: Nested asynchronous function declaration.
-
-        Returns:
-            None.
-        """
-        self.bound.add(node.name)
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        """Treat a nested class name as a local binding without descending into it.
-
-        Args:
-            node: Nested class declaration.
-
-        Returns:
-            None.
-        """
-        self.bound.add(node.name)
-
-    def visit_Lambda(self, node: ast.Lambda) -> None:
-        """Stop at lambda boundaries because they own a separate lexical scope.
-
-        Args:
-            node: Lambda expression that starts a nested lexical scope.
-
-        Returns:
-            None.
-        """
-        return
-
-    def visit_Import(self, node: ast.Import) -> None:
-        """Record names introduced by a normal import statement.
-
-        Args:
-            node: Import statement owned by the current lexical scope.
-
-        Returns:
-            None.
-        """
-        for alias in node.names:
-            self.bound.add(alias.asname or alias.name.split(".", 1)[0])
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        """Record explicit names introduced by a from-import statement.
-
-        Args:
-            node: From-import statement owned by the current lexical scope.
-
-        Returns:
-            None.
-        """
-        for alias in node.names:
-            if alias.name != "*":
-                self.bound.add(alias.asname or alias.name)
-
-    def visit_Global(self, node: ast.Global) -> None:
-        """Mark names explicitly bound outside the current function scope.
-
-        Args:
-            node: Global declaration in the current lexical scope.
-
-        Returns:
-            None.
-        """
-        self.global_names.update(node.names)
-
-    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
-        """Mark names explicitly captured from an enclosing function scope.
-
-        Args:
-            node: Nonlocal declaration in the current lexical scope.
-
-        Returns:
-            None.
-        """
-        self.nonlocal_names.update(node.names)
-        for name in node.names:
-            self.loaded_lines[name] = node.lineno
-
-    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
-        """Record exception aliases while continuing through the handler body.
-
-        Args:
-            node: Exception handler owned by the current lexical scope.
-
-        Returns:
-            None.
-        """
-        if node.name:
-            self.bound.add(node.name)
-        for statement in node.body:
-            self.visit(statement)
-
-
-def _function_scope_names(
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> tuple[set[str], set[str], dict[str, int]]:
-    """Return immediate lexical bindings and loads for one authored function scope."""
-    collector = _ScopeNameCollector()
-    arguments = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
-    collector.bound.update(argument.arg for argument in arguments)
-    if node.args.vararg is not None:
-        collector.bound.add(node.args.vararg.arg)
-    if node.args.kwarg is not None:
-        collector.bound.add(node.args.kwarg.arg)
-    for statement in node.body:
-        collector.visit(statement)
-    collector.bound.difference_update(collector.global_names | collector.nonlocal_names)
-    collector.loaded.update(collector.nonlocal_names)
-    return collector.bound, collector.loaded, collector.loaded_lines
 
 
 @dataclass(slots=True, frozen=True)
@@ -539,7 +384,7 @@ class _Collector(ast.NodeVisitor):
             if is_test_path(self.path) and node.name.startswith("test")
             else "function"
         )
-        bound_names, loaded_names, loaded_lines = _function_scope_names(node)
+        bound_names, loaded_names, loaded_lines = function_scope_names(node)
         if self.function_scopes:
             free_names = loaded_names - bound_names
             for name in sorted(free_names):
@@ -964,6 +809,82 @@ class RepositoryRelationGraph:
         candidate = ".".join([imports[parts[0]], *parts[1:]])
         return resolve_local_import_symbol(candidate, self._imports, self.nodes)
 
+    def resolve_authored_class(
+        self, module: str, caller: str, expression: ast.expr
+    ) -> str | None:
+        """Resolve a source-bound class in the existing repository symbol graph.
+
+        Args:
+            module: Caller module identity.
+            caller: Caller symbol identity.
+            expression: Explicit authored class or import reference.
+
+        Returns:
+            Unique authored class ID, or None for unsupported targets.
+        """
+        target = self._resolve_expr(module, caller, expression)
+        if target is not None:
+            return target if self.nodes[target].kind == "class" else None
+        # Python packages commonly live under a single authored src/ or sources/
+        # root. Resolve imported names only if exactly one source-root identity
+        # exists. This is not a basename or unqualified-method guess.
+        dotted = _dotted(expression)
+        head, _, suffix = dotted.partition(".")
+        binding = self._imports[module].get(head) if module in self._imports else None
+        if binding is None:
+            return None
+        candidate = f"{binding}.{suffix}" if suffix else binding
+        matches = {
+            result
+            for prefix in ("src", "sources")
+            if (
+                result := resolve_local_import_symbol(
+                    f"{prefix}.{candidate}", self._imports, self.nodes
+                )
+            )
+            is not None
+            and self.nodes[result].kind == "class"
+        }
+        return next(iter(matches)) if len(matches) == 1 else None
+
+    def resolve_authored_method(self, class_id: str, name: str) -> str | None:
+        """Resolve an authored member while preserving ambiguous base dispatch.
+
+        Args:
+            class_id: Source-bound receiver class identity.
+            name: Requested authored method name.
+
+        Returns:
+            Unique declared method ID, or None if ownership is ambiguous.
+        """
+        own = f"{class_id}.{name}"
+        if own in self.nodes:
+            return own
+        # Explore the complete authored base hierarchy breadth-first. A lone
+        # grandparent definition is usable; conflicting nearest definitions
+        # remain ambiguous rather than guessing a runtime Python MRO.
+        frontier = {class_id}
+        visited = {class_id}
+        while frontier:
+            next_level = {
+                base
+                for current in frontier
+                for base in self._out["INHERITS"][current]
+                if base not in visited
+            }
+            if not next_level:
+                break
+            found = {
+                f"{base}.{name}"
+                for base in next_level
+                if f"{base}.{name}" in self.nodes
+            }
+            if found:
+                return next(iter(found)) if len(found) == 1 else None
+            visited.update(next_level)
+            frontier = next_level
+        return None
+
     def outgoing(self, node_id: str, kind: str = "CALLS") -> tuple[str, ...]:
         """返回指定关系的稳定排序出边目标。
 
@@ -1276,8 +1197,20 @@ def _populate_external_protocols(
             )
         )
         external_methods = frozenset(external.methods)
+        # ``ast.NodeVisitor.visit`` dispatches ``visit_<NodeType>`` using the
+        # runtime node class. These methods are protocol implementations even
+        # though no visit_<NodeType> method is declared in its base class.
+        # Only a resolved stdlib AST owner establishes this protocol edge.
+        ast_visitor = external.qualified_name in {
+            "ast.NodeVisitor",
+            "ast.NodeTransformer",
+        }
         for method in methods_by_owner[external_base.class_id]:
-            if method.name not in external_methods:
+            if method.name not in external_methods and not (
+                ast_visitor
+                and method.name.startswith("visit_")
+                and len(method.name) > len("visit_")
+            ):
                 continue
             external_method_id = f"external:{external.qualified_name}.{method.name}"
             symbol_map[external_method_id] = SymbolFact(
@@ -1408,6 +1341,9 @@ def normalized_topology(
     owner_map, symbol_map = _project_authored_topology(graph, source)
     edges = _project_legacy_topology_edges(graph)
     _populate_local_reuse_facts(graph, source, symbol_map, edges)
+    from .typed_receiver_graph import typed_receiver_edges
+
+    edges.update(typed_receiver_edges(graph))
     if dependency_resolver is not None:
         _populate_external_protocols(
             graph, source, dependency_resolver, owner_map, symbol_map, edges

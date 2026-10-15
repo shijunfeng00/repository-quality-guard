@@ -57,7 +57,18 @@ def _assignments(node: ast.AST) -> set[str]:
     names = set()
 
     class Scan(ast.NodeVisitor):
+        """Collect lexical rebinding that would invalidate stable parameter forwarding.
+
+        This visitor only records authored source observations and never invokes analyzed code."""
+
         def visit_FunctionDef(self, n):
+            """Exclude nested definitions from current-function rebinding evidence.
+
+            Args:
+                n: source argument passed to the source-bound visit_FunctionDef operation.
+
+            Returns:
+                None; results are stored on the visitor, emitted to the requested file, or resources are released."""
             pass
 
         visit_AsyncFunctionDef = visit_FunctionDef
@@ -65,6 +76,13 @@ def _assignments(node: ast.AST) -> set[str]:
         visit_Lambda = visit_FunctionDef
 
         def visit_Name(self, n):
+            """Record store and delete targets in the analyzed lexical body.
+
+            Args:
+                n: source argument passed to the source-bound visit_Name operation.
+
+            Returns:
+                None; results are stored on the visitor, emitted to the requested file, or resources are released."""
             if isinstance(n.ctx, (ast.Store, ast.Del)):
                 names.add(n.id)
 
@@ -79,7 +97,18 @@ def _calls(node: ast.AST) -> list[ast.Call]:
     result = []
 
     class Scan(ast.NodeVisitor):
+        """Collect eager direct calls while excluding deferred or nested scopes.
+
+        This visitor only records authored source observations and never invokes analyzed code."""
+
         def visit_FunctionDef(self, n):
+            """Stop traversal when a nested callable begins.
+
+            Args:
+                n: source argument passed to the source-bound visit_FunctionDef operation.
+
+            Returns:
+                None; results are stored on the visitor, emitted to the requested file, or resources are released."""
             pass
 
         visit_AsyncFunctionDef = visit_FunctionDef
@@ -91,6 +120,13 @@ def _calls(node: ast.AST) -> list[ast.Call]:
         visit_DictComp = visit_FunctionDef
 
         def visit_Call(self, n):
+            """Capture the authored call node and traverse its eager child expressions.
+
+            Args:
+                n: source argument passed to the source-bound visit_Call operation.
+
+            Returns:
+                None; results are stored on the visitor, emitted to the requested file, or resources are released."""
             result.append(n)
             self.generic_visit(n)
 
@@ -197,7 +233,13 @@ def parameter_forwarding_facts(
 
     These are positive *possible identity* edges. Dynamic modules, monkey patch,
     unrecognized alias effects and external calls cannot upgrade to MUST/ERROR.
-    """
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+        topology: Shared normalized semantic topology with owned symbols and relation edges.
+
+    Returns:
+        Facts for arguments carried across uniquely resolved source call boundaries."""
     definitions = _functions(snapshot, topology)
     by_source = defaultdict(list)
     for edge in topology.edges:
@@ -309,7 +351,15 @@ def parameter_forwarding_facts(
 def trace_parameter_forwarding(
     topology: RepositoryTopology, source_symbol_id: str, source_parameter_index: int
 ) -> tuple[tuple[str, int], ...]:
-    """Worklist reachability, cycle-safe; never treats unobserved callers as absent."""
+    """Worklist reachability, cycle-safe; never treats unobserved callers as absent.
+
+    Args:
+        topology: Shared normalized semantic topology with owned symbols and relation edges.
+        source_symbol_id: str supplied to the source-bound trace_parameter_forwarding analysis.
+        source_parameter_index: int supplied to the source-bound trace_parameter_forwarding analysis.
+
+    Returns:
+        Bounded parameter-flow witnesses with precise source and destination identity."""
     adj = defaultdict(list)
     for x in topology.parameter_forwardings:
         adj[(x.source_symbol_id, x.source_parameter_index)].append(

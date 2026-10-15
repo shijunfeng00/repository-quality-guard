@@ -9,11 +9,19 @@ from pathlib import Path
 RULES_PATH = Path(__file__).resolve().parents[1] / "references" / "RULES.md"
 RULE_INPUT = re.compile(r"-?(QG\d{3}|RUF:FORMAT)\Z", re.IGNORECASE)
 RULE_ROW = re.compile(r"^\| `(QG\d{3}|RUF:FORMAT)` \| (.*) \|$")
+RULE_SECTION = re.compile(r"^### (QG\d{3}(?: / QG\d{3})*) · (.+)$")
 RULE_SPAN = re.compile(r"`QG(\d{3})`(?:[–-]`QG(\d{3})`)?")
 
 
-def _requested_codes(args: list[str]) -> list[str]:
-    """解析一组编号；拒绝未知命令形式，不把输入解释成路径或查询。"""
+def requested_codes(args: list[str]) -> list[str]:
+    """解析有序且去重的规则编号，拒绝未知 CLI 形式。
+
+    Args:
+        args: 用户输入的编号列表，形如 QG003 或 -QG003。
+
+    Returns:
+        只包含有效唯一规则编号的字符串列表。
+    """
     if not args:
         raise ValueError(
             "用法: python scripts/rule_lookup.py -QG123 -QG153 [更多规则编号]"
@@ -65,6 +73,30 @@ def render_rule_cards(codes: list[str], rules_text: str) -> str:
             columns = line[2:-2].split(" | ")
             if len(columns) == 4:
                 families.append((line_number, columns))
+    # The source rulebook contains both indexed table entries and authoritative
+    # stand-alone source-bound rule chapters (e.g. QG210/QG213). Treat both as
+    # definitions, without inferring rule existence from loose text mentions.
+    chapters: dict[str, tuple[int, str, str]] = {}
+    for index, line in enumerate(lines):
+        chapter_match = RULE_SECTION.fullmatch(line)
+        if chapter_match is None:
+            continue
+        end_index = index + 1
+        while end_index < len(lines) and not lines[end_index].startswith(
+            ("## ", "### ")
+        ):
+            end_index += 1
+        content = "\n".join(lines[index + 1 : end_index]).strip()
+        if not content:
+            raise ValueError(f"RULES.md 规则章节没有契约正文: {line}")
+        for code in chapter_match.group(1).split(" / "):
+            if code in chapters:
+                raise ValueError(f"RULES.md 存在重复规则章节: {code}")
+            chapters[code] = (index + 1, chapter_match.group(2), content)
+            # Indexed table definitions take precedence; standalone chapters
+            # supply an identity only for genuinely unindexed rules.
+            if code not in definitions:
+                definitions[code] = (index + 1, chapter_match.group(2))
     missing = [code for code in codes if code not in definitions]
     if missing:
         raise ValueError("RULES.md 未定义规则: " + ", ".join(missing))
@@ -119,6 +151,36 @@ def render_rule_cards(codes: list[str], rules_text: str) -> str:
             output.extend(
                 ["", "未找到专用修复卡；仍必须执行 `RULES.md` 的全局《修复方向契约》。"]
             )
+        if code in chapters:
+            chapter_line, chapter_title, chapter_content = chapters[code]
+            output.extend(
+                [
+                    "",
+                    f"**专项契约原文**（`RULES.md:{chapter_line}`）：{chapter_title}",
+                    "",
+                    chapter_content,
+                ]
+            )
+        for heading_line, heading in enumerate(lines, 1):
+            if not heading.startswith("#### QG"):
+                continue
+            label = heading.split("·", 1)[0]
+            tagged = set(re.findall(r"QG\d{3}", label))
+            if code not in tagged:
+                continue
+            detail: list[str] = []
+            for following in lines[heading_line:]:
+                if following.startswith("#"):
+                    break
+                detail.append(following)
+            output.extend(
+                [
+                    "",
+                    f"**业务 Cases 裁决**（`RULES.md:{heading_line}`）：{heading}",
+                    "",
+                    "\n".join(detail).strip(),
+                ]
+            )
     return "\n".join(output) + "\n"
 
 
@@ -136,7 +198,7 @@ def main(args: list[str] | None = None) -> int:
         print("用法: python scripts/rule_lookup.py -QG123 -QG153 [更多规则编号]")
         return 0
     try:
-        requested = _requested_codes(raw_args)
+        requested = requested_codes(raw_args)
         markdown = render_rule_cards(requested, RULES_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         print(f"[QG rules] {exc}", file=sys.stderr)

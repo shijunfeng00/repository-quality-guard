@@ -19,6 +19,7 @@ from .ast_utils import (
 from .config import GuardConfig, is_test_path
 from .docstrings import definition_code_lines, function_parameter_names, parse_docstring
 from .model import Confidence, Definition, Finding, Severity, Usage
+from .mapping_get_semantics import MappingGetSemantics
 from .topology_facts import (
     ContractFact,
     ContractOwnership,
@@ -365,7 +366,13 @@ def is_decorator_inner_function(
     The names here are only compared as AST reference identity within a
     lexical scope; no spelling such as ``wrapper`` or ``decorator`` is proof.
     A reassigned or indirect return is left for review.
-    """
+
+    Args:
+        node: Authored AST node in the immediate lexical ownership domain.
+        enclosing: ast.FunctionDef | ast.AsyncFunctionDef supplied to the source-bound is_decorator_inner_function analysis.
+
+    Returns:
+        Whether lexical structure proves this function is nested within a decorator wrapper."""
     return any(
         isinstance(statement, ast.Return)
         and isinstance(statement.value, ast.Name)
@@ -468,6 +475,16 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             None。
         """
         self.facts = facts
+        self.local_classes: dict[str, ast.ClassDef] = (
+            {
+                item.name: item
+                for item in facts.tree.body
+                if isinstance(item, ast.ClassDef)
+            }
+            if facts.tree is not None
+            else {}
+        )
+        self.mapping_get_semantics = MappingGetSemantics(self)
         self.config = config
         self.topology = topology
         self.class_stack: list[str] = []
@@ -522,7 +539,10 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
 
     @property
     def annotations(self) -> dict[str, str]:
-        """返回当前词法作用域可见的显式类型标注。"""
+        """返回当前词法作用域可见的显式类型标注。
+
+        Returns:
+            dict[str, str] produced from the documented source-side evidence; unproven runtime outcomes stay unresolved."""
         result: dict[str, str] = {}
         for scope_annotations in self.annotation_scope_stack:
             result.update(scope_annotations)
@@ -857,7 +877,13 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         self.generic_visit(node)
 
     def visit_Return(self, node: ast.Return) -> None:
-        """Report structural field projections in returned mapping literals."""
+        """Report structural field projections in returned mapping literals.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; appends source-located return facts into the current visitor."""
         if isinstance(node.value, ast.Dict):
             self._record_manual_projection(node.value)
         self.generic_visit(node)
@@ -1660,10 +1686,26 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         attribute = node.func.attr
         receiver = node.func.value
         receiver_name = dotted_name(receiver)
-        receiver_tail = receiver_name.rsplit(".", 1)[-1] if receiver_name else ""
         confirmed_mapping = (
-            isinstance(receiver, ast.Dict) or receiver_tail in self.mapping_names
+            isinstance(receiver, ast.Dict) or receiver_name in self.mapping_names
         )
+        if attribute == "get":
+            owner = self.mapping_get_semantics.local_get_owner(receiver_name)
+            if owner == "method":
+                # A proven authored method is not Mapping.get; its body is
+                # independently scanned, including any nested dictionary read.
+                return
+            if (
+                not node.args
+                and not node.keywords
+                and owner != "mapping"
+                and not confirmed_mapping
+            ):
+                # Mapping.get requires a key. A zero-argument get without a
+                # proven mapping owner cannot be a mapping fallback.
+                return
+            if owner == "mapping":
+                confirmed_mapping = True
         self._check_mapping_call(
             node,
             attribute,
@@ -1693,8 +1735,11 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             selector=selector,
             confirmed_mapping=confirmed_mapping,
             statically_typed=(
-                receiver_tail in self.typed_names
-                or receiver_name.startswith(("self.", "cls."))
+                attribute != "get"
+                and (
+                    receiver_tail in self.typed_names
+                    or receiver_name.startswith(("self.", "cls."))
+                )
             ),
         )
         context = _MappingCallContext(
@@ -1716,6 +1761,17 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
     def _check_mapping_get(self, node: ast.Call, context: _MappingCallContext) -> None:
         """检查 mapping.get 是否在错误的契约 owner 上承担缺字段兜底。"""
         explicit_default = len(node.args) >= DICT_DEFAULT_ARG_COUNT
+        if not node.args and not node.keywords and context.confirmed_mapping:
+            self.add_finding(
+                node,
+                "QG003",
+                "已确认 Mapping.get() 调用缺少必需的 key 参数。",
+                severity="error",
+                confidence="high",
+                suggestion="按真实映射契约传入 key；若是自定义方法，请先证明实际 owner。",
+                evidence={"receiver": context.receiver_name, "arity": 0},
+            )
+            return
         selector = (
             node.args[0].value
             if node.args
@@ -1732,6 +1788,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             context.ownership_confidence,
             context.ownership_evidence,
         )
+        declared_empty = self.mapping_get_semantics.explicit_empty_return(node)
         evidence: dict[str, object] = {
             "requiredness": "UNKNOWN",
             "receiver": context.receiver_name,
@@ -1740,7 +1797,19 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             "confirmed_mapping": context.confirmed_mapping,
             "contract_ownership": context.ownership.value,
             "ownership_evidence": list(context.ownership_evidence),
+            "declared_empty_return": declared_empty,
         }
+        if (
+            declared_empty
+            and context.ownership is ContractOwnership.INTERNAL_FORMAL
+            and not self.mapping_get_semantics.required_schema_key(
+                context.receiver_name, selector
+            )
+        ):
+            # The declared Optional result is an actual public return contract;
+            # it does not prove a required schema key optional. Leave required
+            # schema and source-path review to explicit contract rules.
+            return
         if context.ownership is ContractOwnership.UNKNOWN:
             evidence.update(
                 {

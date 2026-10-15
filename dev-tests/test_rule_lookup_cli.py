@@ -35,6 +35,36 @@ class RuleLookupTests(unittest.TestCase):
         self.assertIn("producer", result.stdout.lower())
         self.assertIn("禁止做法", result.stdout)
 
+    def test_source_bound_chapter_rules_are_real_searchable_contracts(self) -> None:
+        """Actual cross-repo QG213 must return its source-backed fix contract."""
+        for code, evidence in (
+            ("QG210", "构造"),
+            ("QG212", "编译"),
+            ("QG213", "部分提交"),
+            ("QG214", "异常"),
+            ("QG215", "宽异常"),
+            ("QG216", "TypedDict"),
+        ):
+            with self.subTest(code=code):
+                result = self.run_lookup(f"-{code}")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"## {code}\n", result.stdout)
+                self.assertIn("专项契约原文", result.stdout)
+                self.assertIn(evidence, result.stdout)
+
+    def test_every_authoritative_chapter_rule_is_queryable(self) -> None:
+        """A chapter is a rule definition even without a primary table row."""
+        import re
+
+        rules = (ROOT / "references" / "RULES.md").read_text(encoding="utf-8")
+        sections = re.findall(r"^### (QG\d{3}(?: / QG\d{3})*) ·", rules, re.M)
+        self.assertGreaterEqual(len(sections), 5)
+        codes = [code for section in sections for code in section.split(" / ")]
+        result = self.run_lookup(*(f"-{code}" for code in codes))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for code in codes:
+            self.assertEqual(result.stdout.count(f"## {code}\n"), 1)
+
     def test_retired_rule_numbers_remain_unavailable(self) -> None:
         """退休 QG161、QG177 不得复活为有效规则或残留查询帮助。"""
         for code in ("QG161", "QG177"):

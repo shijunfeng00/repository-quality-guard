@@ -18,37 +18,75 @@ class _LocalAccesses(ast.NodeVisitor):
     """Visit only the immediate method scope; nested closures need alias proof."""
 
     def __init__(self, receiver: str) -> None:
+        """Initialize the tracked receiver, rebound flag, and source-located field operations.
+
+        Args:
+            receiver: Source-bound receiver identifier for instance-field tracking.
+
+        Returns:
+            None; updates the collector state or intentionally skips this lexical scope.
+        """
         self.receiver = receiver
         self.rebound = False
         self.accesses: list[tuple[ast.Attribute, str]] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Reject nested lexical scopes, whose receiver ownership can escape."""
+        """Reject nested lexical scopes, whose receiver ownership can escape.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; records receiver identity or field-access facts in the visitor state."""
 
     visit_AsyncFunctionDef = visit_FunctionDef
     visit_ClassDef = visit_FunctionDef
     visit_Lambda = visit_FunctionDef
 
     def visit_Name(self, node: ast.Name) -> None:
-        """Any assignment/deletion of the formal receiver invalidates the domain."""
+        """Any assignment/deletion of the formal receiver invalidates the domain.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; records receiver identity or field-access facts in the visitor state."""
         if node.id == self.receiver and isinstance(node.ctx, (ast.Store, ast.Del)):
             self.rebound = True
 
     def visit_Global(self, node: ast.Global) -> None:
-        """Global redeclaration invalidates lexical parameter identity."""
+        """Global redeclaration invalidates lexical parameter identity.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; records receiver identity or field-access facts in the visitor state."""
         if self.receiver in node.names:
             self.rebound = True
 
     visit_Nonlocal = visit_Global
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        """An unassigned annotation has no field write side effect."""
+        """An unassigned annotation has no field write side effect.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; records receiver identity or field-access facts in the visitor state."""
         if node.value is not None:
             self.visit(node.value)
             self.visit(node.target)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        """Track an attribute augmented assignment as a read followed by a write."""
+        """Track an attribute augmented assignment as a read followed by a write.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; records receiver identity or field-access facts in the visitor state."""
         target = node.target
         if (
             isinstance(target, ast.Attribute)
@@ -62,7 +100,13 @@ class _LocalAccesses(ast.NodeVisitor):
         self.visit(node.value)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        """Record real AST read/write/delete, independent of attribute spelling."""
+        """Record real AST read/write/delete, independent of attribute spelling.
+
+        Args:
+            node: Authored AST node in the immediate lexical ownership domain.
+
+        Returns:
+            None; records receiver identity or field-access facts in the visitor state."""
         if isinstance(node.value, ast.Name) and node.value.id == self.receiver:
             operation = (
                 "WRITE"

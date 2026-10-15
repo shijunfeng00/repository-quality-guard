@@ -39,28 +39,78 @@ def _scope_binding_names(tree: ast.Module) -> set[str]:
     """Conservatively reject names rebound in the module lexical scope."""
 
     class Bindings(ast.NodeVisitor):
+        """Collect imported and assigned names at module lexical scope, without entering nested definitions.
+
+        All observations remain local to the parsed source; runtime execution is not inferred.
+        """
+
         def __init__(self) -> None:
+            """Create independent imported-name and assigned-name collections.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             self.imported: set[str] = set()
             self.assigned: set[str] = set()
 
         def visit_Import(self, node: ast.Import) -> None:
+            """Record the locally bound names from direct import statements.
+
+            Args:
+                node: Authored ast.Import under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             for item in node.names:
                 self.imported.add(item.asname or item.name.split(".", 1)[0])
 
         def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            """Record local bindings introduced by from-import declarations.
+
+            Args:
+                node: Authored ast.ImportFrom under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             for item in node.names:
                 self.imported.add(item.asname or item.name)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            """Treat a function definition as one assignment to its name, not its body.
+
+            Args:
+                node: Authored ast.FunctionDef under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             self.assigned.add(node.name)
 
         visit_AsyncFunctionDef = visit_FunctionDef
         visit_ClassDef = visit_FunctionDef
 
         def visit_Lambda(self, node: ast.Lambda) -> None:
+            """Do not treat bindings inside lambda expressions as module bindings.
+
+            Args:
+                node: Authored ast.Lambda under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             return
 
         def visit_Name(self, node: ast.Name) -> None:
+            """Record assignment or deletion targets for module-bound name conflict checks.
+
+            Args:
+                node: Authored ast.Name under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             if isinstance(node.ctx, (ast.Store, ast.Del)):
                 self.assigned.add(node.id)
 
@@ -99,6 +149,7 @@ def _imports(path: str, tree: ast.Module, redefined: set[str]) -> dict[str, str]
 
 
 def _keys(node: ast.AST, parameters: set[str]) -> tuple[str, str] | None:
+    """Match a literal-string indexed read whose receiver is a declared parameter; ignore other expressions."""
     if (
         isinstance(node, ast.Subscript)
         and isinstance(node.value, ast.Name)
@@ -111,6 +162,7 @@ def _keys(node: ast.AST, parameters: set[str]) -> tuple[str, str] | None:
 
 
 def _membership(test: ast.expr, parameters: set[str]) -> tuple[str, str, bool] | None:
+    """Extract the polarity and literal key of an authored membership test on a parameter."""
     if (
         isinstance(test, ast.Compare)
         and len(test.ops) == 1
@@ -129,16 +181,40 @@ class _DirectReads(ast.NodeVisitor):
     """Find direct indexing reads without descending into nested lexical scopes."""
 
     def __init__(self, parameters: set[str]) -> None:
+        """Initialize the exact parameter set and source-located direct-read observations.
+
+        Args:
+            parameters: Lexically bound parameter names allowed as receiver identities.
+
+        Returns:
+            None; updates the collector state or intentionally skips this lexical scope.
+        """
         self.parameters = parameters
         self.rows: list[tuple[str, str, int, int]] = []
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
+        """Record parameter key reads in load context, then visit their child expressions.
+
+        Args:
+            node: Authored ast.Subscript under examination; no user code is executed.
+
+        Returns:
+            None; updates the collector state or intentionally skips this lexical scope.
+        """
         match = _keys(node, self.parameters)
         if match is not None and isinstance(node.ctx, ast.Load):
             self.rows.append((match[0], match[1], node.lineno, node.col_offset))
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Stop descent at nested functions to preserve the immediate lexical owner.
+
+        Args:
+            node: Authored ast.FunctionDef under examination; no user code is executed.
+
+        Returns:
+            None; updates the collector state or intentionally skips this lexical scope.
+        """
         return
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -149,6 +225,7 @@ class _DirectReads(ast.NodeVisitor):
 def _candidate_reads(
     node: ast.AST, parameters: set[str]
 ) -> list[tuple[str, str, int, int]]:
+    """Collect direct literal-key reads reachable in the supplied syntax node only."""
     visitor = _DirectReads(parameters)
     visitor.visit(node)
     return visitor.rows
@@ -171,11 +248,14 @@ def typed_consumer_facts(
     snapshot: RepositoryAnalysisSnapshot,
     topology: RepositoryTopology,
 ) -> tuple[TypedConsumerFact, ...]:
-    """Bind direct consumers and condition guards to authored schema field IDs.
+    """Bind literal-key reads to authored TypedDict fields without assuming runtime dominance.
 
-    No field is inferred from a name: only actual TypedDict declarations, explicit
-    import/module symbol binding, annotated parameters, and literal AST operands
-    can create a fact.  All guards remain open to control-flow and runtime changes.
+    Args:
+        snapshot: Immutable parsed source and its paths.
+        topology: Existing symbol identities and authenticated schema field facts.
+
+    Returns:
+        Source-bound consumer facts including optional syntactic guard observations.
     """
     fields: dict[str, dict[str, TypedSchemaFieldFact]] = {}
     for fact in topology.typed_schema_fields:

@@ -20,10 +20,28 @@ def _immediate_calls(method: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[in
     """Locate zero-argument builtin-super constructor calls outside nested scopes."""
 
     class Calls(ast.NodeVisitor):
+        """Locate source lines of immediate zero-argument builtin-super constructor calls.
+
+        All observations remain local to the parsed source; runtime execution is not inferred.
+        """
+
         def __init__(self) -> None:
+            """Initialize the set of candidate constructor-call source lines.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             self.lines: set[int] = set()
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            """Avoid attributing nested function calls to the enclosing constructor.
+
+            Args:
+                node: Authored ast.FunctionDef under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             return
 
         visit_AsyncFunctionDef = visit_FunctionDef
@@ -31,6 +49,14 @@ def _immediate_calls(method: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[in
         visit_Lambda = visit_FunctionDef
 
         def visit_Call(self, node: ast.Call) -> None:
+            """Record direct super().__init__ calls with no explicit super arguments.
+
+            Args:
+                node: Authored ast.Call under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             target = node.func
             if (
                 isinstance(target, ast.Attribute)
@@ -91,10 +117,14 @@ def constructor_lifecycle(
     snapshot: RepositoryAnalysisSnapshot,
     topology: RepositoryTopology,
 ) -> tuple[ConstructorLifecycleFact, ...]:
-    """Project bounded native-C3 constructor facts from existing symbol bindings.
+    """Derive bounded, source-proven constructor order without runtime MRO reflection.
 
-    Static inheritance edges certify identity only for local classes; any missing
-    base, dynamic class feature, or ambiguous source binding is explicitly OPEN.
+    Args:
+        snapshot: Parsed class declarations and lexical Python scopes.
+        topology: Authenticated local class identities and inheritance edges.
+
+    Returns:
+        Constructor lifecycle facts, with unresolved hierarchies excluded.
     """
     classes = {
         s.symbol_id: s
@@ -141,6 +171,14 @@ def constructor_lifecycle(
     resolving: set[str] = set()
 
     def build(identity: str) -> tuple[str, ...] | None:
+        """Compute source-certified C3 order for one class, or preserve unresolved identity.
+
+        Args:
+            identity: Authenticated local class symbol ID to linearize.
+
+        Returns:
+            Source-certified C3 class ordering, or None when the hierarchy is unresolved.
+        """
         if identity in linearizations:
             return linearizations[identity]
         if identity in unresolved or identity in resolving:

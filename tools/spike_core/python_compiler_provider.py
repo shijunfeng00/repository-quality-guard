@@ -25,6 +25,7 @@ from .python_import_resolution import python_module_name
 
 
 def _utf16_column(line: str, byte_offset: int) -> int:
+    """Convert an original UTF-8 byte column to its LSP UTF-16 code-unit position."""
     prefix = line.encode("utf-8")[:byte_offset].decode("utf-8")
     return len(prefix.encode("utf-16-le")) // 2
 
@@ -32,7 +33,13 @@ def _utf16_column(line: str, byte_offset: int) -> int:
 def declaration_positions(
     snapshot: RepositoryAnalysisSnapshot,
 ) -> dict[tuple[str, int, int], str]:
-    """Index Snapshot-authored declaration identities by precise LSP positions."""
+    """Index Snapshot-authored declaration identities by precise LSP positions.
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+    Returns:
+        Source-position index of discovered Python function declarations."""
     positions: dict[tuple[str, int, int], str] = {}
     for path in snapshot.paths:
         unit = snapshot.units[path]
@@ -71,12 +78,21 @@ def declaration_positions(
             )
 
         class Declarations(ast.NodeVisitor):
+            """Build lexical declaration identities from tokenizer-authenticated source locations.
+
+            This visitor only records authored source observations and never invokes analyzed code."""
+
             def __init__(self) -> None:
+                """Initialize the nesting path that qualifies compiler declaration identities.
+
+                Returns:
+                    None; results are stored on the visitor, emitted to the requested file, or resources are released."""
                 self.owners: list[str] = []
 
             def _visit(
                 self, node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
             ) -> None:
+                """Index the currently authored declaration and recurse into its nested definitions."""
                 kind = "class" if isinstance(node, ast.ClassDef) else "def"
                 point = declaration_names.get((node.lineno, kind, node.name))
                 if point is not None:
@@ -98,6 +114,14 @@ class _PyreflyLsp:
     """One bounded LSP session for a repository snapshot, no separate call graph."""
 
     def __init__(self, binary: str, root: Path) -> None:
+        """Create one bounded Pyrefly LSP process, initialize it, and retain its request queue.
+
+        Args:
+            binary: str passed to the source-bound __init__ operation.
+            root: Path passed to the source-bound __init__ operation.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         self.process = subprocess.Popen(
             [binary, "lsp", "--indexing-mode", "none", "-j", "1"],
             stdin=subprocess.PIPE,
@@ -126,6 +150,7 @@ class _PyreflyLsp:
         self.opened: set[str] = set()
 
     def _read_messages(self) -> None:
+        """Read length-prefixed JSON-RPC replies and signal EOF explicitly to request waiters."""
         assert self.process.stdout is not None
         stream = self.process.stdout
         try:
@@ -146,6 +171,7 @@ class _PyreflyLsp:
             self.messages.put(None)
 
     def _send(self, message: dict) -> None:
+        """Write a single framed JSON-RPC message to the compiler subprocess."""
         payload = json.dumps(message, separators=(",", ":")).encode()
         assert self.process.stdin is not None
         self.process.stdin.write(
@@ -154,6 +180,7 @@ class _PyreflyLsp:
         self.process.stdin.flush()
 
     def _request(self, method: str, params: dict, timeout: float = 5) -> object:
+        """Wait for a matching JSON-RPC reply or raise a bounded transport error."""
         self.sequence += 1
         requested = self.sequence
         self._send(
@@ -176,6 +203,16 @@ class _PyreflyLsp:
                 return response.get("result")
 
     def definition(self, path: Path, source: str, line: int, col: int) -> object:
+        """Request a source declaration location, opening the source document once per session.
+
+        Args:
+            path: Path passed to the source-bound definition operation.
+            source: str passed to the source-bound definition operation.
+            line: int passed to the source-bound definition operation.
+            col: int passed to the source-bound definition operation.
+
+        Returns:
+            Compiler-resolved definition response for the requested original source position."""
         uri = path.as_uri()
         if uri not in self.opened:
             self._send(
@@ -202,6 +239,10 @@ class _PyreflyLsp:
         )
 
     def close(self) -> None:
+        """Close the compiler session and terminate its subprocess without retaining a worker.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         self.process.kill()
         self.process.wait(timeout=3)
 
@@ -216,7 +257,15 @@ def project_compiler_targets(
 
     The external compiler may only read a matching physical WORKTREE/DIRECTORY
     snapshot. Revision/synthetic sources are never mixed with filesystem state.
-    """
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+        unresolved: Iterable[tuple[str, ast.expr]] supplied to the source-bound project_compiler_targets analysis.
+        source_paths: dict[str, str] supplied to the source-bound project_compiler_targets analysis.
+        authored_symbols: frozenset[str] supplied to the source-bound project_compiler_targets analysis.
+
+    Returns:
+        Bound calls and resolvable declarations eligible for compiler-assisted checking."""
     candidates = tuple(unresolved)
     if not candidates:
         return {}
@@ -302,7 +351,13 @@ def certified_static_call_mismatches(
     module-qualified imports when the compiler resolves a unique declaration.
     Everything remains OPEN_WORLD: neither type checking nor source signature
     inspection certifies runtime rebinding or all possible entry points.
-    """
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+        diagnostics: Iterable[dict] supplied to the source-bound certified_static_call_mismatches analysis.
+
+    Returns:
+        Provable call-signature mismatch findings with the originating source and compiler witness."""
     import inspect
 
     if snapshot.label not in {"WORKTREE", "DIRECTORY"}:

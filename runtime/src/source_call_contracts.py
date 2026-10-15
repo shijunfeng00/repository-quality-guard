@@ -97,7 +97,12 @@ def source_bound_call_findings(
     """Bind unambiguous local signatures; report only concrete argument conflicts.
 
     The result is a review-level source witness, not proof of runtime closure.
-    """
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+    Returns:
+        Source-certified invalid direct calls; dynamic dispatch remains open-world."""
     declarations: dict[str, tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = {}
     counts: Counter[str] = Counter()
     for path in snapshot.paths:

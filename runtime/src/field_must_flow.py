@@ -35,6 +35,7 @@ class _Flow:
         return _originates_from_receiver(expr, self.reachable_names)
 
     def _read(self, node: ast.Attribute, state: dict[str, frozenset[int]]) -> None:
+        """Record an attribute read against the current definitely-initialized field state."""
         key = (node.lineno, node.col_offset + 1, "READ")
         if key in self.facts:
             if node.attr in state and not self.escaped:
@@ -90,6 +91,7 @@ class _Flow:
     def _target(
         self, target: ast.AST, state: dict[str, frozenset[int]], action: str
     ) -> None:
+        """Transfer definite assignment or invalidation facts for one assignment target."""
         if isinstance(target, (ast.Tuple, ast.List)):
             for part in target.elts:
                 self._target(part, state, action)
@@ -134,6 +136,15 @@ class _Flow:
     def statements(
         self, body: list[ast.stmt], incoming: dict[str, frozenset[int]] | None
     ) -> dict[str, frozenset[int]] | None:
+        """Propagate field-state witnesses through the supported statements and joins.
+
+        Args:
+            body: Ordered authored statements in the current lexical owner.
+            incoming: dict[str, frozenset[int]] | None input used by the statements analysis.
+
+        Returns:
+            Conservatively updated field state for normal exits of the supported statements.
+        """
         state = None if incoming is None else dict(incoming)
         for stmt in body:
             if state is None:
@@ -247,7 +258,20 @@ def _receiver_reachability(
     external: set[str] = set()
 
     class Collect(ast.NodeVisitor):
+        """Find bounded local aliases and escape paths rooted at an authored receiver.
+
+        All observations remain local to the parsed source; runtime execution is not inferred.
+        """
+
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            """Reject nested function bodies when tracing immediate receiver reachability.
+
+            Args:
+                node: Authored ast.FunctionDef under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             pass  # A nested scope is not an immediate assignment.
 
         visit_AsyncFunctionDef = visit_FunctionDef
@@ -255,20 +279,52 @@ def _receiver_reachability(
         visit_Lambda = visit_FunctionDef
 
         def visit_Global(self, node: ast.Global) -> None:
+            """Mark global declarations as a receiver-identity escape boundary.
+
+            Args:
+                node: Authored ast.Global under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             external.update(node.names)
 
         visit_Nonlocal = visit_Global
 
         def visit_Assign(self, node: ast.Assign) -> None:
+            """Collect receiver aliases introduced by assignments in the current scope.
+
+            Args:
+                node: Authored ast.Assign under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             statements.append(node)
             self.generic_visit(node)
 
         def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            """Collect annotated assignments that propagate the receiver identity.
+
+            Args:
+                node: Authored ast.AnnAssign under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             if node.value is not None:
                 statements.append(node)
             self.generic_visit(node)
 
         def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+            """Collect receiver aliases introduced by assignment expressions.
+
+            Args:
+                node: Authored ast.NamedExpr under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             statements.append(node)
             self.generic_visit(node)
 
@@ -361,7 +417,15 @@ def _cross_method_invalidations(
 def field_initialization_facts(
     snapshot: RepositoryAnalysisSnapshot, topology: RepositoryTopology
 ) -> tuple[FieldInitializationFact, ...]:
-    """Attach source-only MUST witnesses to existing owner-bound field accesses."""
+    """Certify definite field initialization only on supported constructor and method paths.
+
+    Args:
+        snapshot: Exact parsed source for control-flow transfer.
+        topology: Owner-linked classes, methods, constructors, and field accesses.
+
+    Returns:
+        Source-located field initialization facts; uncertain control flow stays unresolved.
+    """
     by_method: dict[str, list[InstanceFieldAccessFact]] = {}
     for fact in topology.instance_field_accesses:
         by_method.setdefault(fact.method_symbol_id, []).append(fact)

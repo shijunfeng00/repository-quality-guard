@@ -8,7 +8,6 @@ from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
     all_parameters,
-    annotation_names,
     call_name,
     direct_body_nodes,
 )
@@ -69,6 +68,87 @@ PURE_STRING_METHODS = frozenset(
         "zfill",
     }
 )
+
+# Closed, statically bound stdlib AST classes used by type-probe analysis.
+# Do not dynamically inspect ``ast`` through vars/getattr/__dict__: an unknown
+# node kind is UNKNOWN, never a reason to emit a QG060 Critical.
+_CANONICAL_AST_CLASSES: dict[str, type[ast.AST]] = {
+    cls.__name__: cls
+    for cls in (
+        ast.AST,
+        ast.stmt,
+        ast.expr,
+        ast.pattern,
+        ast.Assign,
+        ast.AnnAssign,
+        ast.AugAssign,
+        ast.Delete,
+        ast.Return,
+        ast.Raise,
+        ast.Assert,
+        ast.Expr,
+        ast.Pass,
+        ast.Break,
+        ast.Continue,
+        ast.Import,
+        ast.ImportFrom,
+        ast.For,
+        ast.AsyncFor,
+        ast.While,
+        ast.If,
+        ast.With,
+        ast.AsyncWith,
+        ast.Try,
+        ast.Match,
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.ClassDef,
+        ast.Global,
+        ast.Nonlocal,
+        ast.Call,
+        ast.Compare,
+        ast.Attribute,
+        ast.Subscript,
+        ast.Name,
+        ast.Constant,
+        ast.Tuple,
+        ast.List,
+        ast.Set,
+        ast.Dict,
+        ast.NamedExpr,
+        ast.BoolOp,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.IfExp,
+        ast.Lambda,
+        ast.ListComp,
+        ast.SetComp,
+        ast.DictComp,
+        ast.GeneratorExp,
+        ast.Await,
+        ast.Yield,
+        ast.YieldFrom,
+        ast.Starred,
+        ast.Slice,
+        ast.JoinedStr,
+        ast.FormattedValue,
+        ast.MatchAs,
+        ast.MatchOr,
+        ast.MatchValue,
+        ast.MatchSingleton,
+        ast.MatchSequence,
+        ast.MatchMapping,
+        ast.MatchClass,
+        ast.MatchStar,
+        ast.arguments,
+        ast.arg,
+        ast.keyword,
+        ast.comprehension,
+        ast.alias,
+        ast.ExceptHandler,
+    )
+}
+
 
 MAPPING_PROTOCOL_METHODS = {
     "clear",
@@ -134,39 +214,65 @@ def check_type_probe_rules(
     }
     findings: list[Finding] = []
     for item in nodes:
-        if isinstance(item, ast.Call) and call_name(item) == "isinstance" and item.args:
+        if (
+            isinstance(item, ast.Call)
+            and call_name(item) == "isinstance"
+            and len(item.args) == 2
+            and not item.keywords
+            and _builtin_isinstance_unshadowed(facts, function)
+        ):
             checked = dotted_name(item.args[0])
             if checked in parameter_annotations:
                 annotation = parameter_annotations[checked]
-                annotation_types = annotation_names(annotation)
-                annotation_root = root_annotation_name(annotation)
-                concrete_annotation = bool(
-                    annotation_types
-                ) and annotation_root not in {
+                if root_annotation_name(annotation) in {
                     "Any",
                     "object",
                     "Union",
                     "Optional",
-                }
-                if not concrete_annotation:
+                }:
                     continue
+                relation, provenance = _type_probe_relation(
+                    facts, function, annotation, item.args[1]
+                )
+                if _scope_rebinds(function, checked):
+                    # The annotated formal is no longer an authoritative type
+                    # source after a local assignment/augmented assignment.
+                    relation, provenance = "unknown", "parameter_rebound"
+                if _verified_registration_guard(
+                    facts, function, item, checked, annotation, item.args[1]
+                ):
+                    continue
+                if relation == "subtype":
+                    # A formal descendant of the declared input is a legitimate
+                    # type discriminant. Its usefulness belongs to behavioral/
+                    # structure review, not an unproven type-contract CRITICAL.
+                    continue
+                # Only a statically disjoint *closed builtin* pair proves an
+                # unreachable branch under the declared formal contract.
+                # Other relations warrant review, not an automatic blocker.
+                definitive = relation == "disjoint_builtin"
                 findings.append(
                     facts.make_finding(
                         item,
                         "QG060",
-                        f"对契约候选对象 `{checked}` 使用 isinstance() 猜测返回形态。",
+                        (
+                            f"`{checked}` 的类型判别与声明契约静态不相容。"
+                            if definitive
+                            else f"`{checked}` 的运行时类型判别尚无可核实的必要性证明。"
+                        ),
                         symbol=qualname,
-                        severity="critical",
-                        confidence="high",
+                        severity="critical" if definitive else "warning",
+                        confidence="high" if definitive else "medium",
                         suggestion=(
-                            "具体类型标注的内部参数应按正式契约使用；"
-                            "Any、联合类型或局部 payload/result 仍不得在内部链路长期猜测；"
-                            "应在唯一输入适配边界完成分派并形成固定内部类型。"
+                            "按已声明的输入类型直接使用；如确实存在多个合法类型，"
+                            "须明确建模类型关系和各分支业务语义。不得通过转换兜底掩盖契约违例。"
                         ),
                         evidence={
-                            "annotated_parameter": annotation is not None,
-                            "annotation_types": sorted(annotation_types),
-                            "annotation_root": annotation_root,
+                            "annotation": ast.unparse(annotation),
+                            "discriminator": ast.unparse(item.args[1]),
+                            "relation": relation,
+                            "type_provenance": provenance,
+                            "classification": "PROVEN" if definitive else "REVIEW",
                         },
                     )
                 )
@@ -188,6 +294,419 @@ def check_type_probe_rules(
                 )
             )
     return findings
+
+
+def _verified_registration_guard(
+    facts: ModuleFacts,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    probe: ast.Call,
+    parameter: str,
+    annotation: ast.expr,
+    discriminator: ast.expr,
+) -> bool:
+    """Recognize fail-fast registration of an explicitly declared ABC contract.
+
+    The failing branch raises a TypeError. The successful path must actually
+    register a class or invoke the ABC's declared abstract operation. These
+    bounded source facts do not imply that an arbitrary isinstance guard is
+    legitimate, and never waive incompatible builtin consumer checks.
+    """
+    if facts.tree is None or not isinstance(discriminator, ast.Name):
+        return False
+    guard_index = next(
+        (
+            index
+            for index, statement in enumerate(function.body)
+            if isinstance(statement, ast.If)
+            and any(child is probe for child in ast.walk(statement.test))
+        ),
+        None,
+    )
+    if guard_index is None:
+        return False
+    guard = function.body[guard_index]
+    if not isinstance(guard, ast.If) or guard.orelse or len(guard.body) != 1:
+        return False
+    failure = guard.body[0]
+    if not (
+        isinstance(failure, ast.Raise)
+        and isinstance(failure.exc, ast.Call)
+        and isinstance(failure.exc.func, ast.Name)
+        and failure.exc.func.id == "TypeError"
+        and not _scope_rebinds(function, "TypeError")
+    ):
+        return False
+    if not _is_negated_probe(guard.test, probe):
+        return False
+    # The ABC is a source declaration, not an inferred class based on a name.
+    if (
+        isinstance(annotation, ast.Subscript)
+        and dotted_name(annotation.value) == "type"
+    ):
+        base = annotation.slice
+        if not (isinstance(base, ast.Name) and discriminator.id == "type"):
+            return False
+        if not _builtin_type_unshadowed(facts, function, "type"):
+            return False
+        if not _guard_checks_subclass(guard.test, parameter, base.id):
+            return False
+        interface = _local_abc(facts, base.id)
+        return interface is not None and _registration_stores_class(
+            function.body[guard_index + 1 :], parameter
+        )
+    if not (isinstance(annotation, ast.Name) and discriminator.id == annotation.id):
+        return False
+    interface = _local_abc(facts, annotation.id)
+    if interface is None:
+        return False
+    if not any(
+        isinstance(stmt, ast.ImportFrom)
+        and stmt.module == "abc"
+        and any(
+            alias.name == "abstractmethod" and alias.asname is None
+            for alias in stmt.names
+        )
+        for stmt in facts.tree.body
+    ):
+        return False
+    abstract_operations = {
+        stmt.name
+        for stmt in interface.body
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any(
+            dotted_name(decorator) == "abstractmethod"
+            for decorator in stmt.decorator_list
+        )
+    }
+    return _calls_declared_registration_operation(
+        function.body[guard_index + 1 :], parameter, abstract_operations
+    )
+
+
+def _local_abc(facts: ModuleFacts, name: str) -> ast.ClassDef | None:
+    """Resolve an ABC declared after a genuine, unshadowed stdlib import."""
+    if facts.tree is None:
+        return None
+    abc_bound = False
+    for statement in facts.tree.body:
+        if isinstance(statement, ast.ImportFrom):
+            for alias in statement.names:
+                bound_name = alias.asname or alias.name
+                if bound_name == "ABC":
+                    abc_bound = statement.module == "abc" and alias.name == "ABC"
+        if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if statement.name == "ABC":
+                abc_bound = False
+            if isinstance(statement, ast.ClassDef) and statement.name == name:
+                if abc_bound and any(
+                    isinstance(base, ast.Name) and base.id == "ABC"
+                    for base in statement.bases
+                ):
+                    return statement
+        if isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            if any(
+                isinstance(target, ast.Name) and target.id == "ABC"
+                for target in targets
+            ):
+                abc_bound = False
+    return None
+
+
+def _is_negated_probe(condition: ast.expr, probe: ast.Call) -> bool:
+    """The probed input must fail closed on the checked type test."""
+    predicates = (
+        condition.values
+        if isinstance(condition, ast.BoolOp) and isinstance(condition.op, ast.Or)
+        else [condition]
+    )
+    return any(
+        isinstance(predicate, ast.UnaryOp)
+        and isinstance(predicate.op, ast.Not)
+        and predicate.operand is probe
+        for predicate in predicates
+    )
+
+
+def _guard_checks_subclass(condition: ast.expr, parameter: str, base: str) -> bool:
+    """Recognize explicit rejection of an invalid registered ABC subclass."""
+    predicates = (
+        condition.values
+        if isinstance(condition, ast.BoolOp) and isinstance(condition.op, ast.Or)
+        else [condition]
+    )
+    return any(
+        isinstance(predicate, ast.UnaryOp)
+        and isinstance(predicate.op, ast.Not)
+        and isinstance(predicate.operand, ast.Call)
+        and call_name(predicate.operand) == "issubclass"
+        and len(predicate.operand.args) == 2
+        and dotted_name(predicate.operand.args[0]) == parameter
+        and dotted_name(predicate.operand.args[1]) == base
+        for predicate in predicates
+    )
+
+
+def _registration_stores_class(body: list[ast.stmt], parameter: str) -> bool:
+    """Prove successful class registration retains the input for later dispatch."""
+    for statement in body:
+        if (
+            isinstance(statement, ast.Assign)
+            and dotted_name(statement.value) == parameter
+        ):
+            if any(
+                isinstance(target, ast.Attribute)
+                and dotted_name(target.value) == "self"
+                for target in statement.targets
+            ):
+                return True
+        if not isinstance(statement, ast.Expr) or not isinstance(
+            statement.value, ast.Call
+        ):
+            continue
+        call = statement.value
+        if (
+            isinstance(call.func, ast.Attribute)
+            and call.func.attr == "append"
+            and dotted_name(call.func.value).startswith("self.")
+            and len(call.args) == 1
+            and dotted_name(call.args[0]) == parameter
+        ):
+            return True
+    return False
+
+
+def _calls_declared_registration_operation(
+    body: list[ast.stmt], parameter: str, operations: set[str]
+) -> bool:
+    """Check successful registration invokes a declared abstract operation."""
+    return any(
+        isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Call)
+        and isinstance(statement.value.func, ast.Attribute)
+        and dotted_name(statement.value.func.value) == parameter
+        and statement.value.func.attr in operations
+        for statement in body
+    )
+
+
+# Builtins whose distinct concrete representations cannot share a compatible
+# instance under the ordinary Python built-in type contract.
+_CLOSED_BUILTINS = frozenset(
+    {"str", "bytes", "int", "float", "bool", "dict", "list", "tuple", "set"}
+)
+
+
+def _builtin_isinstance_unshadowed(
+    facts: ModuleFacts, function: ast.FunctionDef | ast.AsyncFunctionDef
+) -> bool:
+    """Do not mistake a user-defined identifier for the builtin type predicate."""
+    if any(parameter.arg == "isinstance" for parameter in all_parameters(function)):
+        return False
+    if _scope_rebinds(function, "isinstance"):
+        return False
+    if "isinstance" in facts.imports or facts.tree is None:
+        return False
+    return not any(
+        (
+            isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and statement.name == "isinstance"
+        )
+        or (
+            isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+            and any(
+                isinstance(target, ast.Name) and target.id == "isinstance"
+                for target in (
+                    statement.targets
+                    if isinstance(statement, ast.Assign)
+                    else [statement.target]
+                )
+            )
+        )
+        for statement in facts.tree.body
+    )
+
+
+def _builtin_type_unshadowed(
+    facts: ModuleFacts, function: ast.FunctionDef | ast.AsyncFunctionDef, name: str
+) -> bool:
+    """Assert lexical ownership of a canonical built-in type name."""
+    if facts.tree is None or name in facts.imports:
+        return False
+    if name in {argument.arg for argument in all_parameters(function)}:
+        return False
+    if _scope_rebinds(function, name):
+        return False
+    for stmt in facts.tree.body:
+        if (
+            isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and stmt.name == name
+        ):
+            return False
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+            if any(
+                isinstance(target, ast.Name) and target.id == name for target in targets
+            ):
+                return False
+    return True
+
+
+def _scope_rebinds(function: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    """Detect a local overwrite of an annotated formal or source import."""
+    for node in direct_body_nodes(function):
+        if isinstance(node, ast.ExceptHandler) and node.name == name:
+            return True
+        if (
+            isinstance(node, ast.Name)
+            and node.id == name
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+        ):
+            return True
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if (alias.asname or alias.name.split(".", 1)[0]) == name:
+                    return True
+    return False
+
+
+def _canonical_ast_type(
+    facts: ModuleFacts,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    expression: ast.expr,
+) -> type[ast.AST] | None:
+    """Bind an authored AST class to a proven stdlib import, not a name pattern."""
+    if isinstance(expression, ast.Attribute) and isinstance(expression.value, ast.Name):
+        binding, member = expression.value.id, expression.attr
+        if facts.imports.get(binding) != "ast":
+            return None
+    elif isinstance(expression, ast.Name):
+        binding = expression.id
+        imported = facts.imports[binding] if binding in facts.imports else ""
+        if not imported.startswith("ast.") or imported.count(".") != 1:
+            return None
+        member = imported.partition(".")[2]
+    else:
+        return None
+    if binding in {
+        parameter.arg for parameter in all_parameters(function)
+    } or _scope_rebinds(function, binding):
+        return None
+    if facts.tree is None:
+        return None
+    # Rebinding the module makes an apparent ast.* name untrustworthy.
+    for node in facts.tree.body:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node.name == binding
+        ):
+            return None
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(
+                isinstance(target, ast.Name) and target.id == binding
+                for target in targets
+            ):
+                return None
+    return _CANONICAL_AST_CLASSES.get(member)
+
+
+def _type_probe_relation(
+    facts: ModuleFacts,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    annotation: ast.expr,
+    discriminator: ast.expr,
+) -> tuple[str, str]:
+    """Classify only source-bound, closed-type facts; unknown never means conflict."""
+    if isinstance(discriminator, ast.Tuple):
+        if not discriminator.elts:
+            return "unknown", "empty_discriminator"
+        branches = [
+            _type_probe_relation(facts, function, annotation, item)
+            for item in discriminator.elts
+        ]
+        if all(relation == "subtype" for relation, _ in branches):
+            return "subtype", "tuple_of_declared_subtypes"
+        if all(relation == "disjoint_builtin" for relation, _ in branches):
+            return "disjoint_builtin", "tuple_of_disjoint_builtins"
+        return "unknown", "mixed_or_unresolved_tuple"
+
+    declared_ast = _canonical_ast_type(facts, function, annotation)
+    checked_ast = _canonical_ast_type(facts, function, discriminator)
+    if declared_ast is not None and checked_ast is not None:
+        if issubclass(checked_ast, declared_ast):
+            return "subtype", "stdlib_ast_class_hierarchy"
+        if issubclass(declared_ast, checked_ast):
+            return "redundant_or_narrowing", "stdlib_ast_class_hierarchy"
+        return "unknown", "unrelated_ast_categories"
+
+    # Reuse parsed source declarations as type ownership facts. Only a direct
+    # local, unambiguous inheritance chain proves a subtype. Incomparable user
+    # classes stay UNKNOWN because Python allows multiple inheritance.
+    if (
+        facts.tree is not None
+        and isinstance(annotation, ast.Name)
+        and isinstance(discriminator, ast.Name)
+    ):
+        declarations = {
+            statement.name: statement
+            for statement in facts.tree.body
+            if isinstance(statement, ast.ClassDef)
+        }
+        declared_class = annotation.id
+        checked_class = discriminator.id
+        if declared_class in declarations and checked_class in declarations:
+            if _local_class_descends(declarations, checked_class, declared_class):
+                return "subtype", "source_class_inheritance"
+            if _local_class_descends(declarations, declared_class, checked_class):
+                return "redundant_or_narrowing", "source_class_inheritance"
+    declared = dotted_name(annotation)
+    checked = dotted_name(discriminator)
+    if (
+        declared in _CLOSED_BUILTINS
+        and checked in _CLOSED_BUILTINS
+        and _builtin_type_unshadowed(facts, function, declared)
+        and _builtin_type_unshadowed(facts, function, checked)
+    ):
+        if declared == "int" and checked == "bool":
+            return "subtype", "builtin_type_contract"
+        if declared == checked or (declared == "bool" and checked == "int"):
+            return "redundant_or_narrowing", "builtin_type_contract"
+        return "disjoint_builtin", "builtin_closed_type_contract"
+    # Explicit same nominal type does not prove misuse, but a repeated runtime
+    # check cannot be called a high-confidence bug from syntax alone.
+    if declared and declared == checked:
+        return "redundant_or_narrowing", "same_declared_type"
+    return "unknown", "unresolved_type_binding"
+
+
+def _local_class_descends(
+    declarations: dict[str, ast.ClassDef],
+    descendant: str,
+    ancestor: str,
+) -> bool:
+    """Prove only declared, source-bound same-module inheritance paths."""
+    visited: set[str] = set()
+    pending = [descendant]
+    while pending:
+        current = pending.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        if current == ancestor:
+            return True
+        node = declarations[current] if current in declarations else None
+        if node is not None:
+            pending.extend(
+                base.id
+                for base in node.bases
+                if isinstance(base, ast.Name) and base.id in declarations
+            )
+    return False
 
 
 def root_annotation_name(annotation: ast.expr | None) -> str:
@@ -588,7 +1107,13 @@ def ignored_immutable_result(node: ast.Call, facts: ModuleFacts) -> str:
     A freely named receiver or method cannot establish immutability. Only a
     source literal has a known exact type without additional compiler facts.
     Restrict actuals to constants to exclude observable argument evaluation.
-    """
+
+    Args:
+        node: Authored AST node in the immediate lexical ownership domain.
+        facts: Previously established facts used as the sole evidence input.
+
+    Returns:
+        Findings for discarded immutable operations whose results are provably unused."""
     if not isinstance(node.func, ast.Attribute):
         return ""
     receiver = node.func.value

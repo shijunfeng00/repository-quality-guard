@@ -43,6 +43,84 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 
 特别地，**一个 finding 从扫描结果中消失，不等于 remediation 成功**。如果 diff 显示同一风险被迁移到新 helper、新 wrapper、新 fallback 或另一处 consumer，仍应按原规则继续追 owner；`QG176` 只针对同一局部行为的特定等价改写；跨函数迁移不得仅凭相似度推断为新债务。
 
+
+### Case 驱动的契约裁决与静态调用证据（v0.22.5 P0 修复指导 hotfix）
+
+**语法/类型许可 != 合法业务 Case。** `NotRequired`、`Optional`、`dict.get`、`hasattr`、`bool` 或框架默认容错只证明一种代码写法可运行，不证明业务执行时真实允许字段缺失、返回空值或跳过处理。规则修复前必须证明：
+
+1. **真实可达**：从可信入口/Producer、数据约束、调用参数和状态转移，构造具体的合法 Case（而非任意伪造输入）；缺失若实际是 invariant 违约，应 fail-fast。
+2. **两条分支具有业务意义**：存在与缺失分别对应不同的正确结果、状态或副作用；纯粹把错误转成空字符串、空集合、`pass` 或默认对象不是合法 Case 的证明。
+3. **上下游已有保证**：先确认 schema、canonicalizer、入口验证与 Guard 是否已处理；必须检查 guard 对消费位置的控制流支配、值传递/别名、是否变异和其他可达入口，不能因为上游出现过一个 `if` 就证明当前值必然有效。
+4. **正反 Case 成对**：正例证明合法缺省确实存在且输出正确，反例证明内部必须字段缺失仍会被检测/失败；真实观测与独立 Oracle 优先，类型注解/单元测试自我断言不能独立证明业务需求。
+5. **修改归属**：确认 source-level owner 后区分 CODE_BUG / RULE_BUG / REVIEW_REQUIRED；稳定规则的判定算法和严重度未经主理人裁决不得因误报而修改，必要时先提交规则缺陷 Case。
+
+**统一证据查询入口（只读）**：
+
+```bash
+python scripts/evidence_lookup.py --rule QG003 --rule QG004 --api "consumer validation" --repo /path/to/repository --symbol package.module.consumer --direction callers --depth 3
+python scripts/evidence_lookup.py --repo /path/to/repository --api "existing capability" --api-limit 5
+python scripts/evidence_lookup.py --repo /path/to/repository --symbol package.module.consumer --direction both --depth 2
+python scripts/evidence_lookup.py --rule QG033
+```
+
+`--rule` 直接投影本文件的规则定义及修复卡；`--api` 复用现有 `doc-search` 的 BM25 Catalog、强内容摘要保鲜和可再生 `docs/api-reference/` 缓存（只生成派生文档，不修改源码）；`--symbol` 使用既有 `RepositoryAnalysisSnapshot → RepositoryRelationGraph → RepositoryTopology` 导出有位置的 `DIRECT_CALL` 已解析前驱/后继和有限源码片段，**不是运行时 traceback 或 MUST 证明**。缺少调用边不代表不存在调用；跨语言/动态调用/插件/反射/外部消费者可能不在静态图中。多名称冲突必须显式给出完整 symbol ID；预算溢出必须标注截断。不得只贴工具返回的片段而不阅读实际函数体、来源文件和调用入口。历史 `scripts/rule_lookup.py` 仍兼容纯规则查询；不额外建设第二套静态图或 runtime agent 服务。
+
+#### QG003 / QG026 · 方法真实 owner
+
+`obj.get()` 只有解析到对象自身明确的零参数方法签名时，才可排除 *Mapping.get* 的归因；Mapping/TypedDict 的 `get()` 无 key 本身不合法。`obj.get(key)` 需沿 MRO、override、方法体和调用边追查；自定义包装方法内部调用 `_data.get(key, default)` 时不能因为最外层不是 `dict` 就直接放行。方法身份仍 unknown 时保留复核，不能用名称、参数数量单一条件给出高置信判决。
+
+#### QG003 · 已授权修复后的 Owner 判定（P0）
+
+只有证实接收者是 `dict`、`Dict`、`Mapping`、`TypedDict` 或其继承链上
+真实的 Mapping owner，才把 `.get(key)` 归为 QG003 映射风险。
+无参数 `Mapping.get()` 明确缺少必填 key，应报告；普通对象的 `get()`
+只要追溯到本地类/父类/祖父类的真实实现，不应被归类为映射访问。
+`self._data` 在构造器里明确初始化为字典/映射时仍检查内部 `.get()`；
+包装器 `Repository.get(key)` 本身不能机械当作 Mapping，
+但其方法体中的 `self._data.get(key, default)` 必须继续检测。
+多继承冲突、动态派发及未知 owner 只能输出低置信候选，
+不得假称已经解析完整 C3 MRO，更不能以 suppress 掩盖真正的必填字段访问。
+
+#### QG003 · 有来源、有处理的缺失分支（P0 补充）
+
+对无第二参数的 `mapping.get(key)` 不应一律判作静默兜底：例如有限
+注册表中的未知类型确实可能出现，返回的 `None` 被全部已解析的同模块
+调用点以显式 None 分支消费；又如构造器逐条写入的稀疏索引，未命中
+后有实际独立业务路径。只有可见生产者、返回/赋值路径、必要的 guard、
+两侧不同处理均有源码证据，才可排除 QG003。单独声明 Optional、
+单独出现 `if value is None: pass`、存在未审的其它消费路径均不充分。
+
+检索入口：`scripts/evidence_lookup.py --repo <repo> --file <path> --line <line>
+--name <symbol-or-field> --kind variable --direction callers --depth 3`；
+需结合真实正反 Case 和完整函数体审查，不能把 `[UNKNOWN]` 边当作排除证据。
+特别注意必填 TypedDict 字段、伪造非空 ID、没有证据的同名 `.get()`
+必须保留原有告警。已观察过的其它仓库 Finding 需原位对照，不能以
+本仓误报消失充当跨仓稳定的证明。
+
+#### QG004 · 缺省实际可达性
+
+`TypedDict(NotRequired)` 表示声明可缺，并不证明真实 Producer 会合法省略该字段，更不证明默认值正确。稀疏反向索引对**已知存在、确实零入边**的节点返回空边集，是可通过构造/消费方证明的合法 Case；相反对于必需 id，缺失后返回哨兵属于静默掩盖。普通 lookup table 的 miss 也需要调用入口和行为 Case，不能因变量名包含 `index`/`map` 就豁免。
+
+#### QG004 · 已授权修复后的明确空结果（P0）
+
+`get(key, "UNKNOWN")`、随机字符串或任意非空伪 ID 与
+`get(key, None)`、`get(key, [])`、`get(key, "")` 必须区分。
+只有**直接返回**且与明确 `Optional[T]` / `T | None` 的返回契约一致时，
+才可把 `None` 识别为已声明的空结果；对于 `[]`/`""`，还需真实
+稀疏生产者（例如构造中空映射、仅在边遍历中 `setdefault` 写入）以及
+匹配的 `list[T]` / `str` 返回契约。没有证明合法 miss 的普通 map
+不能因默认值为空就直接免审；必填 TypedDict 字段即使有 Optional
+返回标注也仍然报告 QG004，业务实际存在性不能从语法可选性推出。
+需要按 Cases 分别证明合法的未命中与真实数据损坏行为。
+
+#### QG033 · 布尔语义
+
+`bool(set[str])` 是集合非空判断，不是解析字符串 `"False"`；但若整个 `bool(operations)` 与下游 `any(...)` 在全域上等价而冗余，应优先精简代码。`bool(flag: str)` 也可能只是检查字符串非空，必须有布尔文本解析的调用契约才能判定解析错误。规则缺陷仍作为稳定规则改动候选单独裁决。
+
+#### QG177（已退役，不可恢复）· 正反对抗 Case
+
+不恢复该规则、不根据相似 fallback 进行阻断；但仍在后续 R3 对抗 Cases 中分别保留“真正新增的 helper 使必需键缺失被吞掉”（应检出）和“已有未修改 helper / 合法 sparse miss”（不得误报）。跨函数失败迁移只能依据 before→after 因果差异和 Producer→Consumer→Effect 实际证据认定。
+
 ## 完整规则索引
 
 ### 解析、基础结构与文档
@@ -52,8 +130,8 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 | `QG000` | Python 语法解析失败；当前文件无法继续做可靠 AST 审查。 |
 | `QG001` | 短小且低复用的内部函数/方法才进入 ephemeral-helper 审查；direct call、callable reference、callback/protocol hook、公开/导出接口都会作为正向复用证据。 |
 | `QG002` | 短小且静态实例化/引用很少的类，检查是否为低价值包装。 |
-| `QG003` | `internal_formal` 稳定映射使用 `.get(key)` 猜必需字段时保持严格；`external_optional`/`dynamic_boundary` 只保留低严重度所有权证据；无法静态确认 owner 时保持 unknown 并转 QG026 语义复核，不因 `strict_get` 假装成内部契约。 |
-| `QG004` | `internal_formal` 映射使用 `.get(key, default)` 静默兜底仍按 Critical；静态解析到的外部可选契约或明确 ingestion/adapter 边界不按内部 schema 失败处理；unknown 保持低置信复核。 |
+| `QG003` | 先确认真实 Mapping owner：本地方法及继承实现不得仅按 `.get` 名称误归类；无参数 Mapping.get 缺 key；内部字段若已证明是字典仍严格。`internal_formal` 稳定映射使用 `.get(key)` 猜必需字段时保持严格；`external_optional`/`dynamic_boundary` 只保留低严重度所有权证据；无法静态确认 owner 时保持 unknown 并转 QG026 语义复核，不因 `strict_get` 假装成内部契约。 |
+| `QG004` | 明确空结果必须与返回类型和可达生产者 Case 对应；必填键与任意非空哨兵不因默认值语法合法而豁免。`internal_formal` 映射使用 `.get(key, default)` 静默兜底仍按 Critical；静态解析到的外部可选契约或明确 ingestion/adapter 边界不按内部 schema 失败处理；unknown 保持低置信复核。 |
 | `QG005` | `hasattr()` 探测 `internal_formal` 对象仍属于运行时形状猜测；解析到的外部协议字段/动态边界降为所有权证据，unknown 不硬猜。显式 Protocol/ABC/联合类型/override 不属于本规则目标。 |
 | `QG006` | `getattr(..., default)` 对 `internal_formal` 对象继续严格；外部可选协议/动态边界只记录低严重度证据，unknown 进入语义复核。不得把内部 formal contract 伪装成外部 optional。 |
 | `QG007` | 捕获宽泛异常；吞错并返回默认结果时风险更高。 |
@@ -111,7 +189,7 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 
 | 规则 | 检查内容 |
 |---|---|
-| `QG060` | 对内部契约对象使用 `isinstance()` 猜测结构。 |
+| `QG060` | 类型判别与声明契约：经可靠类型来源证明封闭内置类型不相容才报 CRITICAL；类型关系未知、精确类型的重复检测仅报 WARNING。已证明的基类→子类分派不报；具有明确 ABC 所有权、失败即抛 `TypeError`、成功后注册类或调用所声明抽象接口的注册边界不报，不能仅凭函数名或 `raise TypeError` 豁免普通 Consumer。不以 `isinstance()` 语法本身证明缺陷。证据包括类型注解、判别类型、绑定来源及证明分类。 |
 | `QG061` | 消费方把标量/序列互相包装修复，例如 `x if list else [x]`。 |
 | `QG062` | `zip()` 未使用严格等长语义，可能静默截断。 |
 | `QG063` | 通过 `min(len(...))`、切片等方式静默修复长度不一致。 |
@@ -411,3 +489,19 @@ Schema 契约违例，源码、Schema 行号、生产者、必需字段差集写
 没有直接声明的生产者均不可据此认定缺字段。这里只判断局部静态确定的生产者，
 尚未证明后续所有调用路径或业务副作用。正式成果必须由封印 Skill 的
 `audit → 修改说明.md → verify` 产出，不能用内部 Graph 观测代替。
+
+### QG003/QG004/QG033 实际审计证据索引（Rev25 CLI hotfix）
+
+上述规则发生 CODE_BUG/RULE_BUG 争议时，可对命中源位置执行：
+
+```bash
+python scripts/evidence_lookup.py --repo <repo> --rule QG004 \
+  --file <repo-relative-path> --line <1-based-line> --name <variable> --kind variable --depth 3
+```
+
+必须追查调用现场、参数源、字段写入及独立真实合法 Case；源代码中的注解
+`Optional`、`NotRequired` 只是一条类型声明，不能证明业务可缺，`dict.get` 名称也不构成真实风险证明。
+若映射是稀疏反向索引，构造逻辑 `index.setdefault(edge.target,...)`、零入度节点 Case
+共同提供合法未命中的证据；若未找到调用者，必须报告 provider 可能缺失，禁止把未知当作零调用。
+QG033 的 `bool(set)` 正例须结合集合生产路径；不能把集合长度判定误报成字符串布尔解析。
+CLI 只提供源码事实，不自动推断 QG003/QG004/QG033 的 CODE_BUG/RULE_BUG 结论。

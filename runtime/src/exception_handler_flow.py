@@ -19,14 +19,43 @@ def _local_reads(node: ast.AST) -> tuple[ast.Name, ...]:
     found: list[ast.Name] = []
 
     class Collect(ast.NodeVisitor):
+        """Collect eager reads in the immediate expression, excluding deferred lexical scopes.
+
+        All observations remain local to the parsed source; runtime execution is not inferred.
+        """
+
         def visit_Name(self, part: ast.Name) -> None:
+            """Record only load-context names whose values are evaluated immediately.
+
+            Args:
+                part: Authored ast.Name under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             if isinstance(part.ctx, ast.Load):
                 found.append(part)
 
         def visit_Lambda(self, part: ast.Lambda) -> None:
+            """Do not descend into deferred lambda bodies during eager-read analysis.
+
+            Args:
+                part: Authored ast.Lambda under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             pass
 
         def visit_FunctionDef(self, part: ast.FunctionDef) -> None:
+            """Do not attribute nested callable bodies to the current eager expression.
+
+            Args:
+                part: Authored ast.FunctionDef under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             pass
 
         visit_AsyncFunctionDef = visit_FunctionDef
@@ -45,19 +74,56 @@ def _assigned(node: ast.AST) -> frozenset[str]:
     result: set[str] = set()
 
     class Collect(ast.NodeVisitor):
+        """Collect local store and delete targets without traversing nested definitions.
+
+        All observations remain local to the parsed source; runtime execution is not inferred.
+        """
+
         def visit_Name(self, part: ast.Name) -> None:
+            """Record local names bound or deleted by the current expression.
+
+            Args:
+                part: Authored ast.Name under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             if isinstance(part.ctx, (ast.Store, ast.Del)):
                 result.add(part.id)
 
         def visit_FunctionDef(self, part: ast.FunctionDef) -> None:
+            """Record a function declaration as a name binding, not its nested body.
+
+            Args:
+                part: Authored ast.FunctionDef under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             result.add(part.name)
 
         visit_AsyncFunctionDef = visit_FunctionDef
 
         def visit_ClassDef(self, part: ast.ClassDef) -> None:
+            """Record a class declaration as a name binding, not its nested body.
+
+            Args:
+                part: Authored ast.ClassDef under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             result.add(part.name)
 
         def visit_Lambda(self, part: ast.Lambda) -> None:
+            """Ignore lambda-local bindings outside the current lexical owner.
+
+            Args:
+                part: Authored ast.Lambda under examination; no user code is executed.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             pass
 
     Collect().visit(node)
@@ -110,6 +176,14 @@ def _first_raising_assignments(body: list[ast.stmt]) -> dict[str, int]:
     rejected: set[str] = set()
 
     def walk(statements: list[ast.stmt]) -> None:
+        """Visit bounded statement sequences, recording first potentially failing RHS evaluations.
+
+        Args:
+            statements: Ordered authored statements in the current lexical owner.
+
+        Returns:
+            Computed None field or analysis facts; unknown paths remain unproven.
+        """
         for stmt in statements:
             if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
                 targets = (
@@ -153,7 +227,15 @@ def _first_raising_assignments(body: list[ast.stmt]) -> dict[str, int]:
 def exception_handler_read_facts(
     snapshot: RepositoryAnalysisSnapshot, topology: RepositoryTopology
 ) -> tuple[ExceptionHandlerReadFact, ...]:
-    """Relate conditional handler unbound reads to a unique authored function."""
+    """Associate eager handler reads with a possibly interrupted local assignment.
+
+    Args:
+        snapshot: Parsed source of local assignments and exception handlers.
+        topology: Unique authored function identities used to attribute findings.
+
+    Returns:
+        Conditional unbound-read facts without assuming the exception must occur.
+    """
     declarations = {
         (symbol.path.as_posix(), symbol.line): symbol
         for symbol in topology.symbols

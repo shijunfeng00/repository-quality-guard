@@ -141,16 +141,19 @@ class RepositoryScanner:
 
             audited_paths = {path.relative_to(self.root).as_posix() for path in files}
             findings.extend(
-                item for item in typed_producer_contract_findings(
+                item
+                for item in typed_producer_contract_findings(
                     self.analysis_snapshot, self.topology
-                ) if item.path in audited_paths
+                )
+                if item.path in audited_paths
             )
         if self.analysis_snapshot is not None:
             from .partial_commit_flow import partial_commit_findings
 
             audited_paths = {path.relative_to(self.root).as_posix() for path in files}
             findings.extend(
-                finding for finding in partial_commit_findings(self.analysis_snapshot)
+                finding
+                for finding in partial_commit_findings(self.analysis_snapshot)
                 if finding.path in audited_paths
             )
         if self.analysis_snapshot is not None:
@@ -158,7 +161,8 @@ class RepositoryScanner:
 
             audited_paths = {path.relative_to(self.root).as_posix() for path in files}
             findings.extend(
-                item for item in constructor_read_order_findings(self.analysis_snapshot)
+                item
+                for item in constructor_read_order_findings(self.analysis_snapshot)
                 if item.path in audited_paths
             )
         if self.analysis_snapshot is not None:
@@ -166,7 +170,8 @@ class RepositoryScanner:
 
             audited_paths = {path.relative_to(self.root).as_posix() for path in files}
             findings.extend(
-                item for item in silent_exception_fallback_findings(self.analysis_snapshot)
+                item
+                for item in silent_exception_fallback_findings(self.analysis_snapshot)
                 if item.path in audited_paths
             )
         if self.analysis_snapshot is not None:
@@ -174,7 +179,8 @@ class RepositoryScanner:
 
             audited_paths = {path.relative_to(self.root).as_posix() for path in files}
             findings.extend(
-                item for item in silent_handler_fallthrough_findings(self.analysis_snapshot)
+                item
+                for item in silent_handler_fallthrough_findings(self.analysis_snapshot)
                 if item.path in audited_paths
             )
         if self.analysis_snapshot is not None:

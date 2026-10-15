@@ -48,7 +48,10 @@ DIRECT_CONTRACT_RULES = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class CompilerObservation:
-    """A location-bound checker observation; not a proven RQG violation."""
+    """A location-bound checker observation; not a proven RQG violation.
+
+    Store a native compiler diagnostic with source digest, line and provider identity.
+    """
 
     source_path: str
     source_sha256: str
@@ -63,6 +66,7 @@ class CompilerObservation:
 
 
 def _sha256(path: pathlib.Path) -> str:
+    """Compute the complete source-file digest used to bind compiler evidence to a version."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -72,7 +76,15 @@ def collect(
     *,
     timeout: int = 90,
 ) -> dict:
-    """Evaluate a frozen disk tree and check each compiler diagnostic's origin."""
+    """Evaluate a frozen disk tree and check each compiler diagnostic's origin.
+
+    Args:
+        source_root: pathlib.Path supplied to the source-bound collect analysis.
+        pyright_entry: pathlib.Path supplied to the source-bound collect analysis.
+        timeout: int supplied to the source-bound collect analysis.
+
+    Returns:
+        Source-backed compiler observations, without asserting successful execution of target code."""
     root = source_root.resolve(strict=True)
     entry = pyright_entry.resolve(strict=True)
     if not root.is_dir() or not entry.is_file():
@@ -189,7 +201,13 @@ def triage(report: dict, source_root: pathlib.Path) -> dict:
     Classify dependency-environment uncertainty separately from source-local
     contract issues. This does not silently discard any diagnostic, nor infer
     program behavior from developer-assigned identifier spellings.
-    """
+
+    Args:
+        report: dict supplied to the source-bound triage analysis.
+        source_root: pathlib.Path supplied to the source-bound triage analysis.
+
+    Returns:
+        Evidence-based classification of compiler observations by provider capabilities."""
     if report["schema"] != "rqg.compiler_observation.v1":
         raise ValueError("unsupported compiler report schema")
     root = source_root.resolve(strict=True)
@@ -252,6 +270,10 @@ def triage(report: dict, source_root: pathlib.Path) -> dict:
 
 
 def main() -> None:
+    """Run the compiler observation triage CLI and write explicit evidence and review outputs.
+
+    Returns:
+        None; results are stored on the visitor, emitted to the requested file, or resources are released."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_root", type=pathlib.Path)
     parser.add_argument("--pyright-entry", type=pathlib.Path, required=True)

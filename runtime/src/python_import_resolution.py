@@ -53,7 +53,13 @@ def resolve_local_import_symbol(
 
 
 def python_module_name(path: str) -> str:
-    """Return the normalized Python module identity from an authored relative path."""
+    """Return the normalized Python module identity from an authored relative path.
+
+    Args:
+        path: Original repository-relative or absolute source path, as required by the owner.
+
+    Returns:
+        Canonical module identity computed from the source file path."""
     module = path[:-3].replace("/", ".")
     if module == "__init__":
         return ""

@@ -26,6 +26,8 @@ class TestInstalledProfilePayload(unittest.TestCase):
             (bundle / "scripts" / "quality_guard.py").write_text(
                 "pass\n", encoding="utf-8"
             )
+            for script in ("evidence_lookup.py", "evidence_graph.py", "rule_lookup.py"):
+                (bundle / "scripts" / script).write_text("pass\n", encoding="utf-8")
             (bundle / "scripts" / "git_hook_install.py").write_text(
                 "pass\n", encoding="utf-8"
             )

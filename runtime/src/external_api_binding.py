@@ -104,6 +104,7 @@ def _top_level_bindings(tree: ast.Module) -> dict[str, str]:
 
 @lru_cache(maxsize=128)
 def _cached_bindings(tree: ast.Module) -> dict[str, str]:
+    """Reuse immutable module declaration bindings associated with the frozen source digest."""
     return _top_level_bindings(tree)
 
 
@@ -142,7 +143,15 @@ def bound_external_api(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     call: ast.Call,
 ) -> str | None:
-    """Resolve a call to a verified import identity or explicitly return UNKNOWN."""
+    """Resolve a call to a verified import identity or explicitly return UNKNOWN.
+
+    Args:
+        facts: Previously established facts used as the sole evidence input.
+        function: Source-bound function declaration, not a dynamically invoked object.
+        call: ast.Call supplied to the source-bound bound_external_api analysis.
+
+    Returns:
+        Authenticated external callable signatures and their binding evidence, or an unknown result."""
     if facts.tree is None or facts.repository_root is None:
         return None
     expr = call.func

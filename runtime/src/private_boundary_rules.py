@@ -1176,7 +1176,7 @@ def _is_frozen_dataclass_init_assignment(
     receiver: str,
     member_name: str,
 ) -> bool:
-    """识别 frozen dataclass 在 ``__init__`` 中的标准字段初始化。
+    """识别 frozen dataclass 在构造/后置构造中对声明字段的赋值。
 
     Args:
         node: 当前 ``object.__setattr__`` 调用节点。
@@ -1208,6 +1208,22 @@ def _is_frozen_dataclass_init_assignment(
             ast.ClassDef(),
         ):
             pass
+        case (
+            (
+                ast.FunctionDef(name="__post_init__")
+                | ast.AsyncFunctionDef(name="__post_init__")
+            ),
+            ast.ClassDef(),
+        ):
+            # Frozen derived/index state can only be assigned to an explicitly
+            # declared dataclass field. Unknown attribute names still BLOCK.
+            if not any(
+                isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.target.id == member_name
+                for statement in owner.body
+            ):
+                return False
         case _:
             return False
     for decorator in owner.decorator_list:

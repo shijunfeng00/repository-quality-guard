@@ -176,6 +176,9 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
     required = (
         "SKILL.md",
         "scripts/quality_guard.py",
+        "scripts/evidence_lookup.py",
+        "scripts/evidence_graph.py",
+        "scripts/rule_lookup.py",
         "scripts/git_hook_install.py",
         "runtime/install_dependencies.py",
         "runtime/dependencies.lock.json",
@@ -301,6 +304,8 @@ def _git_persistence_preflight(repo: Path, destination: Path) -> None:
     required = [
         relative / "SKILL.md",
         relative / "scripts" / "quality_guard.py",
+        relative / "scripts" / "evidence_lookup.py",
+        relative / "scripts" / "evidence_graph.py",
         relative / "scripts" / "git_hook_install.py",
         relative / "runtime" / "install_dependencies.py",
         relative / "runtime" / "src" / "workflow.py",

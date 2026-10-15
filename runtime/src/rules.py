@@ -46,6 +46,16 @@ class RuleEvaluator:
             if topology is not None
             else {}
         )
+        # Two first-party AST collectors represent nested lexical owners in
+        # different orders. Bind solely by an exact source declaration identity
+        # when their qualified-string keys disagree; never guess by name alone.
+        self._location_symbols: dict[tuple[str, int, str], str | None] = {}
+        for item in self._symbols.values():
+            key = (item.path.as_posix(), item.line, item.name)
+            if key in self._location_symbols:
+                self._location_symbols[key] = None
+            else:
+                self._location_symbols[key] = item.symbol_id
         # Per-evaluation fact indices: shared by QG001, QG013, and QG168.
         # Keep the topology's edge order, since it is observable audit evidence.
         self._incoming_edges: dict[str, list[UsageEdge]] = defaultdict(list)
@@ -256,7 +266,14 @@ class RuleEvaluator:
             cached = self._usage_evidence_cache[cache_key]
             if cached[0] is definition:
                 return cached[1]
-        if self.topology is None or definition.symbol_id not in self._symbols:
+        symbol_id = (
+            definition.symbol_id
+            if definition.symbol_id in self._symbols
+            else self._location_symbols.get(
+                (definition.path.as_posix(), definition.line, definition.name)
+            )
+        )
+        if self.topology is None or symbol_id is None:
             direct_callers = definition.calls
             direct_call_sites = definition.calls
             callable_consumers = definition.references
@@ -280,9 +297,9 @@ class RuleEvaluator:
             )
             nested = definition.nested
         else:
-            symbol = self._symbols[definition.symbol_id]
-            incoming_edges = self._incoming_edges[definition.symbol_id]
-            outgoing_edges = self._outgoing_edges[definition.symbol_id]
+            symbol = self._symbols[symbol_id]
+            incoming_edges = self._incoming_edges[symbol_id]
+            outgoing_edges = self._outgoing_edges[symbol_id]
             direct = tuple(
                 edge for edge in incoming_edges if edge.kind is UsageKind.DIRECT_CALL
             )
@@ -634,9 +651,7 @@ class RuleEvaluator:
         # A subclass override is an implementation relation, not automatically
         # a framework entry point. Root slots with incoming overrides are
         # protected separately; a redundant override remains reviewable.
-        protocol_hooks = (
-            int(usage["protocol_edges"]) - int(usage["outgoing_overrides"])
-        )
+        protocol_hooks = int(usage["protocol_edges"]) - int(usage["outgoing_overrides"])
         external_edges = bool(
             definition.externally_invoked
             or protocol_hooks

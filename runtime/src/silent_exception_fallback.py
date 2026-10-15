@@ -34,6 +34,7 @@ def _fallback(value: ast.AST | None, defaults: frozenset[str]) -> str | None:
 def _defaulted_parameters(
     method: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> frozenset[str]:
+    """Find parameters whose own declaration provides an explicit default value."""
     positional = (*method.args.posonlyargs, *method.args.args)
     names = (
         {arg.arg for arg in positional[len(positional) - len(method.args.defaults) :]}
@@ -52,10 +53,24 @@ class _HandlerVisitor(ast.NodeVisitor):
     """Visit the immediate function's handlers without borrowing nested scopes."""
 
     def __init__(self, defaults: frozenset[str]) -> None:
+        """Retain declared defaults and initialize the source-located fallback observations.
+
+        Args:
+            defaults: frozenset[str] passed to the source-bound __init__ operation.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         self.defaults = defaults
         self.fallbacks: list[tuple[ast.Try, ast.ExceptHandler, ast.Return, str]] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Exclude nested callable bodies from the current exception-handling owner.
+
+        Args:
+            node: ast.FunctionDef passed to the source-bound visit_FunctionDef operation.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         pass
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -63,6 +78,13 @@ class _HandlerVisitor(ast.NodeVisitor):
     visit_Lambda = visit_FunctionDef
 
     def visit_Try(self, node: ast.Try) -> None:
+        """Record directly returned sentinels from broad handlers without assuming business invalidity.
+
+        Args:
+            node: ast.Try passed to the source-bound visit_Try operation.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         for handler in node.handlers:
             broad = handler.type is None or (
                 isinstance(handler.type, ast.Name)
@@ -83,7 +105,13 @@ class _HandlerVisitor(ast.NodeVisitor):
 def silent_exception_fallback_findings(
     snapshot: RepositoryAnalysisSnapshot,
 ) -> tuple[Finding, ...]:
-    """Find unobserved broad exception-to-sentinel conversions in authored code."""
+    """Find unobserved broad exception-to-sentinel conversions in authored code.
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+    Returns:
+        Exception-handler fallback observations that require downstream contract review."""
     findings: list[Finding] = []
     for path in snapshot.paths:
         unit = snapshot.units[path]

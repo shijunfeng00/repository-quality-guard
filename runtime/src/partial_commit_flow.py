@@ -72,13 +72,21 @@ def _initial_fields(cls: ast.ClassDef) -> dict[str, str]:
     return result
 
 
-def _mutating_step(stmt: ast.stmt, receiver: str, fields: dict[str, str]) -> tuple[str, str] | None:
+def _mutating_step(
+    stmt: ast.stmt, receiver: str, fields: dict[str, str]
+) -> tuple[str, str] | None:
     """Recognize only explicit built-in mutations; no arbitrary method heuristics."""
     if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
         call = stmt.value
         if isinstance(call.func, ast.Attribute):
             field = _receiver_field(call.func.value, receiver)
-            if field is not None and fields.get(field) == "set" and call.func.attr == "add" and len(call.args) == 1 and not call.keywords:
+            if (
+                field is not None
+                and fields.get(field) == "set"
+                and call.func.attr == "add"
+                and len(call.args) == 1
+                and not call.keywords
+            ):
                 return field, "set.add"
     if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
         targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
@@ -98,15 +106,13 @@ def _handler_may_compensate(
     """Unknown recovery of either state must prevent a positive finding."""
     for part in ast.walk(handler):
         if isinstance(part, ast.Attribute):
-            if (
-                _receiver_field(part, receiver) in affected
-                and isinstance(part.ctx, (ast.Store, ast.Del))
+            if _receiver_field(part, receiver) in affected and isinstance(
+                part.ctx, (ast.Store, ast.Del)
             ):
                 return True
         if isinstance(part, ast.Subscript):
-            if (
-                _receiver_field(part.value, receiver) in affected
-                and isinstance(part.ctx, (ast.Store, ast.Del))
+            if _receiver_field(part.value, receiver) in affected and isinstance(
+                part.ctx, (ast.Store, ast.Del)
             ):
                 return True
         if isinstance(part, ast.Call) and isinstance(part.func, ast.Attribute):
@@ -126,8 +132,16 @@ def _returns_without_reraise(handler: ast.ExceptHandler) -> bool:
     )
 
 
-def partial_commit_findings(snapshot: RepositoryAnalysisSnapshot) -> tuple[Finding, ...]:
-    """Emit conditional R3 witnesses from the frozen source, not runtime guesses."""
+def partial_commit_findings(
+    snapshot: RepositoryAnalysisSnapshot,
+) -> tuple[Finding, ...]:
+    """Emit conditional R3 witnesses from the frozen source, not runtime guesses.
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+    Returns:
+        Conditional risks where separately proven writes can leave state partially committed."""
     findings: list[Finding] = []
     for path in snapshot.paths:
         unit = snapshot.units[path]
@@ -140,7 +154,8 @@ def partial_commit_findings(snapshot: RepositoryAnalysisSnapshot) -> tuple[Findi
             and part.id in {"set", "dict"}
             or isinstance(part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
             and part.name in {"set", "dict"}
-            or isinstance(part, ast.arg) and part.arg in {"set", "dict"}
+            or isinstance(part, ast.arg)
+            and part.arg in {"set", "dict"}
             or isinstance(part, (ast.Import, ast.ImportFrom))
             and any(alias.asname in {"set", "dict"} for alias in part.names)
             for part in ast.walk(unit.tree)
@@ -154,7 +169,10 @@ def partial_commit_findings(snapshot: RepositoryAnalysisSnapshot) -> tuple[Findi
             if not fields:
                 continue
             for method in cls.body:
-                if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) or not method.args.args:
+                if (
+                    not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    or not method.args.args
+                ):
                     continue
                 receiver = method.args.args[0].arg
                 for stmt in method.body:
@@ -181,8 +199,11 @@ def partial_commit_findings(snapshot: RepositoryAnalysisSnapshot) -> tuple[Findi
                         if prior is not None and prior[1] != field:
                             first, first_field, first_op = prior
                             if any(
-                                _handler_may_compensate(handler, receiver, {first_field, field})
-                                for handler in broad if _returns_without_reraise(handler)
+                                _handler_may_compensate(
+                                    handler, receiver, {first_field, field}
+                                )
+                                for handler in broad
+                                if _returns_without_reraise(handler)
                             ):
                                 break
                             findings.append(
@@ -205,7 +226,11 @@ def partial_commit_findings(snapshot: RepositoryAnalysisSnapshot) -> tuple[Findi
                                         "second_field": field,
                                         "second_operation": operation,
                                         "second_line": body_stmt.lineno,
-                                        "handler_lines": [h.lineno for h in broad if _returns_without_reraise(h)],
+                                        "handler_lines": [
+                                            h.lineno
+                                            for h in broad
+                                            if _returns_without_reraise(h)
+                                        ],
                                         "capability": "SOURCE_BOUND_PARTIAL_COMMIT_OPEN_RUNTIME",
                                         "status": "CONDITIONAL_REVIEW_NOT_CONFIRMED_FAILURE",
                                     },

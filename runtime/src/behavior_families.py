@@ -38,7 +38,12 @@ def family_rows(
     Every counted item must come from the real scanner. No UNKNOWN is treated
     as a defect. 'Proven contract' means source-contract evidence, not that a
     production incident occurred. Results are deterministic across runs.
-    """
+
+    Args:
+        findings: tuple[Finding, ...] | list[Finding] supplied to the source-bound family_rows analysis.
+
+    Returns:
+        Only behavior-family counters grouped from QG findings already produced by the scanner."""
     grouped: dict[str, list[Finding]] = defaultdict(list)
     owner = {code: family for family, codes in _FAMILY_RULES for code in codes}
     for item in findings:

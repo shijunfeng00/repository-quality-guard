@@ -26,6 +26,43 @@ RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并�
 
 `QG192` 仍独立负责 implementation-history/change-detector test；只有写入具体版本、RC、tag 或 SHA 身份时，才同时进入 QG203/QG205。
 
+### 仓库证据 CLI（只读定位，不代替裁决）
+
+处理 QG finding 前，先运行同一个 `scripts/evidence_lookup.py`：
+
+```bash
+python scripts/evidence_lookup.py --rule QG004 --repo /repo --api "数据契约消费"
+python scripts/evidence_lookup.py --repo /repo --rule QG004 \
+  --file runtime/src/topology_facts.py --line 396 \
+  --name _incoming_index --kind variable --direction callers --depth 3
+python scripts/evidence_lookup.py --repo /repo \
+  --file pkg/module.py --line 88 --name Handler --kind class
+python scripts/evidence_lookup.py --repo /repo --graph-stats
+python scripts/evidence_lookup.py --repo /repo \
+  --symbol pkg.module.Consumer.method --variable self.provider --depth 3
+```
+
+`--file`（仓库相对路径）、`--line`（1-based）是可直接从告警位置使用的定位契约；
+`--kind function/class/variable/auto` 决定追踪关系；`--symbol` 加 `--trace` 也可输出 Trace。
+输出包含 `文件:行号`、真实调用点 ± 上下文行、可能形参传导、局部赋值与继承声明。
+只有已有源绑定的 `DIRECT_CALL` 可称“已解析”；静态类型/唯一构造来源对应
+`MAY_DISPATCH`（源码类型约束的可能目标，不能等同运行时真实调用）；
+同名无 owner 证据仅 `[UNKNOWN]` 词法候选。v0.22.5 Graph hotfix 统一
+`--symbol` 与 `--file/--line` 为同一证据 Trace：支持函数形参静态注解、未重绑定的
+局部构造对象、简单 `self.field` 构造或注入字段；跨对象构造器调用点可沿
+`self.field → __init__ 形参 → 调用方实参 → 调用方构造字段` 展示源码赋值候选。
+仅当源码显式绑定且已观察调用点未发生类型冲突或未知注入，才建立 MAY_DISPATCH；
+祖父类单一路径的方法声明可查询，多继承冲突不猜测 Python 运行时 MRO。
+`--graph-stats` 给出函数调用图弱连通分量、最大分量及未连接节点；这是可观测覆盖指标，
+不是准确率，不能强行追求 100% 连通。多层属性别名、动态赋值和
+开放多态保持 OPEN_WORLD。任何图补边必须有独立外部仓库正反 Cases 的
+文件:行号及误连边反例，不得为增加连通率强行提升为 DIRECT_CALL。
+跨语言、动态派发、对象别名及不可达性未证明时保持 UNKNOWN，不虚构运行时堆栈。
+缓存是可再生的仓库外 JSON 图，按所有分析源码 SHA256 + 分析器身份失效，
+同一快照可复用，`--cache-dir` 可指定目录；API Catalog 仍使用原生 BM25 保鲜。
+Agent 必须逐个核验真实 Producer/Consumer/Guard/Case；找不到边不等于没有调用者。
+任何稳定 QG 的检测器修改必须先有独立正反 Case 及用户裁决。
+
 ## 1. 稳定命令
 
 Agent-facing CLI 只保留四个一级命令：
@@ -129,14 +166,44 @@ python scripts/quality_guard.py audit <repo> --diff-base <commit>
 收到一个或多个 `QGxxx` Finding 后，**在修改生产代码、填写 JUSTIFIED 或批准修复前**，必须先按编号检索权威修复规则；不得仅依据报告中的短消息或严重度直接整改。
 
 ```bash
-python "$QG/scripts/rule_lookup.py" -QG123 -QG153
-# 在解压后的 Skill 根目录下：
-python scripts/rule_lookup.py -QG153 -QG176
+python "$QG/scripts/evidence_lookup.py" --rule QG123 --rule QG153
+# 原 `rule_lookup.py -QG123` 保持兼容，但新任务推荐统一查询入口：
+python scripts/evidence_lookup.py --rule QG153 --rule QG176
 ```
 
 命令直接从 `references/RULES.md` 批量输出 Markdown：规则定义、对应规则族的真实风险、正确修复方向、禁止做法和原文行号。可离线执行，无须目标仓库、API catalog 或额外依赖。编号未知时明确失败，不猜测修复办法。
 
 查询后仍必须核验 Finding 的现场源码与上下游 Producer → Schema → Consumer、真实 Owner 和调用方；`RULES.md` 是修复指导而不是静态规则绝对正确的证明。结论矛盾时登记可复现的 RQG BUG，不得为了消掉 Finding 破坏正确契约。对同一 owner / 契约的批量 Finding 可合并检索和裁决，无须重复写长报告。
+
+### QG003/QG004 已裁决的稳定规则变更（P0）
+
+本次经用户授权，修复普通类/多层继承 `get` 被误判为 Mapping，
+保留真实字典和 `self._data.get` 路径；QG004 将明确的空结果与
+随机非空哨兵严格区别，结合返回注解、必需 Schema 与稀疏生产者 Case。
+在 `RULES.md` 查询该编号时，必须同时展示新修复方向、正反 Case，
+并使用本 CLI 追查真实方法 owner / 参数来源及所有可见 Producer；
+映射字段需要时由业务 Fail-Fast，而不是为降低告警直接放弃检查。
+本次不改变 QG033。所有规则实现仍需官方全量自审和只读 verify
+通过后方可宣称 v0.22.5 正式发布。
+
+### 仓库证据查询（P0：QG 规则 + 静态调用图统一入口）
+
+对 `.get()`、可能缺失、空值/异常兜底、继承分派或跨函数缺陷整改，**不仅检索 QG 规则，还必须主动查询 upstream callers / owner / source**；不能仅凭当前代码片段、类型系统允许或告警消息判断业务需求。
+
+```bash
+python "$QG/scripts/evidence_lookup.py" --rule QG003 --rule QG004 \
+  --api "consumer validation" --repo /path/to/repository \
+  --symbol package.module.consumer --direction callers --depth 3
+# 查询单个符号的直接调用上游/下游，缺省只查上游
+python "$QG/scripts/evidence_lookup.py" --repo /path/to/repository \
+  --symbol package.module.consumer --direction both --depth 2
+# 不涉及源码图时，只查权威规则
+python "$QG/scripts/evidence_lookup.py" --rule QG033
+```
+
+`--api` 直接复用现有 `doc-search` 的 BM25 API Catalog 和强源码摘要保鲜，仅更新可再生的 `docs/api-reference/` 缓存（无新图数据库），不复刻 BM25/parser；候选搜索不证明 owner 唯一，必须明确 `--symbol` 选择要追的函数。工具复用现有 RepositoryTopology，不运行被审计代码，不额外安装图索引。只输出静态已解析的直接调用边、声明位置和有限源码片段，**不证明某条调用路径实际执行，也不证明全部合法 caller 已发现**。多态、回调、跨语言、动态调用等未覆盖的边必须明确按 UNKNOWN 处理；无边不得推出业务不可达。`--direction callers` 用于从报错函数逆向看已知调用链；`--direction both` 帮助人工阅读相关的 producer/consumer，不是强制无限展开全图。
+
+Agent 必须实际打开相应函数体、schema、校验入口和测试 Case，证明真实可达的合法缺失是否存在、guard 是否支配当前消费点、值是否变异以及失败时是否有独立业务语义。不存在合法缺失 Case 时，required contract 直接访问并 fail-fast；不得因为 `NotRequired` 或 `.get()` 本身语法有效就放行。处理稳定 QG 疑似误报时，记录成对 Cases 并上报人工裁决；不可擅改既有稳定 QG。旧 `rule_lookup.py` 作为兼容命令保留，无需学习第二套图服务。
 
 ### `verify`
 

@@ -9,7 +9,51 @@
 
 ### QG Finding 的标准修复入口
 
-任何 `QGxxx` 告警在修改代码前，先运行 `python scripts/rule_lookup.py -QG123 -QG153`（以实际编号替换；可批量），读取 `references/RULES.md` 的规则定义、修复方向及禁止做法。然后核实 Producer → Schema → Consumer / Owner → Caller → Adapter 的真实源码证据，确定问题与修复归属、编写对应行为验证并重审。不得把 Finding 消失当成修复成功；如规则本身与权威契约冲突，登记有正反 Case 的 RQG BUG，而不是改坏正确代码。
+任何 `QGxxx` 告警在修改代码前，先运行 `python scripts/evidence_lookup.py --rule QG123 --rule QG153`（以实际编号替换；可批量），读取 `references/RULES.md` 的权威定义、修复方向及禁止做法；原 `scripts/rule_lookup.py` 继续兼容。已有能力/接口定位时同一个命令加 `--api "能力描述" --repo <仓库根>`（复用正式 BM25 doc-search 和源码保鲜），再加 `--symbol <完整符号ID> --direction callers --depth 3` 查询上下游，取得既有图的静态已解析调用关系及真实源码定位，随后手动阅读完整函数体和 Producer / Schema / Consumer / Effect，不能凭片段猜测。图中无边、多态或 UNKNOWN 不等于调用不可能发生。Case 驱动证明合法输入/状态确实可达、缺失是否属于业务结果还是 invariant 违约、上游 guard 是否支配且未发生重赋值。**类型声明 NotRequired/Optional、框架允许缺失不构成业务 Case 证据**。必要时构造正反 Case 并与稳定基线比较；告警与真实契约冲突时只登记 RULE_BUG 待裁决，未经授权不改稳定 QG 的判定算法。Finding 消失不等于修复成功。
+
+### 已裁决 QG003 / QG004 的业务 Case 要求
+
+检测器与业务代码的正确性都应由真实输入→输出 Case 判断，而不是由语法、
+默认值样式或实现细节直接判定。对于 QG003，先查接收者的类型、真实
+方法 owner、父/祖父类和初始化字段；普通 `get()` 与 Mapping.get
+必须区别，内部委托给字典的调用依旧审查。对于 QG004，先区分
+`None` / 空字符串 / 空列表等有明确接口含义的返回与伪造的非空
+`UNKNOWN` / 假 ID；`Optional` 注解只是返回值允许为空的证据，
+仍需调用方及业务 Producer 验证空结果确实可达，不能将必需字段
+静默变为默认。人工裁决以正反 Case 和上下游源码为准。
+QG033 暂无本轮规则修改授权，不得借 QG003/004 变更一起豁免。
+
+### 有效缺失 Case 的验证门槛
+
+判断 `.get(key)` 是否必要时，不以“类型标了可选”或“语法允许”为结论。
+先证明 producer 可能产生未命中，之后验证 consumer 将其转入
+明确、非空操作的业务分支；如果缺失违反 schema/invariant，应 Fail-Fast。
+静态证明有限时，继续以 UNKNOWN 保留复核，不得改写为等价 `if key in`
+规避检测。正反 Case 必须使用实际输入→输出和真实 Scanner Finding 验收，
+并使用其它仓库同类调用/字段保留原 Finding 身份的回归对照。
+
+### 仓库记忆：先查询、再裁决
+
+针对源码 `文件:行号`，优先用 `evidence_lookup.py --repo ... --file ... --line ... --name ... --kind function|class|variable`。
+变量追踪必须显示真实调用边上 **实参→形参**、所在函数候选赋值及附近源码，而不是只显示函数头。
+类追踪展示继承/覆盖关系；函数追踪展示调用位置和多层静态链。
+`DIRECT_CALL` 与 `MAY_DISPATCH` 是两种不同证据：前者源码精确绑定，后者
+由类型注解、局部构造或构造函数初始化字段建立可能调用边（多态仍 OPEN）。
+`--symbol`、`--file`/`--line` 统一展示调用点和上游来源；使用前先看边置信度，
+不允许把 MAY_DISPATCH 当做程序必然执行/Guard 支配的证明。
+可用 `--graph-stats` 量化已解析的函数调用连通性，用 `--variable self.field`
+追查跨构造器注入字段的来源：核对 `Class.__init__` 里的字段写入、上游构造调用
+的 keyword/positional 实参以及源字段自己的构造表达式。多继承冲突、不完整调用点
+或未标注动态接收者保持 UNKNOWN；不要通过同名函数近似匹配提高连通率。
+`--cache-dir` 生成仓库外内容摘要索引，改动源码或者 RQG Provider 后均须重建，
+不能复用过期图。CodeGraph 1.6.2 可借鉴抽取/解析解耦、别名、反向 BFS、源码位点、
+未解析事实保留的架构，但低置信猜测边不得直接成为质量审计的确定证据。
+查询输出的 `[UNKNOWN]` 和缓存 `HIT` 只说明 provider 覆盖与快照状态；
+**不是** runtime Traceback、字段必有证据、CFG 支配或业务 Case 合法性的替代物。
+
+Case 驱动单元测试应检查：对真实受影响源码运行 CLI 后，是否能够读到正确生产者、形参绑定、调用点、缺失 Case 及必要的反例。
+避免测试固定内部辅助函数名、实现步骤或 AST 解析器组织方式；只要证据的业务语义不变，内部实现可重构。
+当现有图不足以回答必需证据链时，应暴露缺口并保留 UNKNOWN，不能用猜测补齐或据此擅改稳定 QG。
 
 ## 1. 总体原则
 

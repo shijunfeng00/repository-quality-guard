@@ -57,6 +57,7 @@ def _imported_contracts(
 
 
 def _marker(node: ast.expr, imports: dict[str, str]) -> str:
+    """Resolve the authored Required or NotRequired annotation marker without runtime evaluation."""
     if isinstance(node, ast.Name):
         value = imports.get(node.id, "")
         return value if value in _SCHEMA_MARKERS | _REQUIRED_MARKERS else ""
@@ -69,6 +70,7 @@ def _marker(node: ast.expr, imports: dict[str, str]) -> str:
 def _unwrap_annotation(
     annotation: ast.expr, imports: dict[str, str], total: bool
 ) -> tuple[ast.expr, bool] | None:
+    """Extract the underlying schema field annotation and explicit requirement flag."""
     if isinstance(annotation, ast.Subscript):
         marker = _marker(annotation.value, imports)
         if marker in _REQUIRED_MARKERS:
@@ -88,12 +90,14 @@ def _unwrap_annotation(
 
 
 def _binding(annotation: ast.expr, shadowed: frozenset[str]) -> str:
+    """Return a source-only type binding for one explicit annotated expression."""
     if isinstance(annotation, ast.Name) and annotation.id in _BUILTIN_TYPES:
         return "BUILTIN" if annotation.id not in shadowed else "OPEN_REFERENCE"
     return "OPEN_REFERENCE"
 
 
 def _literal_keys(value: ast.expr | None) -> tuple[str, ...]:
+    """Extract exact string keys from an authored closed dictionary literal."""
     if not isinstance(value, ast.Dict):
         return ()
     keys: list[str] = []
@@ -109,6 +113,7 @@ def _declared_schema(
     schemas: dict[str, str],
     shadowed: frozenset[str],
 ) -> tuple[str, str] | None:
+    """Resolve an explicitly declared TypedDict return annotation to a unique schema."""
     if isinstance(annotation, ast.Name) and annotation.id in schemas:
         return schemas[annotation.id], "DECLARED_RETURN"
     if not isinstance(annotation, ast.Subscript) or not isinstance(
@@ -132,9 +137,9 @@ def _declared_schema(
     return None
 
 
-
-
-def _authored_returns(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[ast.Return, ...]:
+def _authored_returns(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.Return, ...]:
     """Collect branch/handler returns without crossing another lexical owner.
 
     A nested function or lambda has its own return contract; assigning its
@@ -143,10 +148,31 @@ def _authored_returns(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple
     returns: list[ast.Return] = []
 
     class FindReturns(ast.NodeVisitor):
+        """Collect immediate function return statements without crossing lexical owners.
+
+        All observations remain local to the parsed source; runtime execution is not inferred.
+        """
+
         def visit_Return(self, statement: ast.Return) -> None:
+            """Record a return statement belonging to the current function body.
+
+            Args:
+                statement: ast.Return input used by the visit_Return analysis.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             returns.append(statement)
 
         def visit_FunctionDef(self, statement: ast.FunctionDef) -> None:
+            """Stop at nested functions so their returns never belong to the outer function.
+
+            Args:
+                statement: ast.FunctionDef input used by the visit_FunctionDef analysis.
+
+            Returns:
+                None; updates the collector state or intentionally skips this lexical scope.
+            """
             return
 
         visit_AsyncFunctionDef = visit_FunctionDef

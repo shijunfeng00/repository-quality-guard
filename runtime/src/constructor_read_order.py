@@ -61,7 +61,13 @@ def _read_before_write(stmt: ast.stmt, receiver: str) -> tuple[ast.Attribute, ..
 def constructor_read_order_findings(
     snapshot: RepositoryAnalysisSnapshot,
 ) -> tuple[Finding, ...]:
-    """Witness a literal constructor read that precedes any authored write."""
+    """Witness a literal constructor read that precedes any authored write.
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+    Returns:
+        Source-bound constructor read-before-write findings; unresolved paths are not declared safe."""
     rows: list[Finding] = []
     for path in snapshot.paths:
         unit = snapshot.units[path]

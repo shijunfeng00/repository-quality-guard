@@ -45,9 +45,11 @@ def typed_producer_contract_findings(
     for producer in topology.typed_producers:
         if producer.kind not in {"OBSERVED_RETURN_LITERAL", "ANNOTATED_ASSIGNMENT"}:
             continue
-        if producer.kind == "OBSERVED_RETURN_LITERAL" and (
-            producer.schema_symbol_id, producer.producer_symbol_id
-        ) not in direct_return_producers:
+        if (
+            producer.kind == "OBSERVED_RETURN_LITERAL"
+            and (producer.schema_symbol_id, producer.producer_symbol_id)
+            not in direct_return_producers
+        ):
             continue
         fields = required.get(producer.schema_symbol_id)
         if not fields:
@@ -64,10 +66,14 @@ def typed_producer_contract_findings(
         for node in ast.walk(unit.tree):
             if getattr(node, "lineno", None) != producer.line:
                 continue
-            if producer.kind == "OBSERVED_RETURN_LITERAL" and isinstance(node, ast.Return):
+            if producer.kind == "OBSERVED_RETURN_LITERAL" and isinstance(
+                node, ast.Return
+            ):
                 if isinstance(node.value, ast.Dict):
                     candidates.append(node.value)
-            elif producer.kind == "ANNOTATED_ASSIGNMENT" and isinstance(node, ast.AnnAssign):
+            elif producer.kind == "ANNOTATED_ASSIGNMENT" and isinstance(
+                node, ast.AnnAssign
+            ):
                 if isinstance(node.value, ast.Dict):
                     candidates.append(node.value)
         if len(candidates) != 1:
@@ -113,4 +119,6 @@ def typed_producer_contract_findings(
                 source="source-bound-r3",
             )
         )
-    return sorted(results, key=lambda finding: (finding.path, finding.line, finding.symbol))
+    return sorted(
+        results, key=lambda finding: (finding.path, finding.line, finding.symbol)
+    )

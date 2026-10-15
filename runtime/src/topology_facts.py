@@ -7,7 +7,7 @@ those facts are available.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -214,7 +214,10 @@ class FieldInitializationFact:
 
 @dataclass(slots=True, frozen=True)
 class ConstructorLifecycleFact:
-    """Authored constructor and C3 observation, not a runtime MUST claim."""
+    """Authored constructor and C3 observation, not a runtime MUST claim.
+
+    Keep only source-certified constructor owner and C3 inheritance observations.
+    """
 
     path: Path
     line: int
@@ -232,7 +235,10 @@ class ConstructorLifecycleFact:
 
 @dataclass(slots=True, frozen=True)
 class TypedSchemaFieldFact:
-    """One authored TypedDict field; spelling is never a type/effect proof."""
+    """One authored TypedDict field; spelling is never a type/effect proof.
+
+    Bind required TypedDict fields to declared source identities and exact annotations.
+    """
 
     schema_symbol_id: str
     path: Path
@@ -247,7 +253,10 @@ class TypedSchemaFieldFact:
 
 @dataclass(slots=True, frozen=True)
 class TypedProducerFact:
-    """A source-located producer declaration, not verified runtime output."""
+    """A source-located producer declaration, not verified runtime output.
+
+    Describe the origin and literal keys of a statically authored schema producer.
+    """
 
     schema_symbol_id: str
     producer_symbol_id: str
@@ -261,7 +270,10 @@ class TypedProducerFact:
 
 @dataclass(slots=True, frozen=True)
 class TypedConsumerFact:
-    """Located TypedDict field read with syntactic guard, never a runtime proof."""
+    """Located TypedDict field read with syntactic guard, never a runtime proof.
+
+    Represent typed field reads and the limited guards witnessed at the consumer.
+    """
 
     schema_symbol_id: str
     consumer_symbol_id: str
@@ -302,7 +314,10 @@ class ParameterForwardingFact:
 
 @dataclass(slots=True, frozen=True)
 class ExceptionHandlerReadFact:
-    """Conditional local-unbound read on a caught RHS-exception path."""
+    """Conditional local-unbound read on a caught RHS-exception path.
+
+    Link a handler read to a potentially interrupted local assignment, not a guaranteed exception.
+    """
 
     path: Path
     line: int
@@ -336,6 +351,34 @@ class RepositoryTopology:
     typed_consumers: tuple[TypedConsumerFact, ...] = ()
     parameter_forwardings: tuple[ParameterForwardingFact, ...] = ()
     exception_handler_reads: tuple[ExceptionHandlerReadFact, ...] = ()
+    _incoming_index: dict[str, tuple[UsageEdge, ...]] = field(
+        init=False, repr=False, compare=False
+    )
+    _outgoing_index: dict[str, tuple[UsageEdge, ...]] = field(
+        init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        """Build stable source/target indices from the immutable edge collection.
+
+        Returns:
+            None; the declared derived indices are initialized exactly once.
+        """
+        incoming: dict[str, list[UsageEdge]] = {}
+        outgoing: dict[str, list[UsageEdge]] = {}
+        for edge in self.edges:
+            incoming.setdefault(edge.target_id, []).append(edge)
+            outgoing.setdefault(edge.source_id, []).append(edge)
+        object.__setattr__(
+            self,
+            "_incoming_index",
+            {key: tuple(rows) for key, rows in incoming.items()},
+        )
+        object.__setattr__(
+            self,
+            "_outgoing_index",
+            {key: tuple(rows) for key, rows in outgoing.items()},
+        )
 
     def incoming(
         self, target_id: str, kinds: tuple[UsageKind, ...] = ()
@@ -350,10 +393,11 @@ class RepositoryTopology:
             Incoming edges in stable repository order.
         """
         accepted = frozenset(kinds)
-        return tuple(
-            edge
-            for edge in self.edges
-            if edge.target_id == target_id and (not accepted or edge.kind in accepted)
+        rows = self._incoming_index.get(target_id, ())
+        return (
+            rows
+            if not accepted
+            else tuple(edge for edge in rows if edge.kind in accepted)
         )
 
     def state_components(self, owner_id: str) -> tuple[tuple[str, ...], ...]:
@@ -417,10 +461,11 @@ class RepositoryTopology:
             Outgoing edges in stable repository order.
         """
         accepted = frozenset(kinds)
-        return tuple(
-            edge
-            for edge in self.edges
-            if edge.source_id == source_id and (not accepted or edge.kind in accepted)
+        rows = self._outgoing_index.get(source_id, ())
+        return (
+            rows
+            if not accepted
+            else tuple(edge for edge in rows if edge.kind in accepted)
         )
 
 

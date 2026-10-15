@@ -18,6 +18,10 @@ from tools.spike_core.python_compiler_provider import project_compiler_targets
 
 
 def main() -> None:
+    """Run the standalone compiler-source binding probe and write the requested JSON evidence.
+
+    Returns:
+        None; results are stored on the visitor, emitted to the requested file, or resources are released."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_root", type=pathlib.Path)
     parser.add_argument("--max-calls", type=int, default=120)

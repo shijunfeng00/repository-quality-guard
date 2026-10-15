@@ -29,9 +29,13 @@ def _handler_kind(handler: ast.ExceptHandler) -> tuple[str, str | None] | None:
     if isinstance(statement, ast.Continue):
         return ("continue", None)
     if isinstance(statement, ast.Assign):
-        if len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+        if len(statement.targets) != 1 or not isinstance(
+            statement.targets[0], ast.Name
+        ):
             return None
-        if isinstance(statement.value, ast.Constant) and (statement.value.value is None or statement.value.value is False):
+        if isinstance(statement.value, ast.Constant) and (
+            statement.value.value is None or statement.value.value is False
+        ):
             return ("assign_sentinel", statement.targets[0].id)
     if isinstance(statement, ast.AnnAssign):
         if (
@@ -47,9 +51,20 @@ class _Visitor(ast.NodeVisitor):
     """Keep nested lexical functions separate so witnesses are not duplicated."""
 
     def __init__(self) -> None:
+        """Initialize the collection of source-local broad exception handler observations.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         self.rows: list[tuple[ast.Try, ast.ExceptHandler, str, str | None]] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Stop at nested definitions so handler findings belong to their actual owner.
+
+        Args:
+            node: ast.FunctionDef passed to the source-bound visit_FunctionDef operation.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         return
 
     visit_AsyncFunctionDef = visit_FunctionDef
@@ -57,6 +72,13 @@ class _Visitor(ast.NodeVisitor):
     visit_Lambda = visit_FunctionDef
 
     def visit_Try(self, node: ast.Try) -> None:
+        """Inspect each authored handler and retain only recognized suppression paths.
+
+        Args:
+            node: ast.Try passed to the source-bound visit_Try operation.
+
+        Returns:
+            None; results are stored on the visitor, emitted to the requested file, or resources are released."""
         for handler in node.handlers:
             kind = _handler_kind(handler)
             if kind is not None:
@@ -67,7 +89,13 @@ class _Visitor(ast.NodeVisitor):
 def silent_handler_fallthrough_findings(
     snapshot: RepositoryAnalysisSnapshot,
 ) -> tuple[Finding, ...]:
-    """Find broad exception suppression with no logging, calls or re-raise."""
+    """Find broad exception suppression with no logging, calls or re-raise.
+
+    Args:
+        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+    Returns:
+        Potential exception swallowing or fallthrough observations with source locations."""
     findings: list[Finding] = []
     for path in snapshot.paths:
         unit = snapshot.units[path]
@@ -77,7 +105,8 @@ def silent_handler_fallthrough_findings(
         for parent in unit.tree.body:
             if isinstance(parent, ast.ClassDef):
                 methods = [
-                    item for item in parent.body
+                    item
+                    for item in parent.body
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
                 ]
             elif isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):

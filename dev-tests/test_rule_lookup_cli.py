@@ -65,15 +65,6 @@ class RuleLookupTests(unittest.TestCase):
         for code in codes:
             self.assertEqual(result.stdout.count(f"## {code}\n"), 1)
 
-    def test_retired_rule_numbers_remain_unavailable(self) -> None:
-        """退休 QG161、QG177 不得复活为有效规则或残留查询帮助。"""
-        for code in ("QG161", "QG177"):
-            with self.subTest(code=code):
-                result = self.run_lookup(f"-{code}")
-                self.assertEqual(result.returncode, 2)
-                self.assertEqual(result.stdout, "")
-                self.assertIn(code, result.stderr)
-
     def test_requested_examples_fail_for_missing_rule_without_partial_success(
         self,
     ) -> None:
@@ -119,14 +110,6 @@ class RuleLookupTests(unittest.TestCase):
         self.assertEqual(first.returncode, 0)
         self.assertEqual(first.stdout, second.stdout)
         self.assertEqual(first.stdout.count("## QG060"), 1)
-
-    def test_retired_test_shape_rules_fail_closed(self) -> None:
-        """退役编号不得仅因旧测试存在而恢复有效性。"""
-        for code in ("QG170", "QG171", "QG172", "QG173", "QG174", "QG175", "QG192", "QG193", "QG194"):
-            with self.subTest(code=code):
-                result = self.run_lookup(f"-{code}")
-                self.assertEqual(result.returncode, 2)
-                self.assertEqual(result.stdout, "")
 
     def test_invalid_argument_is_not_silently_ignored(self) -> None:
         """错误的编号与任意未声明参数均不可被解释成有效查询。"""

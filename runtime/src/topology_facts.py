@@ -50,6 +50,7 @@ class UsageKind(StrEnum):
     MAY_DISPATCH = "may_dispatch"
     CALLABLE_REFERENCE = "callable_reference"
     CALLBACK_REGISTRATION = "callback_registration"
+    MAY_CALLBACK = "may_callback"
     PROTOCOL_HOOK = "protocol_hook"
     OVERRIDE = "override"
     STATIC_POLYMORPHIC_DISPATCH = "static_polymorphic_dispatch"

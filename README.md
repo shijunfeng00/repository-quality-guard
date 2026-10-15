@@ -3,7 +3,6 @@
 # Repository Quality Guard
 
 #
-> 已退役：QG170–QG175 与 QG192–QG194 原单测形状审计不再生成 Finding；真实测试执行失败仍独立阻断交付。v0.22.6 将重建测试业务行为契约。
 
 ## A standardized high-quality development and audit workflow for Coding Agents
 

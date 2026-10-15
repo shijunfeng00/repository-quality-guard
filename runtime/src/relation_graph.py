@@ -776,6 +776,44 @@ class RepositoryRelationGraph:
         if caller_node is None or not caller_node.owner:
             return None
         class_id = f"{module}.{caller_node.owner}" if module else caller_node.owner
+        # Nested closures keep their lexical method as owner, not their class.
+        # Resolve a captured ``self`` only when the collector has a specific
+        # capture fact linking this function to a method of a known class.
+        if class_id not in self.nodes or self.nodes[class_id].kind != "class":
+            capturers = {
+                outer_id
+                for nested_id, outer_id, variable, _line in self._pending_closure_captures
+                if nested_id == caller_node.node_id and variable == parts[0]
+            }
+            if len(capturers) == 1:
+                outer_id = next(iter(capturers))
+                outer = self.nodes.get(outer_id)
+                if outer is not None and outer.kind == "method":
+                    # Verify this lexical capture actually binds the class
+                    # instance formal, rather than a reassigned local named self.
+                    unit = self.snapshot.units.get(outer.path)
+                    outer_method = next(
+                        (
+                            node for node in ast.walk(unit.tree)
+                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                            and node.lineno == outer.line and node.name == outer.name
+                        ),
+                        None,
+                    ) if unit is not None and unit.tree is not None else None
+                    if outer_method is None:
+                        return None
+                    formals = [*outer_method.args.posonlyargs, *outer_method.args.args]
+                    if not formals or formals[0].arg != parts[0]:
+                        return None
+                    for statement in outer_method.body:
+                        for item in ast.walk(statement):
+                            if isinstance(item, ast.Name) and item.id == parts[0] and isinstance(item.ctx, (ast.Store, ast.Del)):
+                                return None
+                    outer_class = f"{outer.module}.{outer.owner}" if outer.module else outer.owner
+                    if outer_class in self.nodes and self.nodes[outer_class].kind == "class":
+                        class_id = outer_class
+        if class_id not in self.nodes or self.nodes[class_id].kind != "class":
+            return None
         if parts[0] in {"self", "cls"}:
             if len(parts) == 2:
                 return self._resolve_class_method(class_id, parts[1])
@@ -1344,6 +1382,9 @@ def normalized_topology(
     from .typed_receiver_graph import typed_receiver_edges
 
     edges.update(typed_receiver_edges(graph))
+    from .executor_dispatch_edges import executor_dispatch_edges
+
+    edges.update(executor_dispatch_edges(graph, edges))
     if dependency_resolver is not None:
         _populate_external_protocols(
             graph, source, dependency_resolver, owner_map, symbol_map, edges

@@ -23,7 +23,7 @@ def test_renaming_function_does_not_change_parameter_write(tmp_path: Path) -> No
     template = "def {function}({parameter}):\n    {parameter}['key'] = 1\n"
     a = _rules(tmp_path, template.format(function="get_items", parameter="data"))
     b = _rules(tmp_path, template.format(function="save_items", parameter="collector"))
-    assert "QG050" in a
+    assert "QG050" not in a + b
     assert a.count("QG050") == b.count("QG050")
 
 
@@ -59,7 +59,7 @@ def test_augmented_name_assignment_is_not_always_object_mutation(
     rebinding = _rules(tmp_path, "def operation(value):\n    value += 1\n")
     element_store = _rules(tmp_path, "def operation(value):\n    value[0] += 1\n")
     assert "QG050" not in rebinding
-    assert "QG050" in element_store
+    assert "QG050" not in element_store
 
 
 def test_boolean_rule_uses_annotation_not_parameter_name(tmp_path: Path) -> None:

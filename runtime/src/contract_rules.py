@@ -183,9 +183,64 @@ def check_contract_rules(
     nodes = direct_body_nodes(node)
     findings: list[Finding] = []
     findings.extend(check_type_probe_rules(facts, node, nodes, qualname))
+    findings.extend(check_required_mapping_default_rules(facts, node, nodes, qualname))
     findings.extend(check_length_contract_rules(facts, node, nodes, qualname))
     findings.extend(check_field_contract_rules(facts, node, nodes, qualname))
     findings.extend(check_runtime_contract_rules(facts, node, nodes, qualname))
+    return findings
+
+
+def check_required_mapping_default_rules(
+    facts: ModuleFacts,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    nodes: list[ast.AST],
+    qualname: str,
+) -> list[Finding]:
+    """Detect a required concrete mapping silently accepting ``None`` as empty.
+
+    Only a real, unshadowed ``dict`` formal without a default is sufficient
+    evidence. Optional/untyped inputs, fields, aliases and name-only guesses
+    intentionally stay outside this bounded rule.
+    """
+    positional = (*function.args.posonlyargs, *function.args.args)
+    defaulted = {arg.arg for arg in positional[len(positional) - len(function.args.defaults):]}
+    defaulted.update(
+        arg.arg for arg, default in zip(function.args.kwonlyargs, function.args.kw_defaults)
+        if default is not None
+    )
+    required = {
+        arg.arg
+        for arg in all_parameters(function)
+        if arg.arg not in defaulted
+        and arg.annotation is not None
+        and root_annotation_name(arg.annotation) == "dict"
+        and _builtin_type_unshadowed(facts, function, "dict")
+        and not _scope_rebinds(function, arg.arg)
+    }
+    findings: list[Finding] = []
+    for item in nodes:
+        if not (
+            isinstance(item, ast.BoolOp) and isinstance(item.op, ast.Or)
+            and len(item.values) == 2
+            and isinstance(item.values[0], ast.Name)
+            and item.values[0].id in required
+            and isinstance(item.values[1], ast.Dict)
+            and not item.values[1].keys
+        ):
+            continue
+        name = item.values[0].id
+        findings.append(
+            facts.make_finding(
+                item,
+                "QG066",
+                f"必需字典参数 `{name}` 被 `or {{}}` 静默转换为可用空结构。",
+                symbol=qualname,
+                severity="warning",
+                confidence="high",
+                suggestion="保留必需输入的非空契约；不合法输入应在边界显式拒绝。",
+                evidence={"parameter": name, "annotation": "dict", "classification": "PROVEN_REQUIRED_CONTRACT"},
+            )
+        )
     return findings
 
 
@@ -247,10 +302,15 @@ def check_type_probe_rules(
                     # type discriminant. Its usefulness belongs to behavioral/
                     # structure review, not an unproven type-contract CRITICAL.
                     continue
-                # Only a statically disjoint *closed builtin* pair proves an
-                # unreachable branch under the declared formal contract.
-                # Other relations warrant review, not an automatic blocker.
+                # An UNKNOWN import/hierarchy and an input validation guard are
+                # not evidence that a type probe is a quality defect. Source-
+                # bound, statically disjoint concrete builtins are the only
+                # type-contract violation this rule currently proves.  In
+                # particular, do not flood users with REVIEW warnings merely
+                # because an external DSL subtype could not be resolved.
                 definitive = relation == "disjoint_builtin"
+                if not definitive:
+                    continue
                 findings.append(
                     facts.make_finding(
                         item,
@@ -1158,6 +1218,34 @@ def check_side_effect_rules(
     return findings
 
 
+def _declares_readonly_input(
+    facts: ModuleFacts,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    annotation: ast.expr,
+) -> bool:
+    """Resolve a read-only annotation against a real builtin or stdlib import."""
+    base = annotation.value if isinstance(annotation, ast.Subscript) else annotation
+    name = dotted_name(base)
+    if name in {"tuple", "frozenset"}:
+        return _builtin_type_unshadowed(facts, function, name)
+    leaf = name.rsplit(".", 1)[-1]
+    if leaf not in {"Mapping", "Sequence", "MappingProxyType"}:
+        return False
+    allowed = (
+        {"types.MappingProxyType"}
+        if leaf == "MappingProxyType"
+        else {f"typing.{leaf}", f"collections.abc.{leaf}"}
+    )
+    if "." not in name:
+        return facts.imports.get(name) in allowed and not _scope_rebinds(function, name)
+    prefix = name.rsplit(".", 1)[0]
+    return any(
+        f"{imported}.{leaf}" in allowed
+        for local, imported in facts.imports.items()
+        if local == prefix
+    ) and not _scope_rebinds(function, prefix)
+
+
 def check_parameter_mutation(
     facts: ModuleFacts,
     node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -1212,16 +1300,23 @@ def check_parameter_mutation(
                 )
             )
         mutated.update(mutated_parameter_names(item, parameter_names))
-    for name in sorted(mutated):
+    readonly_annotations = {
+        parameter.arg: ast.unparse(parameter.annotation)
+        for parameter in all_parameters(node)
+        if parameter.annotation is not None
+        and _declares_readonly_input(facts, node, parameter.annotation)
+    }
+    for name in sorted(mutated & readonly_annotations.keys()):
         findings.append(
             facts.make_finding(
                 node,
                 "QG050",
-                f"`{qualname}` 原地修改输入参数 `{name}`。",
+                f"`{qualname}` 修改声明为只读的参数 `{name}`。",
                 symbol=qualname,
                 severity="warning",
-                suggestion="返回新值，或通过命名、类型和 docstring 明确原地修改契约。",
-                evidence={"parameter": name},
+                confidence="high",
+                suggestion="遵循显式只读类型契约，避免向入参原位写入。",
+                evidence={"parameter": name, "readonly_annotation": readonly_annotations[name]},
             )
         )
     return findings

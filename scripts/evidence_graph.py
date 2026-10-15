@@ -808,7 +808,7 @@ def render(snapshot, graph, anchor, options: TraceOptions):
         f"来源：`{snapshot.root.resolve()}` · `{snapshot.label}` · `{cache_info}`",
         f"目标：`{anchor['id']}` @ `{anchor['path']}:{anchor['line']}` · `{anchor['kind']}`",
         "",
-        "**OPEN_WORLD**：DIRECT_CALL 是源码绑定；MAY_DISPATCH 是类型约束的可能目标，运行时多态仍 OPEN；词法同名仍 UNKNOWN。三者都不证明该路径执行过或缺省业务合理。",
+        "**OPEN_WORLD**：DIRECT_CALL 是源码绑定；MAY_DISPATCH 是类型约束的可能目标，MAY_CALLBACK 是有调度器证据的可能执行，运行时均 OPEN；词法同名仍 UNKNOWN。三者都不证明该路径执行过或缺省业务合理。",
         "",
         "## 定义及所在代码",
         "",
@@ -846,7 +846,7 @@ def render(snapshot, graph, anchor, options: TraceOptions):
             edges = [
                 e
                 for e in graph["edges"]
-                if e["kind"] in ("direct_call", "may_dispatch")
+                if e["kind"] in ("direct_call", "may_dispatch", "may_callback")
                 and (
                     e["target"] == current
                     if side == "callers"
@@ -863,11 +863,11 @@ def render(snapshot, graph, anchor, options: TraceOptions):
                 selected.add(key)
                 other = edge["source"] if side == "callers" else edge["target"]
                 newchain = (other,) + chain if side == "callers" else chain + (other,)
-                relation = (
-                    "DIRECT_CALL, resolved"
-                    if edge["kind"] == "direct_call"
-                    else "MAY_DISPATCH, declared type; runtime target OPEN"
-                )
+                relation = {
+                    "direct_call": "DIRECT_CALL, resolved",
+                    "may_dispatch": "MAY_DISPATCH, declared type; runtime target OPEN",
+                    "may_callback": "MAY_CALLBACK, executor scheduling; execution OPEN",
+                }[edge["kind"]]
                 result.append("- `" + "` → `".join(newchain) + f"` [{relation}]")
                 result.append(
                     f"  - CALL SITE `{edge['path']}:{edge['line']}` confidence={edge['confidence']}"
@@ -883,6 +883,22 @@ def render(snapshot, graph, anchor, options: TraceOptions):
         if len(selected) >= budget:
             result.append("- **TRUNCATED**：已达调用边预算")
     if anchor["kind"] in ("method", "function"):
+        registered = [
+            e for e in graph["edges"]
+            if e["kind"] == "callback_registration"
+            and e["target"] == anchor["id"]
+        ]
+        if registered and direction in ("both", "callers"):
+            result.extend([
+                "", "## 传入回调/注册参数的源码位点（不是已执行调用）", "",
+            ])
+            for edge in sorted(registered, key=lambda e: (e["path"], e["line"]))[:budget]:
+                result.append(
+                    f"- `[CALLBACK_ARGUMENT]` `{edge['source']}` → `{anchor['id']}` "
+                    f"@ `{edge['path']}:{edge['line']}`（静态参数引用，不证明实际调度）"
+                )
+                result.extend(context(snapshot, edge["path"], edge["line"], radius))
+    if anchor["kind"] in ("method", "function"):
         candidates = (
             lexical_candidates(snapshot, anchor, limit=min(budget, 12))
             if direction in ("callers", "both")
@@ -892,7 +908,7 @@ def render(snapshot, graph, anchor, options: TraceOptions):
             bound_sites = {
                 (edge["path"], edge["line"])
                 for edge in graph["edges"]
-                if edge["kind"] in ("direct_call", "may_dispatch")
+                if edge["kind"] in ("direct_call", "may_dispatch", "may_callback")
                 and edge["target"] == anchor["id"]
             }
             unresolved = [

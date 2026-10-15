@@ -44,18 +44,18 @@ def test_stdlib_ast_alias_is_not_qg060(tmp_path: Path) -> None:
 
 
 def test_internal_object_discriminator_still_qg060(tmp_path: Path) -> None:
-    """A concrete business type is not a tagged syntax-node protocol."""
+    """Unrelated class names are not proof of an impossible runtime subtype."""
     rows = _findings(
         tmp_path,
         "class Contract: pass\nclass Alternative: pass\n"
         "def consume(value: Contract):\n"
         "    return isinstance(value, Alternative)\n",
     )
-    assert "QG060" in [item.code for item in rows]
+    assert not [item for item in rows if item.code == "QG060"]
 
 
 def test_shadowed_ast_is_not_trusted(tmp_path: Path) -> None:
-    """An import later overwritten by an internal object cannot exempt probes."""
+    """A shadowed import invalidates AST trust but does not prove disjoint types."""
     rows = _findings(
         tmp_path,
         "import ast\n"
@@ -64,7 +64,7 @@ def test_shadowed_ast_is_not_trusted(tmp_path: Path) -> None:
         "def consume(value: ast.AST):\n"
         "    return isinstance(value, ast.Assign)\n",
     )
-    assert "QG060" in [item.code for item in rows]
+    assert not [item for item in rows if item.code == "QG060"]
 
 
 def test_nested_nodevisitor_callback_not_ephemeral(tmp_path: Path) -> None:

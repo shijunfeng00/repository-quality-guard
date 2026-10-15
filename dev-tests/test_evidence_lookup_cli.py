@@ -94,7 +94,9 @@ class TestEvidenceLookup(unittest.TestCase):
         self.assertIn("`sample.entry` → `sample.intermediate`", result.stdout)
         self.assertIn("`sample.py:", result.stdout)
         self.assertIn("DIRECT_CALL, resolved", result.stdout)
-        self.assertNotIn("`sample.use_callback` → `sample.sink`", result.stdout)
+        self.assertIn("[CALLBACK_ARGUMENT]", result.stdout)
+        self.assertIn("`sample.use_callback` → `sample.sink`", result.stdout)
+        self.assertNotIn("`sample.use_callback` → `sample.sink`", result.stdout.split("## 传入回调/注册参数")[0])
 
     def test_downstream_and_depth_budget(self) -> None:
         """只能遍历所选方向和深度；资源预算明确标记截断。"""
@@ -191,10 +193,9 @@ class TestEvidenceLookup(unittest.TestCase):
         self.assertIn("## QG003", result.stdout)
         self.assertNotIn("# 仓库静态证据查询", result.stdout)
 
-    def test_retired_rule_and_bad_arguments_fail_closed(self) -> None:
-        """退休规则、深度越界、缺失符号和部分参数都不能部分成功。"""
+    def test_invalid_argument_combinations_are_atomic(self) -> None:
+        """非法实参组合、深度越界、缺失符号不能产生部分成功结果。"""
         for args in (
-            ("--rule", "QG177"),
             ("--rule", "QG003", "--repo", str(self.root)),
             ("--repo", str(self.root), "--symbol", "missing"),
             ("--repo", str(self.root), "--symbol", "sample.sink", "--depth", "6"),

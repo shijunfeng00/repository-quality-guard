@@ -46,6 +46,7 @@ python scripts/evidence_lookup.py --repo /repo \
 输出包含 `文件:行号`、真实调用点 ± 上下文行、可能形参传导、局部赋值与继承声明。
 只有已有源绑定的 `DIRECT_CALL` 可称“已解析”；静态类型/唯一构造来源对应
 `MAY_DISPATCH`（源码类型约束的可能目标，不能等同运行时真实调用）；
+`MAY_CALLBACK`（标准调度器的源绑定提交点，不能证明任务已执行）；
 同名无 owner 证据仅 `[UNKNOWN]` 词法候选。v0.22.5 Graph hotfix 统一
 `--symbol` 与 `--file/--line` 为同一证据 Trace：支持函数形参静态注解、未重绑定的
 局部构造对象、简单 `self.field` 构造或注入字段；跨对象构造器调用点可沿
@@ -122,12 +123,6 @@ Python/JS/TS/CSS/HTML 及 C/C++ 通过仓库快照识别，只有权威编译数
 没有构建契约、缺依赖或不可用时输出 `QG208` 并要求 REVIEW_REQUIRED，
 不可擅自猜 C++ 标准或把零发现当成无缺陷。CMake/Make/Meson 自动准备
 原始编译契约、Java Provider 与完整跨语言语义 IR 仍在计划中，不得宣称完成。
-
-**QG177 已退役（v0.22.5）：** 该规则错误地把未改动的历史 helper
-fallback 当成本次迁移，使正确删除兜底的变更反遭 Critical/QG179 阻断。
-正式入口不再执行 QG177，历史残余须按自身契约作为独立债务判断，不允许
-恢复伪 ID、默认空值或重复 Consumer 校验来迁就规则。QG179 本身保留，
-仅对真实新增或恶化的有效规则 Finding 起作用。
 
 **回归验收唯一有效事实源：** 使用经完整性检验的 Skill 官方启动器执行
 `audit`，保存真实自动生成的 `修改说明.md`，完成必要人工裁决后运行只读

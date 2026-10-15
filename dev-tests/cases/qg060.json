@@ -40,10 +40,8 @@
     },
     {
       "id": "same-type-redundant",
-      "kind": "review",
-      "expected": [
-        "warning"
-      ],
+      "kind": "TN_unproven",
+      "expected": [],
       "source": "def normalize(value: str) -> str:\n    if isinstance(value, str):\n        return value\n    return str(value)\n"
     },
     {
@@ -64,50 +62,38 @@
     },
     {
       "id": "nominal-incomparable",
-      "kind": "review",
-      "expected": [
-        "warning"
-      ],
+      "kind": "TN_unproven",
+      "expected": [],
       "source": "class Contract: pass\nclass Other: pass\ndef consume(value: Contract):\n    return isinstance(value, Other)\n"
     },
     {
       "id": "plugin-class-check",
-      "kind": "review",
-      "expected": [
-        "warning"
-      ],
+      "kind": "TN_unproven",
+      "expected": [],
       "source": "class QualityRule: pass\ndef add_rule(rule: type[QualityRule]):\n    if not isinstance(rule, type):\n        raise TypeError('bad rule')\n    return rule\n"
     },
     {
       "id": "ast-module-rebound",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "import ast\nclass Fake:\n    AST = object\n    Call = str\nast = Fake()\ndef consume(node: ast.AST):\n    return isinstance(node, ast.Call)\n"
     },
     {
       "id": "ast-function-rebound",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "import ast\nclass Fake:\n    AST = object\n    Call = str\ndef consume(node: ast.AST):\n    ast = Fake()\n    return isinstance(node, ast.Call)\n"
     },
     {
       "id": "ast-local-name-shadowed",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "import ast as syntax\nclass Fake:\n    AST = object\n    Call = str\ndef consume(node: syntax.AST):\n    syntax = Fake()\n    return isinstance(node, syntax.Call)\n"
     },
     {
       "id": "ast-supertype-on-narrow-param",
-      "kind": "review",
-      "expected": [
-        "warning"
-      ],
+      "kind": "TN_unproven",
+      "expected": [],
       "source": "import ast\ndef consume(node: ast.Call):\n    return isinstance(node, ast.AST)\n"
     },
     {
@@ -137,33 +123,25 @@
     {
       "id": "formal-reassigned-before-probe",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "def consume(value: int):\n    value = str(value)\n    return isinstance(value, str)\n"
     },
     {
       "id": "builtin-name-shadowed",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "class Replacement: pass\nint = Replacement\ndef consume(value: int):\n    return isinstance(value, str)\n"
     },
     {
       "id": "module-ast-class-shadowed",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "import ast\nclass Fake:\n    AST = object\n    Call = str\ndef ast():\n    return Fake()\ndef consume(node: ast.AST):\n    return isinstance(node, ast.Call)\n"
     },
     {
       "id": "ast-parameter-shadowed",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "import ast\ndef consume(node: ast.AST, ast):\n    return isinstance(node, ast.Call)\n"
     },
     {
@@ -193,49 +171,37 @@
     {
       "id": "unguarded-nonregistrar",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "from abc import ABC\nclass Strategy(ABC): pass\nclass Service:\n    def process(self, strategy: type[Strategy]):\n        if not isinstance(strategy, type) or not issubclass(strategy, Strategy):\n            raise TypeError('invalid')\n        return True\n"
     },
     {
       "id": "not-a-failing-guard",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "from abc import ABC\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            return None\n        self._extensions.append(cls)\n"
     },
     {
       "id": "type-check-without-subclass",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "from abc import ABC\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type):\n            raise TypeError('invalid')\n        self._extensions.append(cls)\n"
     },
     {
       "id": "plain-class-not-ABC",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "class Extension: pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('invalid')\n        self._extensions.append(cls)\n"
     },
     {
       "id": "compatible-unknown-class",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "from abc import ABC\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('invalid')\n        print(cls)\n"
     },
     {
       "id": "abstract-base-rebound",
       "kind": "adversarial",
-      "expected": [
-        "warning"
-      ],
+      "expected": [],
       "source": "from abc import ABC\nABC = object\nclass Extension(ABC): pass\nclass Registry:\n    def add(self, cls: type[Extension]):\n        if not isinstance(cls, type) or not issubclass(cls, Extension):\n            raise TypeError('invalid')\n        self._extensions.append(cls)\n"
     },
     {

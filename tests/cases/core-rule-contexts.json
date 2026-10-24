@@ -1,0 +1,556 @@
+{
+  "schema": "rqg.core-rule-batch6.v1",
+  "cases": [
+    {
+      "case_id": "qg080-tp",
+      "rule": "QG080",
+      "kind": "TP",
+      "source": "class C:\n    def run(self):\n        return self\n",
+      "expected": [
+        [
+          "QG080",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg080-tn",
+      "rule": "QG080",
+      "kind": "TN",
+      "source": "class C:\n    def run(self):\n        return self\n    def stop(self):\n        return self\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg081-tp",
+      "rule": "QG081",
+      "kind": "TP",
+      "source": "class C:\n    def run(self):\n        return self\n    def _a(self):\n        return 1\n    def _b(self):\n        return 2\n",
+      "expected": [
+        [
+          "QG081",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg081-tn",
+      "rule": "QG081",
+      "kind": "TN",
+      "source": "class C:\n    def run(self):\n        return self\n    def stop(self):\n        return self\n    def _a(self):\n        return 1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg082-tp",
+      "rule": "QG082",
+      "kind": "TP",
+      "source": "class C:\n    @staticmethod\n    def run():\n        return 1\n    @staticmethod\n    def stop():\n        return 2\n",
+      "expected": [
+        [
+          "QG082",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg082-tn",
+      "rule": "QG082",
+      "kind": "TN",
+      "source": "class C:\n    def run(self):\n        return self\n    def stop(self):\n        return self\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg083-tp",
+      "rule": "QG083",
+      "kind": "TP",
+      "source": "class C:\n    def run(self):\n        return 1\n    def stop(self):\n        return 2\n",
+      "expected": [
+        [
+          "QG083",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg083-tn",
+      "rule": "QG083",
+      "kind": "TN",
+      "source": "class C:\n    def run(self):\n        return self\n    def stop(self):\n        return self\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg084-tp",
+      "rule": "QG084",
+      "kind": "TP",
+      "source": "from dataclasses import dataclass\n@dataclass\nclass C:\n    value: int\n",
+      "expected": [
+        [
+          "QG084",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg084-tn",
+      "rule": "QG084",
+      "kind": "TN",
+      "source": "from dataclasses import dataclass\n@dataclass\nclass C:\n    value: int\n    other: int\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg085-tp",
+      "rule": "QG085",
+      "kind": "TP",
+      "source": "class C:\n    def run(self, x):\n        return self.worker.run(x)\n",
+      "expected": [
+        [
+          "QG085",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg085-tn",
+      "rule": "QG085",
+      "kind": "TN",
+      "source": "class C:\n    def run(self,x):\n        return x+1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg086-tp",
+      "rule": "QG086",
+      "kind": "TP",
+      "source": "class C:\n    def __init__(self,a,b,c,d,e,f,g,h,i):\n        self.a=a\n",
+      "expected": [
+        [
+          "QG086",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg086-tn",
+      "rule": "QG086",
+      "kind": "TN",
+      "source": "class C:\n    def __init__(self,a):\n        self.a=a\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg087-tp",
+      "rule": "QG087",
+      "kind": "TP",
+      "source": "class C:\n    def __init__(self):\n        self.a=1\n        self.b=2\n        self.c=3\n    def one(self):\n        return self.a\n    def two(self):\n        return self.b\n    def three(self):\n        return self.c\n    def four(self):\n        return 4\n",
+      "expected": [
+        [
+          "QG087",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg087-tn",
+      "rule": "QG087",
+      "kind": "TN",
+      "source": "class C:\n    def __init__(self):\n        self.a=1\n    def one(self):\n        return self.a\n    def two(self):\n        return self.a\n    def three(self):\n        return self.a\n    def four(self):\n        return 4\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg088-tp",
+      "rule": "QG088",
+      "kind": "TP",
+      "source": "# two distinct source modules under a closed fixture\n",
+      "expected": [
+        [
+          "QG088",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg088-tn",
+      "rule": "QG088",
+      "kind": "TN",
+      "source": "# one source module or qualified usage\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg101-tp",
+      "rule": "QG101",
+      "kind": "TP",
+      "source": "# two distinct source modules under a closed fixture\n",
+      "expected": [
+        [
+          "QG101",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg101-tn",
+      "rule": "QG101",
+      "kind": "TN",
+      "source": "# one source module or qualified usage\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg107-tp",
+      "rule": "QG107",
+      "kind": "TP",
+      "source": "# two distinct source modules under a closed fixture\n",
+      "expected": [
+        [
+          "QG107",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg107-tn",
+      "rule": "QG107",
+      "kind": "TN",
+      "source": "# one source module or qualified usage\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg113-tp",
+      "rule": "QG113",
+      "kind": "TP",
+      "source": "# two distinct source modules under a closed fixture\n",
+      "expected": [
+        [
+          "QG113",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg113-tn",
+      "rule": "QG113",
+      "kind": "TN",
+      "source": "# one source module or qualified usage\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg098-tp",
+      "rule": "QG098",
+      "kind": "TP",
+      "source": "# two distinct source modules under a closed fixture\n",
+      "expected": [
+        [
+          "QG098",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg098-tn",
+      "rule": "QG098",
+      "kind": "TN",
+      "source": "# one source module or qualified usage\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg188-tp",
+      "rule": "QG188",
+      "kind": "TP",
+      "source": "# two distinct source modules under a closed fixture\n",
+      "expected": [
+        [
+          "QG188",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg188-tn",
+      "rule": "QG188",
+      "kind": "TN",
+      "source": "# one source module or qualified usage\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg125-tp",
+      "rule": "QG125",
+      "kind": "TP",
+      "source": "def work(state):\n    return state[\"missing\"]\n",
+      "expected": [
+        [
+          "QG125",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg125-tn",
+      "rule": "QG125",
+      "kind": "TN",
+      "source": "def work(state):\n    return state[\"known\"]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg124-tp",
+      "rule": "QG124",
+      "kind": "TP",
+      "source": "def work(state):\n    state[\"missing\"]=1\n",
+      "expected": [
+        [
+          "QG124",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg124-tn",
+      "rule": "QG124",
+      "kind": "TN",
+      "source": "def work(state):\n    state[\"known\"]=1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg127-tp",
+      "rule": "QG127",
+      "kind": "TP",
+      "source": "def work(state):\n    state[\"items\"].append([1])\n",
+      "expected": [
+        [
+          "QG127",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg127-tn",
+      "rule": "QG127",
+      "kind": "TN",
+      "source": "def work(state):\n    state[\"items\"].extend([1])\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg128-tp",
+      "rule": "QG128",
+      "kind": "TP",
+      "source": "def work(state):\n    return state[\"known\"]\n",
+      "expected": [
+        [
+          "QG128",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg128-tn",
+      "rule": "QG128",
+      "kind": "TN",
+      "source": "def work(state):\n    return state[\"known\"]+state[\"other\"]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg134-tp",
+      "rule": "QG134",
+      "kind": "TP",
+      "source": "def work(state):\n    state[\"known\"]=1\n",
+      "expected": [
+        [
+          "QG134",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg134-tn",
+      "rule": "QG134",
+      "kind": "TN",
+      "source": "def work(state):\n    return state[\"known\"]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg135-tp",
+      "rule": "QG135",
+      "kind": "TP",
+      "source": "def work(state):\n    state[\"items\"].append(1)\n    state[\"items\"].extend([2])\n",
+      "expected": [
+        [
+          "QG135",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg135-tn",
+      "rule": "QG135",
+      "kind": "TN",
+      "source": "def work(state):\n    state[\"items\"].append(1)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg126-tp",
+      "rule": "QG126",
+      "kind": "TP",
+      "source": "def work(state):\n    state[\"known\"]=1\n",
+      "expected": [
+        [
+          "QG126",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg126-tn",
+      "rule": "QG126",
+      "kind": "TN",
+      "source": "def work(state):\n    state[\"known\"]=1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg120-tp",
+      "rule": "QG120",
+      "kind": "TP",
+      "source": "def work(state):\n    state[\"known\"]=1\n",
+      "expected": [
+        [
+          "QG120",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg120-tn",
+      "rule": "QG120",
+      "kind": "TN",
+      "source": "def work(state):\n    state[\"known\"]=1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg122-tp",
+      "rule": "QG122",
+      "kind": "TP",
+      "source": "def tool():\n    return \"text\"\n",
+      "expected": [
+        [
+          "QG122",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg122-tn",
+      "rule": "QG122",
+      "kind": "TN",
+      "source": "def tool():\n    return {\"value\":1}\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg131-tp",
+      "rule": "QG131",
+      "kind": "TP",
+      "source": "def tool():\n    return {\"value\":1}\n",
+      "expected": [
+        [
+          "QG131",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg131-tn",
+      "rule": "QG131",
+      "kind": "TN",
+      "source": "def tool():\n    \"\"\"Returns: value\"\"\"\n    return {\"value\":1}\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg129-tp",
+      "rule": "QG129",
+      "kind": "TP",
+      "source": "def work():\n    history.append(1)\n    trace.append(1)\n",
+      "expected": [
+        [
+          "QG129",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg129-tn",
+      "rule": "QG129",
+      "kind": "TN",
+      "source": "def work():\n    history.append(1)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg130-tp",
+      "rule": "QG130",
+      "kind": "TP",
+      "source": "def work():\n    try:\n        work()\n    except Exception:\n        history.append(1)\n",
+      "expected": [
+        [
+          "QG130",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg130-tn",
+      "rule": "QG130",
+      "kind": "TN",
+      "source": "def work():\n    try:\n        work()\n    except Exception:\n        trace.append(1)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg189-tp",
+      "rule": "QG189",
+      "kind": "TP",
+      "source": "def work(state: State):\n    state[\"x\"]=1\n",
+      "expected": [
+        [
+          "QG189",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg189-tn",
+      "rule": "QG189",
+      "kind": "TN",
+      "source": "def work(state: State):\n    return state[\"x\"]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg190-tp",
+      "rule": "QG190",
+      "kind": "TP",
+      "source": "def work():\n    exec(\"x=1\")\n",
+      "expected": [
+        [
+          "QG190",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg190-tn",
+      "rule": "QG190",
+      "kind": "TN",
+      "source": "def work():\n    return 1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg168-tp",
+      "rule": "QG168",
+      "kind": "TP",
+      "source": "def public(v):\n    return _one(v)\ndef _one(v):\n    return _two(v)\ndef _two(v):\n    return _three(v)\ndef _three(v):\n    return v+1\n",
+      "expected": [
+        [
+          "QG168",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg168-tn",
+      "rule": "QG168",
+      "kind": "TN",
+      "source": "def public(v):\n    return _one(v)\ndef _one(v):\n    return v+1\n",
+      "expected": []
+    }
+  ]
+}

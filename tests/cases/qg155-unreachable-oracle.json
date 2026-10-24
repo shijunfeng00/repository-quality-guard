@@ -1,0 +1,74 @@
+{
+  "schema": "rqgtest-qg155-unreachable/v1",
+  "cases": [
+    {
+      "case_id": "qg155-function-tp",
+      "rule": "QG155",
+      "kind": "TP",
+      "source": "def sample():\n    return 1\n    print(2)\n",
+      "mode": "function",
+      "expected": [
+        [
+          "QG155",
+          "error",
+          "fixture.py",
+          3
+        ]
+      ]
+    },
+    {
+      "case_id": "qg155-function-tn",
+      "rule": "QG155",
+      "kind": "TN",
+      "source": "def sample():\n    return 1\n",
+      "mode": "function",
+      "expected": []
+    },
+    {
+      "case_id": "qg155-if-tp",
+      "rule": "QG155",
+      "kind": "TP",
+      "source": "if False:\n    print(\"unreachable\")\n",
+      "mode": "if",
+      "expected": [
+        [
+          "QG155",
+          "error",
+          "fixture.py",
+          2
+        ]
+      ]
+    },
+    {
+      "case_id": "qg155-if-tn",
+      "rule": "QG155",
+      "kind": "TN",
+      "source": "if flag:\n    print(\"possibly reachable\")\n",
+      "mode": "if",
+      "expected": []
+    },
+    {
+      "case_id": "qg155-while-tp",
+      "rule": "QG155",
+      "kind": "TP",
+      "source": "while False:\n    print(\"unreachable\")\n",
+      "mode": "while",
+      "expected": [
+        [
+          "QG155",
+          "error",
+          "fixture.py",
+          2
+        ]
+      ]
+    },
+    {
+      "case_id": "qg155-while-tn",
+      "rule": "QG155",
+      "kind": "TN",
+      "source": "while ready:\n    break\n",
+      "mode": "while",
+      "expected": []
+    }
+  ]
+}

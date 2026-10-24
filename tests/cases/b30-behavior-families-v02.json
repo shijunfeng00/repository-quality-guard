@@ -1,0 +1,126 @@
+{
+  "schema": "rqg/b30-behavior-unit-v02",
+  "cases": [
+    {
+      "case_id": "b30-family-actual-finding-groups",
+      "findings": [
+        [
+          "QG003",
+          "a.py",
+          4
+        ],
+        [
+          "QG004",
+          "a.py",
+          5
+        ],
+        [
+          "QG157",
+          "b.py",
+          10
+        ],
+        [
+          "QG216",
+          "c.py",
+          12
+        ],
+        [
+          "QG214",
+          "d.py",
+          14
+        ],
+        [
+          "QG999",
+          "e.py",
+          16
+        ]
+      ],
+      "expected": {
+        "total": 5,
+        "groups": [
+          [
+            3,
+            0,
+            1,
+            2,
+            3
+          ],
+          [
+            1,
+            0,
+            1,
+            0,
+            1
+          ],
+          [
+            1,
+            1,
+            0,
+            0,
+            1
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "empty_stable": false
+      }
+    },
+    {
+      "case_id": "b30-family-empty-means-no-invented-findings",
+      "findings": [],
+      "expected": {
+        "total": 0,
+        "groups": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "empty_stable": true
+      }
+    }
+  ]
+}

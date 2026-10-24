@@ -1,0 +1,104 @@
+{
+  "cases": [
+    {
+      "case_id": "QG027-DOC-INHERIT-single-abstract-override",
+      "polarity": "TN",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Child(Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": false,
+        "short": false,
+        "eligible": 3
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-multiple-abstract-with-unrelated-first",
+      "polarity": "TN",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Other:\n    \"\"\"Provides orthogonal behavior and does not define go.\"\"\"\n    def inspect(self, data):\n        \"\"\"Inspect the supplied data independently.\n\n        Args:\n            data: Input to inspect.\n        Returns:\n            The same input for inspection.\n        \"\"\"\n        return data\nclass Child(Other, Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": false,
+        "short": false,
+        "eligible": 5
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-multiple-first-undocumented-shadows",
+      "polarity": "TP",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Shadow:\n    \"\"\"Supplies a distinct method on the leading MRO branch.\"\"\"\n    def go(self, data):\n        return data\nclass Child(Shadow, Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": true,
+        "short": false,
+        "eligible": 6
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-same-name-without-inheritance",
+      "polarity": "TP",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Child(object):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": true,
+        "short": false,
+        "eligible": 4
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-concrete-parent-no-abstract-marker",
+      "polarity": "TP",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Child(Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": true,
+        "short": false,
+        "eligible": 4
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-incomplete-abstract-parent-doc",
+      "polarity": "TP",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform.\"\"\"\n        raise NotImplementedError\nclass Child(Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": true,
+        "short": false,
+        "eligible": 4
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-signature-drift",
+      "polarity": "TP",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Child(Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data, extra):\n        return data\n",
+      "expected": {
+        "missing": true,
+        "short": false,
+        "eligible": 4
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-local-incomplete-doc-keeps-QG028",
+      "polarity": "TN",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Child(Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        \"\"\"Handle data.\"\"\"\n        return data\n",
+      "expected": {
+        "missing": false,
+        "short": true,
+        "eligible": 4
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-unresolved-leading-base-no-exemption",
+      "polarity": "TP",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nfrom unknown_framework import External\nclass Child(External, Base):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": true,
+        "short": false,
+        "eligible": 4
+      }
+    },
+    {
+      "case_id": "QG027-DOC-INHERIT-multiple-first-contract-takes-precedence",
+      "polarity": "TN",
+      "source": "from abc import abstractmethod\nclass Base:\n    \"\"\"Owns a single documented transformation interface.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform caller data according to the Base protocol.\n\n        Args:\n            data: Data to transform.\n        Returns:\n            Transformed value or a conversion error.\n        \"\"\"\n        raise NotImplementedError\nclass Second:\n    \"\"\"Declares a second documented abstract transform.\"\"\"\n    @abstractmethod\n    def go(self, data):\n        \"\"\"Transform data under the second protocol.\n\n        Args:\n            data: Input payload.\n        Returns:\n            The transformed payload.\n        \"\"\"\n        raise NotImplementedError\nclass Child(Base, Second):\n    \"\"\"Implements the inherited interface.\"\"\"\n    def go(self, data):\n        return data\n",
+      "expected": {
+        "missing": false,
+        "short": false,
+        "eligible": 5
+      }
+    }
+  ]
+}

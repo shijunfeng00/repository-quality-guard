@@ -1,46 +1,130 @@
-"""Detect closed literal producers that violate a source-declared required schema.
-
-Unlike generic mapping defaults, a fully literal return/assignment is a closed
-producer observation.  The field contract comes from the same normalized
-TypedDict identity rather than from lexical names or inferred runtime shapes.
-"""
+"""Verify closed literal producers against normalized required TypedDict fields."""
 
 from __future__ import annotations
 
 import ast
 import hashlib
+from dataclasses import dataclass
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
+from .core_rule_contract import CoreQualityRule
 from .model import Finding
-from .topology_facts import RepositoryTopology
+from .topology_facts import RepositoryTopology, TypedProducerFact, TypedSchemaFieldFact
+
+
+@dataclass(frozen=True)
+class TypedLiteralRuleContext:
+    """Bind one declared producer to its unique AST literal and schema fields.
+
+    Bind one producer fact, closed AST dictionary and required schema fields.
+    """
+
+    producer: TypedProducerFact
+    literal: ast.Dict
+    required_fields: dict[str, TypedSchemaFieldFact]
+
+
+class TypedRequiredLiteralRule(CoreQualityRule[TypedLiteralRuleContext]):
+    """QG216: reject a source-bound closed mapping missing required schema keys.
+
+    Evaluate an independently instantiated QG216 against shared typed facts.
+    """
+
+    code = "QG216"
+
+    def evaluate(self, context: TypedLiteralRuleContext) -> list[Finding]:
+        """Check an exact TypedDict producer literal for missing mandatory keys.
+
+        Args:
+            context: Proven schema/producer identity, closed dictionary AST literal
+                and required fields resolved from typed topology facts.
+
+        Returns:
+            QG216 high-confidence Findings with missing field names and source
+            evidence, or none for complete and dynamically unprovable mappings.
+        """
+        producer = context.producer
+        literal = context.literal
+        if not all(
+            isinstance(key, ast.Constant) and isinstance(key.value, str)
+            for key in literal.keys
+        ):
+            return []
+        observed = frozenset(key.value for key in literal.keys)
+        missing = sorted(set(context.required_fields) - observed)
+        if not missing:
+            return []
+        return [
+            Finding(
+                code=self.code,
+                severity="error",
+                confidence="high",
+                path=producer.path.as_posix(),
+                line=producer.line,
+                column=literal.col_offset,
+                symbol=producer.producer_symbol_id,
+                message="确定的 TypedDict 生产者字典字面量缺少必需字段："
+                + ", ".join(missing),
+                suggestion="检查声明与生产者是否属于同一有效契约；修复返回/赋值字面量或调整真实可选字段的 Schema。",
+                evidence={
+                    "capability": "SOURCE_SCHEMA_TO_CLOSED_LITERAL_PRODUCER",
+                    "source_sha256": producer.source_sha256,
+                    "schema_symbol_id": producer.schema_symbol_id,
+                    "producer_symbol_id": producer.producer_symbol_id,
+                    "producer_kind": producer.kind,
+                    "schema_field_lines": {
+                        name: context.required_fields[name].line for name in missing
+                    },
+                    "observed_fields": sorted(observed),
+                    "missing_required_fields": missing,
+                    "status": "CONDITIONAL_PRODUCER_CONTRACT_VIOLATION",
+                },
+                source="source-bound-r3",
+            )
+        ]
+
+
+def _literal_index(tree: ast.Module) -> dict[tuple[int, str], list[ast.Dict]]:
+    """Index existing AST literals once by their authored statement location.
+
+    The rule consumes shared source facts and retains stable Finding evidence.
+    """
+    candidates: dict[tuple[int, str], list[ast.Dict]] = {}
+    for node in ast.walk(tree):
+        line = getattr(node, "lineno", None)
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+            candidates.setdefault((line, "OBSERVED_RETURN_LITERAL"), []).append(
+                node.value
+            )
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Dict):
+            candidates.setdefault((line, "ANNOTATED_ASSIGNMENT"), []).append(node.value)
+    return candidates
 
 
 def typed_producer_contract_findings(
     snapshot: RepositoryAnalysisSnapshot, topology: RepositoryTopology
 ) -> list[Finding]:
-    """Compare verified closed mapping literals against required TypedDict fields.
+    """Join TypedDict producer facts with their exact source AST literals.
 
     Args:
-        snapshot: The authoritative in-memory repository source and AST snapshot.
-        topology: Schema and producer facts generated from that same snapshot.
+        snapshot: Parsed source units keyed by stable repository-relative path.
+        topology: Schema requiredness and typed producer facts with source hashes.
 
     Returns:
-        Evidence-bound conditional contract violations, never guesses for spread
-        dictionaries, dynamic keys, optional fields, or unknown producer types.
+        Sorted QG216 Findings for uniquely matched return/assignment literals;
+        unmatched, changed, or unresolved producers are not guessed.
     """
-    required: dict[str, dict[str, object]] = {}
+    required: dict[str, dict[str, TypedSchemaFieldFact]] = {}
     for field in topology.typed_schema_fields:
         if field.required:
             required.setdefault(field.schema_symbol_id, {})[field.field] = field
-    # Literal return facts inherit a schema identity from their declaration,
-    # but the same identity may also describe list[Item] or dict[str, Item].
-    # Only a direct TypedDict return type makes the returned mapping itself
-    # responsible for all required fields.
-    direct_return_producers = {
+    direct_returns = {
         (row.schema_symbol_id, row.producer_symbol_id)
         for row in topology.typed_producers
         if row.kind == "DECLARED_RETURN"
     }
+    index_by_path: dict[str, dict[tuple[int, str], list[ast.Dict]]] = {}
+    rule = TypedRequiredLiteralRule()
     results: list[Finding] = []
     for producer in topology.typed_producers:
         if producer.kind not in {"OBSERVED_RETURN_LITERAL", "ANNOTATED_ASSIGNMENT"}:
@@ -48,7 +132,7 @@ def typed_producer_contract_findings(
         if (
             producer.kind == "OBSERVED_RETURN_LITERAL"
             and (producer.schema_symbol_id, producer.producer_symbol_id)
-            not in direct_return_producers
+            not in direct_returns
         ):
             continue
         fields = required.get(producer.schema_symbol_id)
@@ -60,64 +144,15 @@ def typed_producer_contract_findings(
             continue
         if hashlib.sha256(unit.source.encode()).hexdigest() != producer.source_sha256:
             continue
-        # The schema topology currently emits observed keys even for open dicts.
-        # Recheck the *actual* RHS before using absence as a proof of omission.
-        candidates: list[ast.Dict] = []
-        for node in ast.walk(unit.tree):
-            if getattr(node, "lineno", None) != producer.line:
-                continue
-            if producer.kind == "OBSERVED_RETURN_LITERAL" and isinstance(
-                node, ast.Return
-            ):
-                if isinstance(node.value, ast.Dict):
-                    candidates.append(node.value)
-            elif producer.kind == "ANNOTATED_ASSIGNMENT" and isinstance(
-                node, ast.AnnAssign
-            ):
-                if isinstance(node.value, ast.Dict):
-                    candidates.append(node.value)
+        literals = index_by_path.get(path)
+        if literals is None:
+            literals = _literal_index(unit.tree)
+            index_by_path[path] = literals
+        candidates = literals.get((producer.line, producer.kind), [])
         if len(candidates) != 1:
             continue
-        literal = candidates[0]
-        if not all(
-            isinstance(key, ast.Constant) and isinstance(key.value, str)
-            for key in literal.keys
-        ):
-            continue
-        observed = frozenset(key.value for key in literal.keys)
-        missing = sorted(set(fields) - observed)
-        if not missing:
-            continue
-        results.append(
-            Finding(
-                code="QG216",
-                severity="error",
-                confidence="high",
-                path=path,
-                line=producer.line,
-                column=literal.col_offset,
-                symbol=producer.producer_symbol_id,
-                message=(
-                    "确定的 TypedDict 生产者字典字面量缺少必需字段："
-                    + ", ".join(missing)
-                ),
-                suggestion=(
-                    "检查声明与生产者是否属于同一有效契约；"
-                    "修复返回/赋值字面量或调整真实可选字段的 Schema。"
-                ),
-                evidence={
-                    "capability": "SOURCE_SCHEMA_TO_CLOSED_LITERAL_PRODUCER",
-                    "source_sha256": producer.source_sha256,
-                    "schema_symbol_id": producer.schema_symbol_id,
-                    "producer_symbol_id": producer.producer_symbol_id,
-                    "producer_kind": producer.kind,
-                    "schema_field_lines": {name: fields[name].line for name in missing},
-                    "observed_fields": sorted(observed),
-                    "missing_required_fields": missing,
-                    "status": "CONDITIONAL_PRODUCER_CONTRACT_VIOLATION",
-                },
-                source="source-bound-r3",
-            )
+        results.extend(
+            rule.evaluate(TypedLiteralRuleContext(producer, candidates[0], fields))
         )
     return sorted(
         results, key=lambda finding: (finding.path, finding.line, finding.symbol)

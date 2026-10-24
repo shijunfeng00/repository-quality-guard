@@ -1,0 +1,19 @@
+{
+  "schema": "rqg.nonblocking-profile-path/v1",
+  "cases": [
+    {
+      "case_id": "profile-private-import-explicit-nonblocking",
+      "kind": "TP",
+      "nonblocking": [
+        "utils/tracing.py"
+      ],
+      "expected_severity": "warning"
+    },
+    {
+      "case_id": "profile-private-import-default-blocking",
+      "kind": "TN",
+      "nonblocking": [],
+      "expected_severity": "critical"
+    }
+  ]
+}

@@ -1,0 +1,306 @@
+{
+  "cases": [
+    {
+      "case_id": "b12-QG164-TP",
+      "rule": "QG164",
+      "kind": "TP",
+      "domain": "git",
+      "base": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    pass\n",
+      "target": "class Parent:\n    def work(self):\n        return 1\nclass Child:\n    pass\n",
+      "expected": [
+        [
+          "QG164",
+          "error",
+          "fixture.py",
+          "Child"
+        ]
+      ],
+      "full_expected": [
+        [
+          "QG164",
+          "error",
+          "fixture.py",
+          "Child"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG164-TN",
+      "rule": "QG164",
+      "kind": "TN",
+      "domain": "git",
+      "base": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    pass\n",
+      "target": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    pass\n",
+      "expected": [],
+      "full_expected": []
+    },
+    {
+      "case_id": "b12-QG165-TP",
+      "rule": "QG165",
+      "kind": "TP",
+      "domain": "git",
+      "base": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    pass\n",
+      "target": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    def work(self):\n        return 1\n",
+      "expected": [
+        [
+          "QG165",
+          "critical",
+          "fixture.py",
+          "Child.work"
+        ]
+      ],
+      "full_expected": [
+        [
+          "QG165",
+          "critical",
+          "fixture.py",
+          "Child.work"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG165-TN",
+      "rule": "QG165",
+      "kind": "TN",
+      "domain": "git",
+      "base": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    pass\n",
+      "target": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    pass\n",
+      "expected": [],
+      "full_expected": []
+    },
+    {
+      "case_id": "b12-QG166-TP",
+      "rule": "QG166",
+      "kind": "TP",
+      "domain": "git",
+      "base": "class Parent:\n    pass\nclass ChildA(Parent):\n    pass\nclass ChildB(Parent):\n    pass\n",
+      "target": "class Parent:\n    pass\nclass ChildA(Parent):\n    def work(self):\n        return 1\nclass ChildB(Parent):\n    def work(self):\n        return 1\n",
+      "expected": [
+        [
+          "QG166",
+          "critical",
+          "fixture.py",
+          "ChildA.work"
+        ]
+      ],
+      "full_expected": [
+        [
+          "QG166",
+          "critical",
+          "fixture.py",
+          "ChildA.work"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG166-TN",
+      "rule": "QG166",
+      "kind": "TN",
+      "domain": "git",
+      "base": "class Parent:\n    pass\nclass ChildA(Parent):\n    pass\nclass ChildB(Parent):\n    pass\n",
+      "target": "class Parent:\n    pass\nclass ChildA(Parent):\n    pass\nclass ChildB(Parent):\n    pass\n",
+      "expected": [],
+      "full_expected": []
+    },
+    {
+      "case_id": "b12-QG167-TP",
+      "rule": "QG167",
+      "kind": "TP",
+      "domain": "git",
+      "base": "class Parent:\n    def __init__(self, value):\n        self.data = value\nclass Child(Parent):\n    pass\n",
+      "target": "class Parent:\n    def __init__(self, value):\n        self.data = value\nclass Child(Parent):\n    def __init__(self, value):\n        self.copy = value\n",
+      "expected": [
+        [
+          "QG167",
+          "critical",
+          "fixture.py",
+          "Child.copy"
+        ]
+      ],
+      "full_expected": [
+        [
+          "QG167",
+          "critical",
+          "fixture.py",
+          "Child.copy"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG167-TN",
+      "rule": "QG167",
+      "kind": "TN",
+      "domain": "git",
+      "base": "class Parent:\n    def __init__(self, value):\n        self.data = value\nclass Child(Parent):\n    pass\n",
+      "target": "class Parent:\n    def __init__(self, value):\n        self.data = value\nclass Child(Parent):\n    pass\n",
+      "expected": [],
+      "full_expected": []
+    },
+    {
+      "case_id": "b12-QG162-TP",
+      "rule": "QG162",
+      "kind": "TP",
+      "domain": "git",
+      "base": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    def run(self):\n        return self.work()\n",
+      "target": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    def run(self):\n        return 0\n",
+      "expected": [
+        [
+          "QG162",
+          "warning",
+          "fixture.py",
+          "Child.run"
+        ]
+      ],
+      "full_expected": [
+        [
+          "QG162",
+          "warning",
+          "fixture.py",
+          "Child.run"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG162-TN",
+      "rule": "QG162",
+      "kind": "TN",
+      "domain": "git",
+      "base": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    def run(self):\n        return self.work()\n",
+      "target": "class Parent:\n    def work(self):\n        return 1\nclass Child(Parent):\n    def run(self):\n        return self.work()\n",
+      "expected": [],
+      "full_expected": []
+    },
+    {
+      "case_id": "b12-QG163-TP",
+      "rule": "QG163",
+      "kind": "TP",
+      "domain": "git",
+      "base": "class Parent:\n    def calculate_status(self):\n        self.load()\n        self.check()\n        self.store()\nclass Child(Parent):\n    def run(self):\n        return self.calculate_status()\n",
+      "target": "class Parent:\n    pass\nclass Child(Parent):\n    def run(self):\n        return self.calculate_new_status()\n    def calculate_new_status(self):\n        self.load()\n        self.check()\n        self.store()\n",
+      "expected": [
+        [
+          "QG163",
+          "critical",
+          "fixture.py",
+          "Child.calculate_new_status"
+        ]
+      ],
+      "full_expected": [
+        [
+          "QG162",
+          "warning",
+          "fixture.py",
+          "Child.run"
+        ],
+        [
+          "QG163",
+          "critical",
+          "fixture.py",
+          "Child.calculate_new_status"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG163-TN",
+      "rule": "QG163",
+      "kind": "TN",
+      "domain": "git",
+      "base": "class Parent:\n    def calculate_status(self):\n        self.load()\n        self.check()\n        self.store()\nclass Child(Parent):\n    def run(self):\n        return self.calculate_status()\n",
+      "target": "class Parent:\n    def calculate_status(self):\n        self.load()\n        self.check()\n        self.store()\nclass Child(Parent):\n    def run(self):\n        return self.calculate_status()\n",
+      "expected": [],
+      "full_expected": []
+    },
+    {
+      "case_id": "b12-QG147-TP",
+      "rule": "QG147",
+      "kind": "TP",
+      "domain": "callable",
+      "present": false,
+      "expected": [
+        [
+          "QG147",
+          "error",
+          "fixture.py",
+          "handler"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG147-TN",
+      "rule": "QG147",
+      "kind": "TN",
+      "domain": "callable",
+      "present": true,
+      "expected": []
+    },
+    {
+      "case_id": "b12-QG148-TP",
+      "rule": "QG148",
+      "kind": "TP",
+      "domain": "sse",
+      "present": false,
+      "expected": [
+        [
+          "QG148",
+          "error",
+          "fixture.py",
+          "Handler"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG148-TN",
+      "rule": "QG148",
+      "kind": "TN",
+      "domain": "sse",
+      "present": true,
+      "expected": []
+    },
+    {
+      "case_id": "b12-QG151-TP",
+      "rule": "QG151",
+      "kind": "TP",
+      "domain": "route",
+      "changed": true,
+      "expected": [
+        [
+          "QG151",
+          "warning",
+          "fixture.py",
+          "HTTP"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG151-TN",
+      "rule": "QG151",
+      "kind": "TN",
+      "domain": "route",
+      "changed": false,
+      "expected": []
+    },
+    {
+      "case_id": "b12-QG152-TP",
+      "rule": "QG152",
+      "kind": "TP",
+      "domain": "header",
+      "changed": true,
+      "expected": [
+        [
+          "QG152",
+          "warning",
+          "fixture.py",
+          "Headers"
+        ]
+      ]
+    },
+    {
+      "case_id": "b12-QG152-TN",
+      "rule": "QG152",
+      "kind": "TN",
+      "domain": "header",
+      "changed": false,
+      "expected": []
+    }
+  ]
+}

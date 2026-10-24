@@ -1,0 +1,354 @@
+[
+  {
+    "case_id": "valid-standard-leaf",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "missing-required-method",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "async-get-enterpoint",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    async def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "required-kwonly",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self, *, secret):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "wrong-equals-arity",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual, required):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "property-get-enterpoint",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    @property\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "staticmethod-get-enterpoint",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    @staticmethod\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "classmethod-get-enterpoint",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    @classmethod\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "explicitly-abstract-equals",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom abc import abstractmethod\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    @abstractmethod\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "valid-comparator-use",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return bool(expected == actual)\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "comparator-always-true",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return True\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG242"
+    ]
+  },
+  {
+    "case_id": "comparator-conditional-true",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return True if actual else True\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG242"
+    ]
+  },
+  {
+    "case_id": "comparator-unused-observed",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == 42\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "comparator-internal-code",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return actual == expected and self.get_enterpoint().__code__ is not None\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "oracle-inspect-source",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport inspect\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return inspect.getsource(self.get_enterpoint())\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "oracle-inspect-alias",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom inspect import getsource as source\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return source(self.get_enterpoint())\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "oracle-source-other-object",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport inspect\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return inspect.getsource(str)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "oracle-namesake-inspect",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom unrelated import inspect\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return inspect.getsource(self.get_enterpoint())\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "oracle-local-shadow",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport inspect\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        inspect = LocalInspector()\n        return inspect.getsource(self.get_enterpoint())\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "equals-random-value",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return getattr(actual, \"value\", None) == expected\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "equals-name-not-actual",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == expected\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "oracle-local-alias-source",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport inspect\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        target = self.get_enterpoint()\n        return inspect.getsource(target)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "oracle-local-alias-source-rebound",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport inspect\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        target = self.get_enterpoint()\n        target = str\n        return inspect.getsource(target)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "explicitly-unimplemented-getter",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        raise NotImplementedError\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "unimplemented-return-sentinel",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return NotImplemented\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "conditional-branches-always-true",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        if actual:\n            return True\n        else:\n            return True\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG242"
+    ]
+  },
+  {
+    "case_id": "conditional-fallthrough-always-true",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        if actual:\n            return True\n        return True\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG242"
+    ]
+  },
+  {
+    "case_id": "conditional-true-false",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self):\n        return case_contract_findings\n    def get_input_data(self):\n        return ((\"42\",), {})\n    def get_output_data(self):\n        return 42\n    def equals(self, expected, actual):\n        if actual:\n            return True\n        return False\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "abstract-import-alias",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom abc import abstractmethod as abst\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @abst\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "abstract-module-alias",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport abc as abstract_abc\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @abstract_abc.abstractmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "abstract-module-direct",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport abc\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @abc.abstractmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "fake-abstract-name",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom unrelated import abstractmethod\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @abstractmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "always-true-literal-or",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    def equals(self, expected, actual): return False or True\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG242"
+    ]
+  },
+  {
+    "case_id": "literal-or-false",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    def equals(self, expected, actual): return False or False\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "dynamic-before-true-is-not-proven",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    def equals(self, expected, actual): return actual == expected or True\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "abc-foreign-alias-same-import",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport abc as a, unrelated as a\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @a.abstractmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "abc-foreign-symbol-same-import",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom abc import abstractmethod as a, ABC as a\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @a\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "abc-rebound-foreign-import",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom abc import abstractmethod as abst\nimport unrelated as abst\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @abst\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "shadow-staticmethod-unknown-decorator",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom unrelated import staticmethod\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @staticmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "builtin-staticmethod-proven-invalid",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @staticmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241"
+    ]
+  },
+  {
+    "case_id": "shadow-classmethod-unknown-decorator",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom unrelated import classmethod\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"2\",), {})\n    def get_output_data(self): return 2\n    @classmethod\n    def equals(self, expected, actual): return expected == actual\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "annotation-not-an-observation",
+    "source": "from __future__ import annotations\nfrom rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((3,), {})\n    def get_output_data(self): return 3\n    def equals(self, truth, output: output):\n        return truth == 3\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "annotation-with-real-observation",
+    "source": "from __future__ import annotations\nfrom rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((3,), {})\n    def get_output_data(self): return 3\n    def equals(self, truth, output: output):\n        return output == truth\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "literal-not-false-always-true",
+    "source": "from __future__ import annotations\nfrom rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((3,), {})\n    def get_output_data(self): return 3\n    def equals(self, truth, output):\n        return not False\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG242"
+    ]
+  },
+  {
+    "case_id": "dynamic-not-observed-valid",
+    "source": "from __future__ import annotations\nfrom rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((3,), {})\n    def get_output_data(self): return 3\n    def equals(self, truth, output):\n        return not (output != truth)\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": []
+  },
+  {
+    "case_id": "executed-conditional-code-is-an-oracle",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((3,), {})\n    def get_output_data(self): return 3\n    def equals(self, expected, actual):\n        if actual == expected:\n            return self.get_enterpoint().__code__ is not None\n        return False\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "direct-inspect-is-an-oracle",
+    "source": "import inspect\nfrom rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((3,), {})\n    def get_output_data(self): return 3\n    def equals(self, expected, actual):\n        return actual == expected and inspect.getsource(self.get_enterpoint()) != \"\"\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG244"
+    ]
+  },
+  {
+    "case_id": "missing-all-methods",
+    "source": "from rqgtest import TestCase, StatefulTestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nclass Case(TestCase):\n    pass\n",
+    "path": "tests/test_behavior.py",
+    "expected_codes": [
+      "QG241",
+      "QG240"
+    ],
+    "v02_review": "Both independently required contracts hold: required methods missing and no valid concrete Case"
+  }
+]

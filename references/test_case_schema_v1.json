@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rqg:testcase:v1",
+  "title": "RQG cross-language observable behavior TestCase v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "language",
+    "subject",
+    "kind",
+    "input",
+    "expected",
+    "contract_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "rqg.testcase.v1"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+    },
+    "language": {
+      "enum": [
+        "python",
+        "cpp",
+        "c",
+        "java",
+        "javascript",
+        "typescript"
+      ]
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": [
+        "return",
+        "exception",
+        "instance",
+        "stateful"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "settings": {
+          "type": "object"
+        },
+        "args": {
+          "type": "array"
+        },
+        "kwargs": {
+          "type": "object"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "minProperties": 1
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "files"
+          ]
+        },
+        {
+          "required": [
+            "args"
+          ]
+        },
+        {
+          "required": [
+            "kwargs"
+          ]
+        },
+        {
+          "required": [
+            "steps"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator",
+        "value"
+      ],
+      "properties": {
+        "operator": {
+          "enum": [
+            "return_equals",
+            "exception_type",
+            "state_sequence_equals",
+            "finding_severities_exact",
+            "maybe_callback_present"
+          ]
+        },
+        "rule": {
+          "type": "string",
+          "pattern": "^QG[0-9]{3,5}$"
+        },
+        "value": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "const": "finding_severities_exact"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "rule"
+            ],
+            "properties": {
+              "value": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "critical",
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "const": "maybe_callback_present"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "const": "exception_type"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "const": "state_sequence_equals"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "contract_reason": {
+      "type": "string",
+      "minLength": 8
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "stateful"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "required": [
+              "steps"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "exception"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "expected": {
+            "properties": {
+              "operator": {
+                "const": "exception_type"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "input": {
+            "required": [
+              "files"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "source_sha256"
+        ]
+      }
+    }
+  ]
+}

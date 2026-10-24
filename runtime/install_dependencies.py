@@ -30,9 +30,9 @@ from runtime.src.process_lifecycle import process_alive
 _LOCK_FILE = "runtime/dependencies.lock.json"
 _OFFLINE_WHEELS = "offline/wheelhouse"
 _OFFLINE_NODE_ARCHIVE = "offline/node_modules.zip"
-_NETWORK_INSTALL_TIMEOUT_SECONDS = 90
+_NETWORK_INSTALL_TIMEOUT_SECONDS = 30
 _CONNECT_TIMEOUT_SECONDS = 3
-_CONNECT_ATTEMPTS = 3
+_CONNECT_ATTEMPTS = 1
 
 
 def _log(message: str) -> None:
@@ -248,7 +248,10 @@ def _run(
             start_new_session=os.name != "nt",
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
-        return process.wait(timeout=timeout) == 0
+        exit_code = process.wait(timeout=timeout)
+        if exit_code:
+            _log(f"依赖命令 {Path(command[0]).name} 失败，exit={exit_code}；不再等待。")
+        return exit_code == 0
     except subprocess.TimeoutExpired:
         executable = Path(command[0]).name if command else "dependency command"
         _log(f"依赖安装超时：{executable} 超过 {timeout:g}s，正在清理安装进程树。")
@@ -305,7 +308,7 @@ def _install_python(
             if _run(
                 [*base, "--no-index", "--find-links", str(wheelhouse), *requirements],
                 environment=settings.environment,
-                timeout=60,
+                timeout=30,
             ):
                 importlib.invalidate_caches()
                 if _python_ready(lock):
@@ -322,7 +325,7 @@ def _install_python(
         )
     _log("正在从 PyPI 在线安装锁定 Python 依赖。")
     if _run(
-        [*base, "--retries", "2", "--timeout", "10", *requirements],
+        [*base, "--retries", "0", "--timeout", "3", *requirements],
         environment=settings.environment,
         timeout=_NETWORK_INSTALL_TIMEOUT_SECONDS,
     ):
@@ -492,8 +495,8 @@ def _install_node_online(
         "--no-audit",
         "--no-fund",
         "--no-save",
-        "--fetch-retries=2",
-        "--fetch-timeout=15000",
+        "--fetch-retries=0",
+        "--fetch-timeout=5000",
         *specs,
     ]
     installed = _run(

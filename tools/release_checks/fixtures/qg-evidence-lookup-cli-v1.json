@@ -1,0 +1,407 @@
+{
+  "source": "raise RuntimeError(\"not to be executed\")\n\nclass Base:\n    def method(self):\n        return 1\n\nclass Child(Base):\n    def method(self):\n        return super().method()\n\ndef sink():\n    return 42\n\ndef intermediate():\n    return sink()\n\ndef entry():\n    return intermediate()\n\ndef use_callback():\n    return map(sink, ())\n",
+  "cases": [
+    {
+      "case_id": "evidence-real-subprocess",
+      "args": [
+        "--rule",
+        "QG003"
+      ],
+      "exec": "process",
+      "code": 0,
+      "contains": [
+        "## QG003"
+      ]
+    },
+    {
+      "case_id": "evidence-two-level-upstream",
+      "args": [
+        "--rule",
+        "QG004",
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.sink",
+        "--direction",
+        "callers",
+        "--depth",
+        "2"
+      ],
+      "code": 0,
+      "contains": [
+        "## QG004",
+        "`sample.intermediate` → `sample.sink`",
+        "`sample.entry` → `sample.intermediate`",
+        "`sample.py:",
+        "DIRECT_CALL, resolved",
+        "[CALLBACK_ARGUMENT]",
+        "`sample.use_callback` → `sample.sink`"
+      ],
+      "before_section_absent": [
+        {
+          "section": "## 传入回调/注册参数",
+          "value": "`sample.use_callback` → `sample.sink`"
+        }
+      ]
+    },
+    {
+      "case_id": "evidence-budget-truncation",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.entry",
+        "--direction",
+        "callees",
+        "--depth",
+        "2",
+        "--max-edges",
+        "1"
+      ],
+      "code": 0,
+      "contains": [
+        "`sample.entry` → `sample.intermediate`",
+        "TRUNCATED"
+      ]
+    },
+    {
+      "case_id": "evidence-no-invented-two-hop",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.sink",
+        "--depth",
+        "1"
+      ],
+      "code": 0,
+      "contains": [
+        "`sample.intermediate` → `sample.sink`"
+      ],
+      "absent": [
+        "`sample.entry` → `sample.intermediate`"
+      ]
+    },
+    {
+      "case_id": "evidence-inheritance-not-callstack",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.Child"
+      ],
+      "code": 0,
+      "contains": [
+        "类型关系",
+        "inheritance",
+        "静态，非运行时 Traceback"
+      ]
+    },
+    {
+      "case_id": "evidence-ambiguous-symbol",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sink"
+      ],
+      "extra_files": {
+        "second.py": "def sink():\n    return -1\n"
+      },
+      "code": 2,
+      "stdout_empty": true,
+      "stderr_contains": [
+        "目标必须唯一",
+        "sample.sink",
+        "second.sink"
+      ]
+    },
+    {
+      "case_id": "evidence-remediation-source",
+      "args": [
+        "--rule",
+        "QG003",
+        "--rule",
+        "QG004",
+        "--rule",
+        "QG033"
+      ],
+      "code": 0,
+      "contains": [
+        "QG003 / QG026",
+        "实际可达性",
+        "bool(set[str])",
+        "RULES.md:"
+      ]
+    },
+    {
+      "case_id": "evidence-catalog-plus-graph",
+      "args": [
+        "--rule",
+        "QG004",
+        "--api",
+        "intermediate",
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.intermediate",
+        "--direction",
+        "callees"
+      ],
+      "code": 0,
+      "contains": [
+        "# API Catalog 文档查询",
+        "`sample.intermediate`",
+        "## QG004",
+        "`sample.intermediate` → `sample.sink`"
+      ],
+      "artifacts": [
+        "docs/api-reference/catalog.json"
+      ]
+    },
+    {
+      "case_id": "evidence-bm25-miss-is-not-absence",
+      "args": [
+        "--api",
+        "ultranonexistentxyz",
+        "--repo",
+        "@repo"
+      ],
+      "code": 0,
+      "contains": [
+        "未召回不等于不存在"
+      ]
+    },
+    {
+      "case_id": "evidence-rule-only-no-repo",
+      "args": [
+        "--rule",
+        "QG003"
+      ],
+      "code": 0,
+      "contains": [
+        "## QG003"
+      ],
+      "absent": [
+        "# 仓库静态证据查询"
+      ]
+    },
+    {
+      "case_id": "evidence-bad-argument-combination",
+      "args": [
+        "--rule",
+        "QG003",
+        "--repo",
+        "@repo"
+      ],
+      "code": 2,
+      "stdout_empty": true
+    },
+    {
+      "case_id": "evidence-missing-symbol",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "missing"
+      ],
+      "code": 2,
+      "stdout_empty": true
+    },
+    {
+      "case_id": "evidence-depth-overflow",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.sink",
+        "--depth",
+        "6"
+      ],
+      "code": 2,
+      "stdout_empty": true
+    },
+    {
+      "case_id": "evidence-bounded-excerpt",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.sink",
+        "--snippet-lines",
+        "1",
+        "--depth",
+        "1"
+      ],
+      "code": 0,
+      "contains": [
+        "def sink():"
+      ],
+      "absent": [
+        "raise RuntimeError"
+      ]
+    },
+    {
+      "case_id": "b31-evidence-external-invocation",
+      "exec": "process",
+      "args": [
+        "--repo",
+        "@repo",
+        "--file",
+        "sample.py",
+        "--line",
+        "15",
+        "--name",
+        "identifier",
+        "--kind",
+        "variable"
+      ],
+      "contains": [
+        "sample.consume",
+        "sample.normalize"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n",
+      "code": 0
+    },
+    {
+      "case_id": "b31-evidence-source-chain",
+      "args": [
+        "--repo",
+        "@repo",
+        "--file",
+        "sample.py",
+        "--line",
+        "15",
+        "--name",
+        "identifier",
+        "--kind",
+        "variable",
+        "--direction",
+        "callers"
+      ],
+      "contains": [
+        "sample.normalize",
+        "`identifier`",
+        "payload['id']",
+        "`sample.py:20`",
+        "`sample.py:19`",
+        "`{'id': 'A'}`",
+        "OPEN_WORLD"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n",
+      "code": 0
+    },
+    {
+      "case_id": "b31-evidence-user-method-owner",
+      "args": [
+        "--repo",
+        "@repo",
+        "--file",
+        "sample.py",
+        "--line",
+        "12",
+        "--name",
+        "Plugin",
+        "--kind",
+        "class"
+      ],
+      "contains": [
+        "`sample.Plugin`",
+        "Base",
+        "inheritance"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n",
+      "code": 0
+    },
+    {
+      "case_id": "b31-evidence-auto-local",
+      "args": [
+        "--repo",
+        "@repo",
+        "--file",
+        "sample.py",
+        "--line",
+        "15",
+        "--name",
+        "identifier"
+      ],
+      "contains": [
+        "`sample.py:19`"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n",
+      "code": 0
+    },
+    {
+      "case_id": "b31-evidence-nonexistent-variable",
+      "args": [
+        "--repo",
+        "@repo",
+        "--file",
+        "sample.py",
+        "--line",
+        "15",
+        "--name",
+        "invented"
+      ],
+      "code": 2,
+      "stdout_empty": true,
+      "stderr_contains": [
+        "变量不在选定函数"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n"
+    },
+    {
+      "case_id": "b31-evidence-outside-repository-denied",
+      "args": [
+        "--repo",
+        "@repo",
+        "--file",
+        "../untrusted.py",
+        "--line",
+        "5"
+      ],
+      "code": 2,
+      "stdout_empty": true,
+      "stderr_contains": [
+        "必须位于指定仓库内"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n"
+    },
+    {
+      "case_id": "core02-fixed-git-two-hop-caller-golden",
+      "git_snapshot": true,
+      "exec": "process",
+      "args": [
+        "--repo",
+        "@repo",
+        "--symbol",
+        "sample.sink",
+        "--direction",
+        "callers",
+        "--depth",
+        "2",
+        "--max-edges",
+        "6",
+        "--snippet-lines",
+        "0"
+      ],
+      "code": 0,
+      "contains": [
+        "目标：`sample.sink` @ `sample.py:11`",
+        "`sample.intermediate` → `sample.sink` [DIRECT_CALL, resolved]",
+        "CALL SITE `sample.py:15`",
+        "`sample.entry` → `sample.intermediate` → `sample.sink` [DIRECT_CALL, resolved]",
+        "CALL SITE `sample.py:18`",
+        "[CALLBACK_ARGUMENT]",
+        "`sample.use_callback` → `sample.sink` @ `sample.py:21`",
+        "OPEN_WORLD"
+      ],
+      "before_section_absent": [
+        {
+          "section": "## 传入回调/注册参数的源码位点",
+          "value": "`sample.use_callback` → `sample.sink`"
+        }
+      ]
+    }
+  ]
+}

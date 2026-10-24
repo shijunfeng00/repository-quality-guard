@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .core_rule_contract import CoreQualityRule
+
 import ast
 import hashlib
 import re
@@ -57,6 +59,7 @@ class ClassSnapshot:
     bases: tuple[str, ...]
     methods: dict[str, MethodSnapshot] = field(default_factory=dict)
     assignments: dict[str, str] = field(default_factory=dict)
+    reference_assignments: set[str] = field(default_factory=set)
 
 
 @dataclass(slots=True, frozen=True)
@@ -105,8 +108,31 @@ class ArchitectureSnapshot:
     typed_receiver_calls: set[TypedReceiverCallEdge]
 
 
+@dataclass(slots=True, frozen=True)
+class ParentReplacementContext:
+    """Edge and shared architecture snapshots for a parent capability replacement.
+
+    Fields: edge, base, target."""
+
+    edge: ParentCallEdge
+    base: ArchitectureSnapshot
+    target: ArchitectureSnapshot
+
+
+@dataclass(slots=True, frozen=True)
+class ArchitectureDeltaContext:
+    """One pair of architecture snapshots shared by all Git-delta rules.
+
+    Fields: base, target."""
+
+    base: ArchitectureSnapshot
+    target: ArchitectureSnapshot
+
+
 class _MethodCollector(ast.NodeVisitor):
-    """收集方法中的调用名称和属性访问，不进入嵌套作用域。"""
+    """收集方法中的调用名称和属性访问，不进入嵌套作用域。
+
+    This definition supplies reusable typed behavior to its callers."""
 
     def __init__(self) -> None:
         """
@@ -286,9 +312,10 @@ def _method_fingerprint(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
 
 def _collect_assignments(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> dict[str, str]:
-    """收集构造函数中直接写入 self 属性的值来源。"""
+) -> tuple[dict[str, str], set[str]]:
+    """Collect assignment sources and direct-reference kinds from the same parsed AST."""
     result: dict[str, str] = {}
+    references: set[str] = set()
     for statement in ast.walk(node):
         if (
             isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
@@ -309,8 +336,24 @@ def _collect_assignments(
                 and isinstance(target.value, ast.Name)
                 and target.value.id == "self"
             ):
-                result[target.attr] = _render(value)
-    return result
+                # Reuse the parsed AST to classify QG167 candidates.  Render
+                # precisely once, with the same fallback as _render().
+                reference = isinstance(value, (ast.Name, ast.Attribute, ast.Subscript))
+                try:
+                    rendered = ast.unparse(value) if value is not None else ""
+                except (AttributeError, ValueError):
+                    rendered = (
+                        ast.dump(value, include_attributes=False)
+                        if value is not None
+                        else ""
+                    )
+                    reference = False
+                result[target.attr] = rendered
+                if reference:
+                    references.add(target.attr)
+                else:
+                    references.discard(target.attr)
+    return result, references
 
 
 def _receiver_aliases(
@@ -475,7 +518,9 @@ def _collect_class(
                 typed_receiver_calls=frozenset(collector.typed_receiver_calls),
             )
             if child.name == "__init__":
-                snapshot.assignments.update(_collect_assignments(child))
+                sources, references = _collect_assignments(child)
+                snapshot.assignments.update(sources)
+                snapshot.reference_assignments.update(references)
         elif isinstance(child, ast.ClassDef):
             yield from _collect_class(path, child, qualname)
     yield snapshot
@@ -641,101 +686,6 @@ def _worktree_sources(root: Path, config: GuardConfig) -> dict[str, str]:
     return result
 
 
-def _removed_inheritance_findings(
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-) -> list[Finding]:
-    """报告仍存在类上的继承边删除。"""
-    findings: list[Finding] = []
-    for key, before in base.classes.items():
-        after = target.classes.get(key)
-        if after is None:
-            continue
-        for base_name in sorted(set(before.bases) - set(after.bases)):
-            findings.append(
-                Finding(
-                    code="QG164",
-                    severity="error",
-                    confidence="high",
-                    path=after.path,
-                    line=after.line,
-                    column=1,
-                    symbol=after.qualname,
-                    message=f"Git 基线继承关系 `{after.qualname}({base_name})` 已从当前代码移除。",
-                    suggestion="恢复继承，或在修改说明中披露新所有者、完整迁移链和验证证据。",
-                    evidence={"child": after.qualname, "removed_base": base_name},
-                )
-            )
-    return findings
-
-
-def _replacement_finding(
-    edge: ParentCallEdge,
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-) -> Finding | None:
-    """在父类方法删除后识别子类新增的近似替代实现。"""
-    child_before = base.classes[edge.child]
-    child_after = target.classes.get(edge.child)
-    parent_before = base.classes[edge.parent]
-    parent_after = target.classes.get(edge.parent)
-    if child_after is None:
-        return None
-    parent_method = parent_before.methods.get(edge.method)
-    if parent_method is None or (
-        parent_after is not None and edge.method in parent_after.methods
-    ):
-        return None
-    new_methods = [
-        method
-        for name, method in child_after.methods.items()
-        if name not in child_before.methods
-    ]
-    for candidate in new_methods:
-        parent_parts = {
-            part.lower()
-            for chunk in edge.method.strip("_").split("_")
-            for part in _IDENTIFIER_PART.findall(chunk)
-        } - _IGNORED_NAME_PARTS
-        candidate_parts = {
-            part.lower()
-            for chunk in candidate.name.strip("_").split("_")
-            for part in _IDENTIFIER_PART.findall(chunk)
-        } - _IGNORED_NAME_PARTS
-        name_overlap = parent_parts & candidate_parts
-        parent_features = parent_method.call_names | parent_method.attribute_names
-        candidate_features = candidate.call_names | candidate.attribute_names
-        shared = parent_features & candidate_features
-        similarity = (
-            len(shared) / len(parent_features | candidate_features)
-            if len(shared) >= _MIN_SHARED_FEATURES
-            else 0.0
-        )
-        if not name_overlap or similarity < _CAPABILITY_SIMILARITY_THRESHOLD:
-            continue
-        return Finding(
-            code="QG163",
-            severity="critical",
-            confidence="high",
-            path=child_after.path,
-            line=candidate.line,
-            column=1,
-            symbol=f"{child_after.qualname}.{candidate.name}",
-            message=(
-                f"父类公共能力 `{parent_before.name}.{edge.method}` 的调用消失后，"
-                f"子类以 `{candidate.name}` 重新实现了近似能力。"
-            ),
-            suggestion="恢复正确的公共所有者，删除子类替代实现和由此产生的影子状态。",
-            evidence={
-                "parent_method": f"{parent_before.name}.{edge.method}",
-                "child_method": f"{child_after.qualname}.{candidate.name}",
-                "name_overlap": sorted(name_overlap),
-                "behavior_similarity": round(similarity, 3),
-            },
-        )
-    return None
-
-
 def _new_typed_parent_calls(
     base: ArchitectureSnapshot, target: ArchitectureSnapshot
 ) -> set[tuple[str, str, str, str]]:
@@ -765,237 +715,6 @@ def _surviving_parent_call_reachable(
         method = child.methods[caller]
         pending.update((method.receiver_call_names & child.methods.keys()) - visited)
     return bool(visited & direct_callers)
-
-
-def _lost_parent_edge_findings(
-    edge: ParentCallEdge,
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-    child_after: ClassSnapshot,
-    direct_callers: set[str],
-    new_typed_calls: set[tuple[str, str, str, str]],
-) -> list[Finding]:
-    """汇总一条消失的公开父类调用及其可能的能力替代实现。"""
-    findings: list[Finding] = []
-    parent_before = base.classes[edge.parent]
-    explicit_owner_migration = any(
-        owner != edge.child
-        and receiver_type == parent_before.name
-        and method_name == edge.method
-        for owner, _caller, receiver_type, method_name in new_typed_calls
-    )
-    if edge.caller in child_after.methods and explicit_owner_migration:
-        return []
-    caller_after = child_after.methods.get(edge.caller)
-    line = (caller_after or child_after).line
-    findings.append(
-        Finding(
-            code="QG162",
-            severity="warning",
-            confidence="high",
-            path=child_after.path,
-            line=line,
-            column=1,
-            symbol=f"{child_after.qualname}.{edge.caller}",
-            message=(
-                f"Git 基线中的继承调用边 `{child_after.qualname}.{edge.caller}` → "
-                f"`{parent_before.name}.{edge.method}` 已消失。"
-            ),
-            suggestion=(
-                "恢复原调用者到父类能力的直接或同类 helper 可达调用链，"
-                "或披露功能删除/所有者迁移后的完整证据。"
-            ),
-            evidence={
-                "child": child_after.qualname,
-                "caller": edge.caller,
-                "parent": parent_before.name,
-                "method": edge.method,
-                "remaining_direct_callers": sorted(direct_callers),
-            },
-        )
-    )
-    replacement = _replacement_finding(edge, base, target)
-    if replacement is not None:
-        findings.append(replacement)
-    return findings
-
-
-def _lost_parent_call_findings(
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-) -> list[Finding]:
-    """报告基线继承能力调用链真正消失及其子类替代实现。"""
-    findings: list[Finding] = []
-    target_edges = {
-        (edge.child, edge.caller, edge.parent, edge.method)
-        for edge in target.parent_calls
-    }
-    capability_callers: defaultdict[tuple[str, str, str], set[str]] = defaultdict(set)
-    new_typed_calls = _new_typed_parent_calls(base, target)
-    for target_edge in target.parent_calls:
-        capability = (target_edge.child, target_edge.parent, target_edge.method)
-        capability_callers[capability].add(target_edge.caller)
-    # Only public inherited capabilities can be protected by QG162. Private
-    # parent slots belong exclusively to QG149 ownership enforcement.
-    for edge in filter(
-        lambda entry: (
-            not (
-                entry.method.startswith("_")
-                and not (entry.method.startswith("__") and entry.method.endswith("__"))
-            )
-        ),
-        sorted(base.parent_calls, key=lambda item: (item.path, item.line, item.method)),
-    ):
-        edge_key = (edge.child, edge.caller, edge.parent, edge.method)
-        child_after = target.classes.get(edge.child)
-        if edge_key in target_edges or child_after is None:
-            continue
-        direct_callers = capability_callers[(edge.child, edge.parent, edge.method)]
-        if _surviving_parent_call_reachable(edge, child_after, direct_callers):
-            continue
-        findings.extend(
-            _lost_parent_edge_findings(
-                edge, base, target, child_after, direct_callers, new_typed_calls
-            )
-        )
-    return findings
-
-
-def _duplicate_override_findings(
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-) -> list[Finding]:
-    """识别子类新增的完全重复 override。"""
-    findings: list[Finding] = []
-    for key, child, _parent_key, parent in _unique_parent_classes(
-        target.classes, target.simple_names
-    ):
-        before_child = base.classes.get(key)
-        if before_child is None:
-            continue
-        for name, method in child.methods.items():
-            if name not in parent.methods:
-                continue
-            parent_method = parent.methods[name]
-            if (
-                name not in before_child.methods
-                and method.fingerprint == parent_method.fingerprint
-            ):
-                findings.append(
-                    Finding(
-                        code="QG165",
-                        severity="critical",
-                        confidence="high",
-                        path=child.path,
-                        line=method.line,
-                        column=1,
-                        symbol=f"{child.qualname}.{name}",
-                        message=f"子类新增方法与父类 `{parent.name}.{name}` 的实现完全重复。",
-                        suggestion="删除重复 override，直接复用父类实现；确需覆盖时提供真实行为差异。",
-                        evidence={"parent": parent.name, "method": name},
-                    )
-                )
-    return findings
-
-
-def _shadow_state_findings(
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-) -> list[Finding]:
-    """识别子类新增且与父类同源的影子状态。"""
-    findings: list[Finding] = []
-    for key, child, _parent_key, parent in _unique_parent_classes(
-        target.classes, target.simple_names
-    ):
-        before_child = base.classes.get(key)
-        if before_child is None:
-            continue
-        for attr, source in child.assignments.items():
-            if (
-                attr in before_child.assignments
-                and before_child.assignments[attr] == source
-            ):
-                continue
-            if not source:
-                continue
-            try:
-                expression = ast.parse(source, mode="eval").body
-            except SyntaxError:
-                continue
-            if not isinstance(expression, (ast.Name, ast.Attribute, ast.Subscript)):
-                continue
-            for parent_attr, parent_source in parent.assignments.items():
-                if attr == parent_attr or source != parent_source:
-                    continue
-                init_method = child.methods.get("__init__")
-                findings.append(
-                    Finding(
-                        code="QG167",
-                        severity="critical",
-                        confidence="high",
-                        path=child.path,
-                        line=init_method.line
-                        if init_method is not None
-                        else child.line,
-                        column=1,
-                        symbol=f"{child.qualname}.{attr}",
-                        message=(
-                            f"子类新增字段 `{attr}` 与父类 `{parent.name}.{parent_attr}` "
-                            f"保存同一来源 `{source}`，疑似形成影子状态。"
-                        ),
-                        suggestion="复用父类状态或明确唯一所有者，避免两套状态发生漂移。",
-                        evidence={
-                            "child_field": attr,
-                            "parent_field": parent_attr,
-                            "source": source,
-                        },
-                    )
-                )
-                break
-    return findings
-
-
-def _sibling_common_findings(
-    base: ArchitectureSnapshot,
-    target: ArchitectureSnapshot,
-) -> list[Finding]:
-    """识别多个兄弟子类新增的完全相同实现。"""
-    groups: dict[tuple[str, str, str], list[tuple[ClassSnapshot, MethodSnapshot]]] = {}
-    for key, child in target.classes.items():
-        before_child = base.classes.get(key)
-        if before_child is None:
-            continue
-        for base_name in child.bases:
-            for name, method in child.methods.items():
-                if name in before_child.methods or name.startswith("__"):
-                    continue
-                group_key = (base_name, name, method.fingerprint)
-                if group_key not in groups:
-                    groups[group_key] = []
-                groups[group_key].append((child, method))
-    findings: list[Finding] = []
-    for (base_name, name, _fingerprint), implementations in groups.items():
-        if len(implementations) < _MIN_SIBLING_IMPLEMENTATIONS:
-            continue
-        first, first_method = implementations[0]
-        names = sorted(item.qualname for item, _ in implementations)
-        findings.append(
-            Finding(
-                code="QG166",
-                severity="critical",
-                confidence="high",
-                path=first.path,
-                line=first_method.line,
-                column=1,
-                symbol=f"{first.qualname}.{name}",
-                message=(
-                    f"多个 `{base_name}` 子类新增了完全相同的 `{name}` 实现：{', '.join(names)}。"
-                ),
-                suggestion="检查是否应上提父类、引入中间基类或提取唯一公共协作者。",
-                evidence={"base": base_name, "method": name, "children": names},
-            )
-        )
-    return findings
 
 
 def compare_git_architecture(
@@ -1036,15 +755,438 @@ def compare_git_architecture(
         target_sources,
         target_analysis.trees() if target_analysis is not None else None,
     )
+    context = ArchitectureDeltaContext(base, target)
     findings = [
-        *_removed_inheritance_findings(base, target),
-        *_lost_parent_call_findings(base, target),
-        *_duplicate_override_findings(base, target),
-        *_shadow_state_findings(base, target),
-        *_sibling_common_findings(base, target),
+        *RemovedInheritanceRule().evaluate(context),
+        *LostInheritedCallRule().evaluate(context),
+        *DuplicateOverrideRule().evaluate(context),
+        *ShadowStateRule().evaluate(context),
+        *SiblingImplementationRule().evaluate(context),
     ]
     unique = {finding.fingerprint: finding for finding in findings}
     return sorted(
         unique.values(),
         key=lambda item: (item.path, item.line, item.code, item.symbol),
     )
+
+
+class RemovedInheritanceRule(CoreQualityRule[ArchitectureDeltaContext]):
+    """Unique QG164 owner using shared source facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG164"
+
+    def evaluate(self, context: ArchitectureDeltaContext) -> list[Finding]:
+        """报告仍存在类上的继承边删除。
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        base = context.base
+        target = context.target
+        findings: list[Finding] = []
+        for key, before in base.classes.items():
+            after = target.classes.get(key)
+            if after is None:
+                continue
+            for base_name in sorted(set(before.bases) - set(after.bases)):
+                findings.append(
+                    Finding(
+                        code="QG164",
+                        severity="error",
+                        confidence="high",
+                        path=after.path,
+                        line=after.line,
+                        column=1,
+                        symbol=after.qualname,
+                        message=f"Git 基线继承关系 `{after.qualname}({base_name})` 已从当前代码移除。",
+                        suggestion="恢复继承，或在修改说明中披露新所有者、完整迁移链和验证证据。",
+                        evidence={"child": after.qualname, "removed_base": base_name},
+                    )
+                )
+        return findings
+
+
+class DuplicateOverrideRule(CoreQualityRule[ArchitectureDeltaContext]):
+    """Unique QG165 owner using shared source facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG165"
+
+    def evaluate(self, context: ArchitectureDeltaContext) -> list[Finding]:
+        """识别子类新增的完全重复 override。
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        base = context.base
+        target = context.target
+        findings: list[Finding] = []
+        for key, child, _parent_key, parent in _unique_parent_classes(
+            target.classes, target.simple_names
+        ):
+            before_child = base.classes.get(key)
+            if before_child is None:
+                continue
+            for name, method in child.methods.items():
+                if name not in parent.methods:
+                    continue
+                parent_method = parent.methods[name]
+                if (
+                    name not in before_child.methods
+                    and method.fingerprint == parent_method.fingerprint
+                ):
+                    findings.append(
+                        Finding(
+                            code="QG165",
+                            severity="critical",
+                            confidence="high",
+                            path=child.path,
+                            line=method.line,
+                            column=1,
+                            symbol=f"{child.qualname}.{name}",
+                            message=f"子类新增方法与父类 `{parent.name}.{name}` 的实现完全重复。",
+                            suggestion="删除重复 override，直接复用父类实现；确需覆盖时提供真实行为差异。",
+                            evidence={"parent": parent.name, "method": name},
+                        )
+                    )
+        return findings
+
+
+class ShadowStateRule(CoreQualityRule[ArchitectureDeltaContext]):
+    """Unique QG167 owner using shared source facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG167"
+
+    def evaluate(self, context: ArchitectureDeltaContext) -> list[Finding]:
+        """识别子类新增且与父类同源的影子状态。
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        base = context.base
+        target = context.target
+        findings: list[Finding] = []
+        for key, child, _parent_key, parent in _unique_parent_classes(
+            target.classes, target.simple_names
+        ):
+            before_child = base.classes.get(key)
+            if before_child is None:
+                continue
+            for attr, source in child.assignments.items():
+                if (
+                    attr in before_child.assignments
+                    and before_child.assignments[attr] == source
+                ):
+                    continue
+                if not source:
+                    continue
+                if attr not in child.reference_assignments:
+                    continue
+                for parent_attr, parent_source in parent.assignments.items():
+                    if attr == parent_attr or source != parent_source:
+                        continue
+                    init_method = child.methods.get("__init__")
+                    findings.append(
+                        Finding(
+                            code="QG167",
+                            severity="critical",
+                            confidence="high",
+                            path=child.path,
+                            line=init_method.line
+                            if init_method is not None
+                            else child.line,
+                            column=1,
+                            symbol=f"{child.qualname}.{attr}",
+                            message=(
+                                f"子类新增字段 `{attr}` 与父类 `{parent.name}.{parent_attr}` "
+                                f"保存同一来源 `{source}`，疑似形成影子状态。"
+                            ),
+                            suggestion="复用父类状态或明确唯一所有者，避免两套状态发生漂移。",
+                            evidence={
+                                "child_field": attr,
+                                "parent_field": parent_attr,
+                                "source": source,
+                            },
+                        )
+                    )
+                    break
+        return findings
+
+
+class SiblingImplementationRule(CoreQualityRule[ArchitectureDeltaContext]):
+    """Unique QG166 owner using shared source facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG166"
+
+    def evaluate(self, context: ArchitectureDeltaContext) -> list[Finding]:
+        """识别多个兄弟子类新增的完全相同实现。
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        base = context.base
+        target = context.target
+        groups: dict[
+            tuple[str, str, str], list[tuple[ClassSnapshot, MethodSnapshot]]
+        ] = {}
+        for key, child in target.classes.items():
+            before_child = base.classes.get(key)
+            if before_child is None:
+                continue
+            for base_name in child.bases:
+                for name, method in child.methods.items():
+                    if name in before_child.methods or name.startswith("__"):
+                        continue
+                    group_key = (base_name, name, method.fingerprint)
+                    if group_key not in groups:
+                        groups[group_key] = []
+                    groups[group_key].append((child, method))
+        findings: list[Finding] = []
+        for (base_name, name, _fingerprint), implementations in groups.items():
+            if len(implementations) < _MIN_SIBLING_IMPLEMENTATIONS:
+                continue
+            first, first_method = implementations[0]
+            names = sorted(item.qualname for item, _ in implementations)
+            findings.append(
+                Finding(
+                    code="QG166",
+                    severity="critical",
+                    confidence="high",
+                    path=first.path,
+                    line=first_method.line,
+                    column=1,
+                    symbol=f"{first.qualname}.{name}",
+                    message=(
+                        f"多个 `{base_name}` 子类新增了完全相同的 `{name}` 实现：{', '.join(names)}。"
+                    ),
+                    suggestion="检查是否应上提父类、引入中间基类或提取唯一公共协作者。",
+                    evidence={"base": base_name, "method": name, "children": names},
+                )
+            )
+        return findings
+
+
+class ParentCapabilityReplacementRule(CoreQualityRule[ParentReplacementContext]):
+    """Own QG163 parent capability replacement without re-building any graph.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG163"
+
+    def evaluate(self, context: ParentReplacementContext) -> list[Finding]:
+        """Compare replacement methods against the removed parent method.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        edge = context.edge
+        base = context.base
+        target = context.target
+        child_before = base.classes[edge.child]
+        child_after = target.classes.get(edge.child)
+        parent_before = base.classes[edge.parent]
+        parent_after = target.classes.get(edge.parent)
+        if child_after is None:
+            return []
+        parent_method = parent_before.methods.get(edge.method)
+        if parent_method is None or (
+            parent_after is not None and edge.method in parent_after.methods
+        ):
+            return []
+        new_methods = [
+            method
+            for name, method in child_after.methods.items()
+            if name not in child_before.methods
+        ]
+        for candidate in new_methods:
+            parent_parts = {
+                part.lower()
+                for chunk in edge.method.strip("_").split("_")
+                for part in _IDENTIFIER_PART.findall(chunk)
+            } - _IGNORED_NAME_PARTS
+            candidate_parts = {
+                part.lower()
+                for chunk in candidate.name.strip("_").split("_")
+                for part in _IDENTIFIER_PART.findall(chunk)
+            } - _IGNORED_NAME_PARTS
+            name_overlap = parent_parts & candidate_parts
+            parent_features = parent_method.call_names | parent_method.attribute_names
+            candidate_features = candidate.call_names | candidate.attribute_names
+            shared = parent_features & candidate_features
+            similarity = (
+                len(shared) / len(parent_features | candidate_features)
+                if len(shared) >= _MIN_SHARED_FEATURES
+                else 0.0
+            )
+            if not name_overlap or similarity < _CAPABILITY_SIMILARITY_THRESHOLD:
+                continue
+            finding = Finding(
+                code="QG163",
+                severity="critical",
+                confidence="high",
+                path=child_after.path,
+                line=candidate.line,
+                column=1,
+                symbol=f"{child_after.qualname}.{candidate.name}",
+                message=(
+                    f"父类公共能力 `{parent_before.name}.{edge.method}` 的调用消失后，"
+                    f"子类以 `{candidate.name}` 重新实现了近似能力。"
+                ),
+                suggestion="恢复正确的公共所有者，删除子类替代实现和由此产生的影子状态。",
+                evidence={
+                    "parent_method": f"{parent_before.name}.{edge.method}",
+                    "child_method": f"{child_after.qualname}.{candidate.name}",
+                    "name_overlap": sorted(name_overlap),
+                    "behavior_similarity": round(similarity, 3),
+                },
+            )
+            return [finding]
+        return []
+
+
+class LostInheritedCallRule(CoreQualityRule[ArchitectureDeltaContext]):
+    """Own QG162 lost inherited call witnesses with one shared graph delta.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG162"
+
+    def evaluate(self, context: ArchitectureDeltaContext) -> list[Finding]:
+        """Report lost public inherited edges while preserving UNKNOWN paths.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        base = context.base
+        target = context.target
+        findings: list[Finding] = []
+        target_edges = {
+            (edge.child, edge.caller, edge.parent, edge.method)
+            for edge in target.parent_calls
+        }
+        capability_callers: defaultdict[tuple[str, str, str], set[str]] = defaultdict(
+            set
+        )
+        new_typed_calls = _new_typed_parent_calls(base, target)
+        for target_edge in target.parent_calls:
+            capability = (target_edge.child, target_edge.parent, target_edge.method)
+            capability_callers[capability].add(target_edge.caller)
+        # Only public inherited capabilities can be protected by QG162. Private
+        # parent slots belong exclusively to QG149 ownership enforcement.
+        for edge in filter(
+            lambda entry: (
+                not (
+                    entry.method.startswith("_")
+                    and not (
+                        entry.method.startswith("__") and entry.method.endswith("__")
+                    )
+                )
+            ),
+            sorted(
+                base.parent_calls, key=lambda item: (item.path, item.line, item.method)
+            ),
+        ):
+            edge_key = (edge.child, edge.caller, edge.parent, edge.method)
+            child_after = target.classes.get(edge.child)
+            if edge_key in target_edges or child_after is None:
+                continue
+            direct_callers = capability_callers[(edge.child, edge.parent, edge.method)]
+            if _surviving_parent_call_reachable(edge, child_after, direct_callers):
+                continue
+            findings.extend(
+                self.edge_findings(
+                    edge, base, target, child_after, direct_callers, new_typed_calls
+                )
+            )
+        return findings
+
+    def edge_findings(
+        self,
+        edge: ParentCallEdge,
+        base: ArchitectureSnapshot,
+        target: ArchitectureSnapshot,
+        child_after: ClassSnapshot,
+        direct_callers: set[str],
+        new_typed_calls: set[tuple[str, str, str, str]],
+    ) -> list[Finding]:
+        """Describe one disappeared public inherited call unless ownership moved.
+
+        A newly explicit typed receiver that preserves the parent's capability
+        can discharge the original edge; otherwise report the removed link.
+
+        Args:
+            edge: Original child-to-parent call being compared.
+            base: Frozen architecture snapshot at the Git revision.
+            target: Current architecture snapshot for migration evidence.
+            child_after: Surviving child definition whose call edge vanished.
+            direct_callers: Current callers retaining the parent's capability.
+            new_typed_calls: Newly explicit typed-receiver call identities.
+
+        Returns:
+            A QG162 finding at the surviving caller, or no finding when
+            explicitly migrated calls provide sufficient ownership evidence.
+        """
+        findings: list[Finding] = []
+        parent_before = base.classes[edge.parent]
+        explicit_owner_migration = any(
+            owner != edge.child
+            and receiver_type == parent_before.name
+            and method_name == edge.method
+            for owner, _caller, receiver_type, method_name in new_typed_calls
+        )
+        if edge.caller in child_after.methods and explicit_owner_migration:
+            return []
+        caller_after = child_after.methods.get(edge.caller)
+        line = (caller_after or child_after).line
+        findings.append(
+            Finding(
+                code="QG162",
+                severity="warning",
+                confidence="high",
+                path=child_after.path,
+                line=line,
+                column=1,
+                symbol=f"{child_after.qualname}.{edge.caller}",
+                message=(
+                    f"Git 基线中的继承调用边 `{child_after.qualname}.{edge.caller}` → "
+                    f"`{parent_before.name}.{edge.method}` 已消失。"
+                ),
+                suggestion=(
+                    "恢复原调用者到父类能力的直接或同类 helper 可达调用链，"
+                    "或披露功能删除/所有者迁移后的完整证据。"
+                ),
+                evidence={
+                    "child": child_after.qualname,
+                    "caller": edge.caller,
+                    "parent": parent_before.name,
+                    "method": edge.method,
+                    "remaining_direct_callers": sorted(direct_callers),
+                },
+            )
+        )
+        replacements = ParentCapabilityReplacementRule().evaluate(
+            ParentReplacementContext(edge, base, target)
+        )
+        replacement = replacements[0] if replacements else None
+        if replacement is not None:
+            findings.append(replacement)
+        return findings

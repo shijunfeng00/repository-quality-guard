@@ -1,0 +1,214 @@
+{
+  "schema": "core-exception-contract-batch11.v1",
+  "cases": [
+    {
+      "case_id": "qg214-direct-none",
+      "rule": "QG214",
+      "kind": "TP",
+      "source": "def fetch():\n    try:\n        return load()\n    except Exception:\n        return None\n",
+      "expected": [
+        [
+          "QG214",
+          "warning",
+          "medium",
+          "fixture.py",
+          5,
+          9,
+          "fetch",
+          "source-bound-r3",
+          "REVIEW_NOT_PROVEN_DEFECT"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg214-default-parameter",
+      "rule": "QG214",
+      "kind": "TP",
+      "source": "def fetch(default=False):\n    try:\n        return load()\n    except BaseException:\n        return default\n",
+      "expected": [
+        [
+          "QG214",
+          "warning",
+          "medium",
+          "fixture.py",
+          5,
+          9,
+          "fetch",
+          "source-bound-r3",
+          "REVIEW_NOT_PROVEN_DEFECT"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg214-narrow-exception",
+      "rule": "QG214",
+      "kind": "TN",
+      "source": "def fetch():\n    try:\n        return load()\n    except ValueError:\n        return None\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg214-observed-handler",
+      "rule": "QG214",
+      "kind": "TN",
+      "source": "def fetch():\n    try:\n        return load()\n    except Exception:\n        record_error()\n        return None\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg214-dynamic-fallback",
+      "rule": "QG214",
+      "kind": "TN",
+      "source": "def fetch():\n    try:\n        return load()\n    except Exception:\n        return recover()\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg215-direct-pass",
+      "rule": "QG215",
+      "kind": "TP",
+      "source": "def fetch():\n    try:\n        load()\n    except Exception:\n        pass\n",
+      "expected": [
+        [
+          "QG215",
+          "warning",
+          "medium",
+          "fixture.py",
+          4,
+          5,
+          "fetch",
+          "source-bound-r3",
+          "REVIEW_NOT_PROVEN_DEFECT"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg215-local-sentinel",
+      "rule": "QG215",
+      "kind": "TP",
+      "source": "def fetch():\n    try:\n        load()\n    except BaseException:\n        result: object = None\n",
+      "expected": [
+        [
+          "QG215",
+          "warning",
+          "medium",
+          "fixture.py",
+          4,
+          5,
+          "fetch",
+          "source-bound-r3",
+          "REVIEW_NOT_PROVEN_DEFECT"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg215-narrow-handler",
+      "rule": "QG215",
+      "kind": "TN",
+      "source": "def fetch():\n    try:\n        load()\n    except ValueError:\n        pass\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg215-observed-handler",
+      "rule": "QG215",
+      "kind": "TN",
+      "source": "def fetch():\n    try:\n        load()\n    except Exception:\n        log_error()\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg215-raise",
+      "rule": "QG215",
+      "kind": "TN",
+      "source": "def fetch():\n    try:\n        load()\n    except Exception:\n        raise\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg211-verified-fact",
+      "rule": "QG211",
+      "kind": "TP",
+      "include": true,
+      "audited": true,
+      "expected": [
+        [
+          "QG211",
+          "warning",
+          "medium",
+          "fixture.py",
+          8,
+          13,
+          "fixture.fetch",
+          "source-bound-r1",
+          "SOURCE_BOUND_EXCEPTION_PATH_OPEN_PROVIDER"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg211-no-fact",
+      "rule": "QG211",
+      "kind": "TN",
+      "include": false,
+      "audited": true,
+      "expected": []
+    },
+    {
+      "case_id": "qg211-outside-scan",
+      "rule": "QG211",
+      "kind": "TN",
+      "include": true,
+      "audited": false,
+      "expected": []
+    },
+    {
+      "case_id": "qg216-required-missing",
+      "rule": "QG216",
+      "kind": "TP",
+      "literal": "{'name': 'alice'}",
+      "required": [
+        "name",
+        "age"
+      ],
+      "expected": [
+        [
+          "QG216",
+          "error",
+          "high",
+          "fixture.py",
+          6,
+          0,
+          "fixture.build",
+          "source-bound-r3",
+          "CONDITIONAL_PRODUCER_CONTRACT_VIOLATION"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg216-all-required",
+      "rule": "QG216",
+      "kind": "TN",
+      "literal": "{'name': 'alice', 'age': 2}",
+      "required": [
+        "name",
+        "age"
+      ],
+      "expected": []
+    },
+    {
+      "case_id": "qg216-open-dict",
+      "rule": "QG216",
+      "kind": "TN",
+      "literal": "{**base, 'name': 'alice'}",
+      "required": [
+        "name",
+        "age"
+      ],
+      "expected": []
+    },
+    {
+      "case_id": "qg216-nonstr-key",
+      "rule": "QG216",
+      "kind": "TN",
+      "literal": "{0: 'alice'}",
+      "required": [
+        "name"
+      ],
+      "expected": []
+    }
+  ]
+}

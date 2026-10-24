@@ -1,0 +1,106 @@
+{
+  "schema": "rqg/b29-compiler-functional-v1",
+  "cases": [
+    {
+      "case_id": "b29-compiler-bound-field",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {},
+      "column": 18,
+      "identity": true,
+      "expected": [
+        {
+          "owner": "package.example.Holder",
+          "member": "token",
+          "binding": "BOUND_CLASS_ATTRIBUTE_STORE",
+          "capability": "TYPECHECKER_OBSERVATION_ONLY"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-compiler-renamed-receiver",
+      "source": "class Holder:\n    def __init__(receiver):\n        pass\n    def populate(receiver, value):\n        receiver.value_field = value\n",
+      "changes": {},
+      "column": 18,
+      "identity": true,
+      "expected": [
+        {
+          "owner": "package.example.Holder",
+          "member": "value_field",
+          "binding": "BOUND_CLASS_ATTRIBUTE_STORE",
+          "capability": "TYPECHECKER_OBSERVATION_ONLY"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-compiler-unbound-column",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {},
+      "column": 9,
+      "identity": true,
+      "expected": [
+        {
+          "owner": "",
+          "member": "",
+          "binding": "UNKNOWN_SOURCE_SHAPE",
+          "capability": "TYPECHECKER_OBSERVATION_ONLY"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-compiler-sha-tamper",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {
+        "source_sha256": "wrong"
+      },
+      "column": 18,
+      "identity": true,
+      "expected": {
+        "error": "ValueError"
+      }
+    },
+    {
+      "case_id": "b29-compiler-path-tamper",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {
+        "source_path": "elsewhere.py"
+      },
+      "column": 18,
+      "identity": true,
+      "expected": {
+        "error": "ValueError"
+      }
+    },
+    {
+      "case_id": "b29-compiler-line-tamper",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {
+        "line": 999
+      },
+      "column": 18,
+      "identity": true,
+      "expected": {
+        "error": "ValueError"
+      }
+    },
+    {
+      "case_id": "b29-compiler-unsupported-rule",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {
+        "native_rule": "reportArgumentType"
+      },
+      "column": 18,
+      "identity": true,
+      "expected": []
+    },
+    {
+      "case_id": "b29-compiler-missing-identity",
+      "source": "class Holder:\n    def __init__(instance):\n        pass\n    def populate(instance, value):\n        instance.token = value\n",
+      "changes": {},
+      "column": 18,
+      "identity": false,
+      "expected": {
+        "error": "ValueError"
+      }
+    }
+  ]
+}

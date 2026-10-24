@@ -23,9 +23,33 @@ from .cpp_build_contract import (
     load_compilation_database,
 )
 from .bootstrap_settings import node_parser_environment
+from .process_lifecycle import run_bounded_command
 from .config import GuardConfig
 from .graph_utils import strongly_connected_components
 from .model import Finding
+from .native_cpp_rule_objects import (
+    NativeCppCoverageRule,
+    NativeCoverageContext,
+)
+from .multilang_rule_objects import (
+    CompositionContext,
+    CppChangedComplexityRule,
+    CppDeltaContext,
+    CssDuplicateContext,
+    DuplicateCssDeclarationRule,
+    DuplicateHtmlIdRule,
+    DuplicateScriptDeclarationRule,
+    DuplicateScriptShapeRule,
+    DynamicCompositionSizeRule,
+    ExplicitAnyEscapeRule,
+    FeatureDependencyCycleRule,
+    GiantScriptOwnerGrowthRule,
+    HtmlDuplicateContext,
+    NestedHelperGrowthRule,
+    ScriptDeltaContext,
+    ScriptDuplicateContext,
+    ScriptShapeContext,
+)
 
 _SOURCE = "quality-guard-multilang"
 SCRIPT_LANGUAGES = {"javascript", "typescript"}
@@ -101,19 +125,14 @@ def node_facts(snapshot: RepositoryAnalysisSnapshot) -> list[dict[str, Any]]:
         ) from error
     parser = Path(__file__).resolve().parent / "multilang_parser.js"
     try:
-        result = subprocess.run(
+        result = run_bounded_command(
             [node, str(parser)],
-            input=json.dumps(items, ensure_ascii=False),
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            capture_output=True,
-            check=False,
+            input_text=json.dumps(items, ensure_ascii=False),
             env=environment,
-            timeout=60,
+            stall_timeout=60,
         )
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError("多语言 AST parser 执行超过 60 秒，已终止。") from error
+    except (OSError, RuntimeError) as error:
+        raise RuntimeError(f"多语言 AST parser 执行失败或停滞：{error}") from error
     if result.returncode != 0:
         detail = result.stderr.strip() or "unknown error"
         raise RuntimeError(f"多语言 AST parser 失败：{detail}")
@@ -359,56 +378,16 @@ def _script_duplicate_findings(
     by_scope: dict[tuple[str, str, str], list[dict[str, Any]]],
     shapes: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]],
 ) -> list[Finding]:
-    """从同 scope 名称和函数体形状索引报告定义重复。"""
+    """Evaluate grouped duplicate definitions without rebuilding the indexes."""
     findings: list[Finding] = []
+    duplicate = DuplicateScriptDeclarationRule()
+    shapes_rule = DuplicateScriptShapeRule()
     for (path, scope, name), group in by_scope.items():
-        if len(group) <= 1:
-            continue
-        findings.append(
-            Finding(
-                code="QG195",
-                severity="error",
-                confidence="high",
-                path=path,
-                line=min(item["line"] for item in group),
-                column=1,
-                symbol=f"{scope}::{name}",
-                message=(
-                    f"同一作用域 `{scope}` 重复定义 `{name}`，后声明会遮蔽前声明。"
-                ),
-                suggestion=(
-                    "删除重复声明或改成唯一 owner；"
-                    "不要依赖 JavaScript declaration shadowing。"
-                ),
-                evidence={"lines": [item["line"] for item in group]},
-                source=_SOURCE,
-            )
+        findings.extend(
+            duplicate.evaluate(ScriptDuplicateContext(path, scope, name, group))
         )
-
     for group in shapes.values():
-        if len(group) < 2:
-            continue
-        members = sorted(
-            f"{script['path']}::{definition['qualname']}"
-            for script, definition in group
-        )
-        findings.append(
-            Finding(
-                code="QG200",
-                severity="info",
-                confidence="medium",
-                path=group[0][0]["path"],
-                line=min(definition["line"] for _, definition in group),
-                column=1,
-                symbol=" | ".join(members),
-                message=f"{len(group)} 个 JS/TS 定义具有相同规范化 AST 结构。",
-                suggestion=(
-                    "仅作为复用候选；对称操作、类型适配和语义谓词不得机械合并。"
-                ),
-                evidence={"members": members},
-                source=_SOURCE,
-            )
-        )
+        findings.extend(shapes_rule.evaluate(ScriptShapeContext(group)))
     return findings
 
 
@@ -451,7 +430,6 @@ def _script_architecture_findings(
             for call in method["calls"]
             if call in unique_owner and unique_owner[call] != source
         ]
-        cross_feature_calls = len(edges)
 
         class_fact = next(
             (item for _, item in classes if item["name"] == composition["class_name"]),
@@ -469,78 +447,20 @@ def _script_architecture_findings(
         components.sort(key=lambda component: (-len(component), component))
         largest = components[0] if components else []
 
-        if composed_methods > 100 or constructor_fields > 50:
-            findings.append(
-                Finding(
-                    code="QG198",
-                    severity="warning",
-                    confidence="high",
-                    path=module,
-                    line=1,
-                    column=1,
-                    symbol=composition["class_name"],
-                    message=(
-                        f"动态 owner `{composition['class_name']}` 组合 "
-                        f"{composed_methods} 个方法并持有 {constructor_fields} 个构造字段。"
-                    ),
-                    suggestion=(
-                        "检查是否仍是分文件后的 God Controller；"
-                        "按状态和调用闭包收窄 owner surface。"
-                    ),
-                    evidence={
-                        "composed_methods": composed_methods,
-                        "constructor_fields": constructor_fields,
-                        "feature_modules": len(modules),
-                    },
-                    source=_SOURCE,
-                )
-            )
-        if len(largest) >= 5:
-            findings.append(
-                Finding(
-                    code="QG199",
-                    severity="warning",
-                    confidence="high",
-                    path=module,
-                    line=1,
-                    column=1,
-                    symbol=composition["class_name"],
-                    message=(
-                        f"动态 feature 依赖图存在 {len(largest)} 模块强连通分量。"
-                    ),
-                    suggestion=(
-                        "不要只依赖 ES import 无环；按真实 this/self 调用关系拆分闭环。"
-                    ),
-                    evidence={
-                        "largest_scc_size": len(largest),
-                        "modules": largest,
-                        "cross_feature_calls": cross_feature_calls,
-                        "distinct_edges": len(set(edges)),
-                    },
-                    source=_SOURCE,
-                )
-            )
-
-    if type_escapes >= 10:
-        first_path = scripts[0]["path"] if scripts else "."
-        findings.append(
-            Finding(
-                code="QG207",
-                severity="info",
-                confidence="medium",
-                path=first_path,
-                line=1,
-                column=1,
-                symbol="javascript",
-                message=f"JS/TS 中存在 {type_escapes} 个显式 any JSDoc 逃逸。",
-                suggestion=(
-                    "动态 composition 可保留必要 escape，但不能把 checkJs PASS "
-                    "当作完整 owner contract 证明。"
-                ),
-                evidence={"any_escapes": type_escapes},
-                source=_SOURCE,
-            )
+        context = CompositionContext(
+            module,
+            composition["class_name"],
+            composed_methods,
+            constructor_fields,
+            modules,
+            largest,
+            edges,
         )
+        findings.extend(DynamicCompositionSizeRule().evaluate(context))
+        findings.extend(FeatureDependencyCycleRule().evaluate(context))
+
+    first_path = scripts[0]["path"] if scripts else "."
+    findings.extend(ExplicitAnyEscapeRule().evaluate((type_escapes, first_path)))
     return findings
 
 
@@ -569,28 +489,9 @@ def _css_findings(facts: list[dict[str, Any]]) -> list[Finding]:
             if rule["declarations"] >= 3 and rule["normalized"]:
                 groups[rule["normalized"]].append((file_fact["path"], rule))
 
+    rule = DuplicateCssDeclarationRule()
     for group in groups.values():
-        if len(group) < 2:
-            continue
-        members = sorted(f"{path}::{rule['selector']}" for path, rule in group)
-        findings.append(
-            Finding(
-                code="QG201",
-                severity="info",
-                confidence="high",
-                path=group[0][0],
-                line=min(rule["line"] for _, rule in group),
-                column=1,
-                symbol=" | ".join(members),
-                message=f"{len(group)} 个 CSS selector 具有完全相同的声明块。",
-                suggestion=(
-                    "只有语义 owner 一致时才合并 selector/class；"
-                    "声明值巧合相同不得机械绑定组件。"
-                ),
-                evidence={"members": members},
-                source=_SOURCE,
-            )
-        )
+        findings.extend(rule.evaluate(CssDuplicateContext(group)))
     return findings
 
 
@@ -637,24 +538,9 @@ def _html_findings(snapshot: RepositoryAnalysisSnapshot) -> list[Finding]:
         grouped: defaultdict[str, list[int]] = defaultdict(list)
         for value, line in parser.ids:
             grouped[value].append(line)
+        rule = DuplicateHtmlIdRule()
         for value, lines in grouped.items():
-            if len(lines) <= 1:
-                continue
-            findings.append(
-                Finding(
-                    code="QG202",
-                    severity="error",
-                    confidence="high",
-                    path=path,
-                    line=min(lines),
-                    column=1,
-                    symbol=value,
-                    message=f"HTML id `{value}` 在同一文档重复出现 {len(lines)} 次。",
-                    suggestion="id 必须唯一；需要复用样式/行为时改用 class 或 data-*。",
-                    evidence={"lines": lines},
-                    source=_SOURCE,
-                )
-            )
+            findings.extend(rule.evaluate(HtmlDuplicateContext(path, value, lines)))
     return findings
 
 
@@ -681,43 +567,20 @@ def _script_growth_findings(
 ) -> list[Finding]:
     """比较既有具名 giant definition 的行数和嵌套定义增长。"""
     findings: list[Finding] = []
+    rule = GiantScriptOwnerGrowthRule()
     for key, target_definition in target.items():
         if key not in base:
             continue
-        base_definition = base[key]
-        line_delta = target_definition["lines"] - base_definition["lines"]
-        nested_delta = target_definition["nested_defs"] - base_definition["nested_defs"]
-        giant = (
-            target_definition["lines"] > 500 or target_definition["nested_defs"] >= 50
-        )
-        significant_growth = line_delta >= 20 or nested_delta >= 5
-        if giant and significant_growth:
-            findings.append(
-                Finding(
-                    code="QG196",
-                    severity="info",
-                    confidence="high",
-                    path=key[0],
-                    line=target_definition["line"],
-                    column=1,
-                    symbol=key[1],
-                    message=(
-                        f"既有 giant owner `{key[1]}` 仍保持超大规模且本轮继续恶化。"
-                    ),
-                    suggestion=(
-                        "不得只用 child helper 指标下降宣称质量清零；"
-                        "解释 owner 增长是否必要，或继续按真实职责缩减。"
-                    ),
-                    evidence={
-                        "lines": [base_definition["lines"], target_definition["lines"]],
-                        "nested_defs": [
-                            base_definition["nested_defs"],
-                            target_definition["nested_defs"],
-                        ],
-                    },
-                    source=_SOURCE,
+        findings.extend(
+            rule.evaluate(
+                ScriptDeltaContext(
+                    key,
+                    base[key],
+                    target_definition,
+                    [],
                 )
             )
+        )
 
     return findings
 
@@ -753,28 +616,15 @@ def _script_diff_findings(
             and qualname.count(".") == direct_depth
         }
         added = sorted(after - before)
-        if len(added) < 5:
-            continue
         target_definition = target[key] if key in target else base_definition
-        findings.append(
-            Finding(
-                code="QG197",
-                severity="info",
-                confidence="medium",
-                path=key[0],
-                line=target_definition["line"],
-                column=1,
-                symbol=key[1],
-                message=(
-                    f"既有 giant owner 本轮新增 {len(added)} 个直接 nested helper，"
-                    "存在 helper laundering 风险。"
-                ),
-                suggestion=(
-                    "验证复杂度是否真正迁移到独立 owner；若只是同一 closure 内切碎步骤，"
-                    "应继续减法或明确保留理由。"
-                ),
-                evidence={"new_direct_helpers": len(added), "examples": added[:20]},
-                source=_SOURCE,
+        findings.extend(
+            NestedHelperGrowthRule().evaluate(
+                ScriptDeltaContext(
+                    key,
+                    base_definition,
+                    target_definition,
+                    added,
+                )
             )
         )
     return findings
@@ -820,40 +670,13 @@ def _cpp_changed_findings(
         if path not in target_available or path not in base_available:
             continue
         baseline = base_metrics[key] if key in base_metrics else None
-        crossed = (
-            current["lines"] > config.max_function_lines
-            or current["branches"] > config.max_branches
-            or current["max_nesting"] > config.max_nesting
-        )
-        worsened = baseline is None or any(
-            current[field] > baseline[field]
-            for field in ("lines", "branches", "max_nesting")
-        )
-        if not crossed or not worsened:
-            continue
-        severity = (
-            "critical" if current["lines"] > config.max_function_lines else "warning"
-        )
-        findings.append(
-            Finding(
-                code="QG204",
-                severity=severity,
-                confidence="medium",
-                path=current["path"],
-                line=current["line"],
-                column=1,
-                symbol=current["symbol"],
-                message=(
-                    f"C++ 变更后的 `{current['symbol']}` 结构复杂度越过或恶化："
-                    f"{current['lines']} 行 / {current['branches']} 分支 / "
-                    f"nesting {current['max_nesting']}。"
-                ),
-                suggestion=(
-                    "保留 -Werror/ctest，同时按真实职责降低结构复杂度；"
-                    "不要只依赖编译器 warning gate。"
-                ),
-                evidence={"baseline": baseline, "current": current},
-                source=_SOURCE,
+        findings.extend(
+            CppChangedComplexityRule().evaluate(
+                CppDeltaContext(
+                    current,
+                    baseline,
+                    config,
+                )
             )
         )
     return findings
@@ -1178,7 +1001,7 @@ def exploratory_clang_invocation(
 
     The fixed frontend dialect is only a best-effort AST exploration. It does
     not establish the project's native C++ standard, and must not suppress
-    missing build contracts (QG208) or create native syntax errors (QG212).
+    missing build contracts (QG208); native compiler failures stay in execution evidence.
 
     Args:
         clang: Clang executable supplied by toolchain discovery.
@@ -1441,6 +1264,7 @@ def multilang_findings(
         path for path in cpp_translation_units if path not in cpp_build_specs
     )
     native_counts: Counter[str] = Counter()
+    native_failures: list[dict[str, object]] = []
     native_unavailable: list[str] = []
     # 编译数据库由项目构建系统生成；按原始语言标准和编译器验证，绝不凭文件名猜测 -std。
     for path in cpp_translation_units:
@@ -1460,85 +1284,25 @@ def multilang_findings(
         native_counts[result.state.value] += 1
         if result.state is NativeSyntaxState.UNAVAILABLE:
             native_unavailable.append(path)
-        if result.state is not NativeSyntaxState.FAIL:
-            continue
-        findings.append(
-            Finding(
-                code="QG212",
-                severity="error",
-                confidence="high",
-                path=path,
-                line=1,
-                column=1,
-                message=(
-                    "项目编译数据库指定的原生编译器在该翻译单元的无产物语法检查中退出非零；"
-                    "无法确认失败属于源代码、生成文件还是构建环境。"
-                ),
-                suggestion=(
-                    "根据原始编译命令及编译器诊断核对本仓构建契约；"
-                    "RQG 本项仅报告实际非零退出，不推断修复策略。"
-                ),
-                evidence={
-                    "capability": "NATIVE_CPP_BUILD_CONTRACT_SYNTAX",
+        if result.state is NativeSyntaxState.FAIL:
+            # Compiler failures are external execution facts, not static QG
+            # violations; preserve diagnosis and scope for explicit review.
+            native_failures.append(
+                {
+                    "path": path,
                     "compiler_family": spec.family.value,
-                    "compile_database": spec.database.as_posix(),
                     "command": result.command,
                     "returncode": result.returncode,
                     "stderr": result.stderr[:4000],
-                    "semantic_proof": "NATIVE_COMPILER_FAILURE",
-                },
-                source=_SOURCE,
+                }
+            )
+    findings.extend(
+        NativeCppCoverageRule().evaluate(
+            NativeCoverageContext(
+                tuple(native_unavailable), missing_cpp_contracts, cpp_translation_units
             )
         )
-    if native_unavailable:
-        findings.append(
-            Finding(
-                code="QG208",
-                severity="info",
-                confidence="high",
-                path=native_unavailable[0],
-                line=1,
-                column=1,
-                message=(
-                    f"{len(native_unavailable)} 个 C++ 翻译单元虽有编译命令，"
-                    "但当前无法执行或无法证明与快照一致的原生语法检查。"
-                ),
-                suggestion="核对原始编译器、源码快照和构建环境，不得将此视为编译成功。",
-                evidence={
-                    "capability": "NATIVE_CPP_SYNTAX_NOT_MEASURED",
-                    "unavailable_paths": tuple(native_unavailable),
-                    "semantic_proof": "NOT_MEASURED",
-                },
-                source=_SOURCE,
-            )
-        )
-    if missing_cpp_contracts:
-        findings.append(
-            Finding(
-                code="QG208",
-                severity="info",
-                confidence="high",
-                path=missing_cpp_contracts[0],
-                line=1,
-                column=1,
-                message=(
-                    f"{len(missing_cpp_contracts)}/{len(cpp_translation_units)} 个 C++ "
-                    "翻译单元没有可认证的编译命令；当前静态检查不能证明其原生语义正确。"
-                ),
-                suggestion=(
-                    "提供项目真实 toolchain 生成的 compile_commands.json；"
-                    "在项目的正式编译器上运行实际构建和测试。"
-                ),
-                evidence={
-                    "capability": "MISSING_AUTHORITATIVE_CPP_TU_CONTRACT",
-                    "total_translation_units": len(cpp_translation_units),
-                    "missing_translation_units": len(missing_cpp_contracts),
-                    "missing_paths": missing_cpp_contracts,
-                    "semantic_proof": "NOT_MEASURED",
-                },
-                source=_SOURCE,
-            )
-        )
+    )
     findings.sort(
         key=lambda finding: (
             finding.path,
@@ -1561,6 +1325,7 @@ def multilang_findings(
         "cpp_missing_native_build_contracts": len(missing_cpp_contracts),
         "cpp_semantic_coverage": "NOT_MEASURED",
         "cpp_native_syntax": dict(sorted(native_counts.items())),
+        "cpp_native_failures": native_failures,
         "cpp_native_unavailable": len(native_unavailable),
     }
     return findings, summary

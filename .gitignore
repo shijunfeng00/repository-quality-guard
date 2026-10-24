@@ -26,3 +26,10 @@ __pycache__/
 
 # Generated local audit report; never publish in Git
 修改说明.md
+
+# Private CoH Profile authoring test: distributed in private full ZIP only.
+/tests/test_coh_private_profile_v02.py
+/tests/data/coh-profile-contract-v02.json
+
+# rqgtest local generated preprocessing cache (never distribute)
+/tests/cases/.cache/

@@ -11,7 +11,8 @@ from pathlib import Path
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
 from .advanced_rules import AdvancedRuleEvaluator
-from .config import GuardConfig, is_test_path
+from .core_rule_contract import CoreQualityRule
+from .config import GuardConfig, is_test_path, is_test_source_path
 from .facts import FactsCollector, ModuleFacts
 from .model import Definition, Finding, ScanReport, Usage
 from .python_import_resolution import resolve_local_import_symbol
@@ -24,45 +25,85 @@ from .topology_facts import (
 )
 
 
-def _repository_instruction_findings(root: Path) -> list[Finding]:
-    """返回根目录唯一指令之外的全部 AGENTS.md 绝对阻断项。
+def snapshot_only_rule_findings(
+    analysis_snapshot: RepositoryAnalysisSnapshot,
+) -> tuple[tuple[Finding, ...], ...]:
+    """Evaluate topology-independent rules over one immutable source snapshot.
 
     Args:
-        root: 待审计仓库根目录。
+        analysis_snapshot: Parsed source units and path order; callers own
+            repository-wide topology and selected-file policy separately.
 
     Returns:
-        包含历史存量、未跟踪、被忽略及大小写变体指令文件的发现列表。
+        Four separately grouped Finding tuples for partial commits,
+        constructor read-order, exception handlers and source-bound calls.
     """
-    candidates: list[Path] = []
-    for current_root, directories, filenames in os.walk(root, followlinks=False):
-        directories[:] = [name for name in directories if name != ".git"]
-        current = Path(current_root)
-        for filename in filenames:
-            if filename.lower() != "agents.md":
-                continue
-            relative = (current / filename).relative_to(root)
-            if relative != Path("AGENTS.md"):
-                candidates.append(relative)
-    return [
-        Finding(
-            code="QG187",
-            severity="critical",
-            confidence="high",
-            path=relative.as_posix(),
-            line=1,
-            column=1,
-            message=(
-                "仓库存在根目录唯一 AGENTS.md 之外的指令文件；"
-                "无论是否为历史存量、未跟踪或被忽略文件都绝对阻断。"
-            ),
-            suggestion=(
-                "删除该文件；把仍然有效且不冲突的项目约束集中到根 AGENTS.md，"
-                "仓库只允许一个根目录指令文件。"
-            ),
-            source="quality-guard",
-        )
-        for relative in sorted(set(candidates))
-    ]
+    from .partial_commit_flow import partial_commit_findings
+    from .constructor_read_order import constructor_read_order_findings
+    from .exception_handler_rule_objects import exception_handler_rule_findings
+    from .source_call_contracts import source_bound_call_findings
+
+    return (
+        tuple(partial_commit_findings(analysis_snapshot)),
+        tuple(constructor_read_order_findings(analysis_snapshot)),
+        tuple(
+            item
+            for group in exception_handler_rule_findings(analysis_snapshot)
+            for item in group
+        ),
+        tuple(source_bound_call_findings(analysis_snapshot)),
+    )
+
+
+class RepositoryInstructionUniquenessRule(CoreQualityRule[Path]):
+    """Detect noncanonical instructions anywhere below a repository root.
+
+    QG187 checks physical paths, including Git-ignored or untracked instruction files.
+    """
+
+    code = "QG187"
+
+    def evaluate(self, root: Path) -> list[Finding]:
+        """Find secondary AGENTS.md instruction files on disk, including ignored ones.
+
+        Args:
+            root: Filesystem root of the inspected repository; .git trees and
+                symlinked directory traversal are excluded.
+
+        Returns:
+            QG187 Critical Findings for every instruction file outside the one
+            permitted root AGENTS.md, ordered by repository-relative path.
+        """
+        candidates: list[Path] = []
+        for current_root, directories, filenames in os.walk(root, followlinks=False):
+            directories[:] = [name for name in directories if name != ".git"]
+            current = Path(current_root)
+            for filename in filenames:
+                if filename.lower() != "agents.md":
+                    continue
+                relative = (current / filename).relative_to(root)
+                if relative != Path("AGENTS.md"):
+                    candidates.append(relative)
+        return [
+            Finding(
+                code=self.code,
+                severity="critical",
+                confidence="high",
+                path=relative.as_posix(),
+                line=1,
+                column=1,
+                message=(
+                    "仓库存在根目录唯一 AGENTS.md 之外的指令文件；"
+                    "无论是否为历史存量、未跟踪或被忽略文件都绝对阻断。"
+                ),
+                suggestion=(
+                    "删除该文件；把仍然有效且不冲突的项目约束集中到根 AGENTS.md，"
+                    "仓库只允许一个根目录指令文件。"
+                ),
+                source="quality-guard",
+            )
+            for relative in sorted(set(candidates))
+        ]
 
 
 class RepositoryScanner:
@@ -78,23 +119,26 @@ class RepositoryScanner:
         config: GuardConfig,
         analysis_snapshot: RepositoryAnalysisSnapshot | None = None,
         topology: RepositoryTopology | None = None,
+        shared_snapshot_findings: tuple[tuple[Finding, ...], ...] | None = None,
     ) -> None:
-        """
-        初始化仓库扫描器。
+        """Prepare one repository scanner with optional shared parsing and topology facts.
 
         Args:
-            root: 目标仓库根目录。
-            config: 质量检查配置。
-            analysis_snapshot: 可选的统一源码/AST 快照；存在时复用其解析结果。
-            topology: 可选的权威归一化关系事实；正式 CLI 由 RelationGraph 注入。
+            root: Root path of the Git repository being scanned.
+            config: Rules, scope and Profile policy already selected by the CLI.
+            analysis_snapshot: Optional immutable source/AST snapshot to avoid reparsing.
+            topology: Optional normalized cross-module usage and inheritance relations.
+            shared_snapshot_findings: Optional already computed groups of source-only
+                findings, shared between worktree and baseline scans.
 
         Returns:
-            None。
+            None; stores its inputs for subsequent source collection and rule evaluation.
         """
         self.root = root.resolve()
         self.config = config
         self.analysis_snapshot = analysis_snapshot
         self.topology = topology
+        self.shared_snapshot_findings = shared_snapshot_findings
 
     def scan(self, selected_files: set[Path] | None = None) -> ScanReport:
         """
@@ -136,6 +180,21 @@ class RepositoryScanner:
                 ),
             )
         findings = [finding for item in facts for finding in item.findings]
+        from .case_contract_rules import case_contract_findings
+
+        # Case entrypoint authentication needs the same cross-module graph as
+        # all other R1/R2/R3 rules. Run after topology construction, reusing
+        # the already parsed AST and never constructing a second graph.
+        for item in facts:
+            if item.tree is None:
+                continue
+            if is_test_source_path(item.path, self.config.test_roots):
+                findings.extend(
+                    case_contract_findings(
+                        item.path, item.tree, self.root, topology=self.topology,
+                        test_roots=self.config.test_roots,
+                    )
+                )
         if self.analysis_snapshot is not None and self.topology is not None:
             from .typed_producer_contract import typed_producer_contract_findings
 
@@ -148,89 +207,77 @@ class RepositoryScanner:
                 if item.path in audited_paths
             )
         if self.analysis_snapshot is not None:
-            from .partial_commit_flow import partial_commit_findings
-
-            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
-            findings.extend(
-                finding
-                for finding in partial_commit_findings(self.analysis_snapshot)
-                if finding.path in audited_paths
+            source_findings = (
+                self.shared_snapshot_findings
+                if self.shared_snapshot_findings is not None
+                else snapshot_only_rule_findings(self.analysis_snapshot)
             )
-        if self.analysis_snapshot is not None:
-            from .constructor_read_order import constructor_read_order_findings
-
             audited_paths = {path.relative_to(self.root).as_posix() for path in files}
-            findings.extend(
-                item
-                for item in constructor_read_order_findings(self.analysis_snapshot)
-                if item.path in audited_paths
-            )
-        if self.analysis_snapshot is not None:
-            from .silent_exception_fallback import silent_exception_fallback_findings
-
-            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
-            findings.extend(
-                item
-                for item in silent_exception_fallback_findings(self.analysis_snapshot)
-                if item.path in audited_paths
-            )
-        if self.analysis_snapshot is not None:
-            from .silent_handler_fallthrough import silent_handler_fallthrough_findings
-
-            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
-            findings.extend(
-                item
-                for item in silent_handler_fallthrough_findings(self.analysis_snapshot)
-                if item.path in audited_paths
-            )
-        if self.analysis_snapshot is not None:
-            from .source_call_contracts import source_bound_call_findings
-
-            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
-            findings.extend(
-                item
-                for item in source_bound_call_findings(self.analysis_snapshot)
-                if item.path in audited_paths
-            )
-        # A caught exception may enter a handler before a local assignment's
-        # RHS completes. This is a conditional CFG witness, not a claim that
-        # an undocumented external API actually raises that exception.
+            for group in source_findings:
+                findings.extend(item for item in group if item.path in audited_paths)
+        # Conditional CFG witnesses remain OPEN_WORLD rather than confirmed exceptions.
         if self.topology is not None:
-            audited_paths = {path.relative_to(self.root).as_posix() for path in files}
-            findings.extend(
-                Finding(
-                    code="QG211",
-                    severity="warning",
-                    confidence="medium",
-                    path=fact.path.as_posix(),
-                    line=fact.line,
-                    column=fact.column,
-                    symbol=fact.owner_symbol_id,
-                    message="异常处理器可能在局部赋值完成前读取变量。",
-                    suggestion="检查真实被捕获异常能否从赋值 RHS 抛出；只在证实的分支修复初始化顺序。",
-                    evidence={
-                        "capability": fact.capability,
-                        "source_sha256": fact.source_sha256,
-                        "local_name": fact.local_name,
-                        "assignment_line": fact.assignment_line,
-                        "try_line": fact.try_line,
-                        "handler_line": fact.handler_line,
-                    },
-                    source="source-bound-r1",
-                )
-                for fact in self.topology.exception_handler_reads
-                if fact.path.as_posix() in audited_paths
+            from .handler_read_rule import (
+                ExceptionHandlerReadRule,
+                ExceptionReadRuleContext,
             )
-        findings.extend(
-            RuleEvaluator(self.config, self.topology).evaluate(definitions, facts)
-        )
-        findings.extend(AdvancedRuleEvaluator(self.config).evaluate(definitions, facts))
+
+            audited_paths = frozenset(
+                path.relative_to(self.root).as_posix() for path in files
+            )
+            findings.extend(
+                ExceptionHandlerReadRule().evaluate(
+                    ExceptionReadRuleContext(self.topology, audited_paths)
+                )
+            )
+        definition_evaluator = RuleEvaluator(self.config, self.topology)
+        findings.extend(definition_evaluator.evaluate(definitions, facts))
+        advanced = AdvancedRuleEvaluator(self.config)
+        findings.extend(advanced.evaluate(definitions, facts))
+        if self.analysis_snapshot is not None and self.topology is not None:
+            from .tool_return_graph_rules import (
+                ToolConsumerContractRule,
+                ToolGraphContext,
+                tool_result_bindings,
+            )
+            from .visitor_rule_objects import MissingMappingKeyRule
+
+            bindings = tool_result_bindings(
+                ToolGraphContext(
+                    self.analysis_snapshot,
+                    self.topology,
+                    self.config,
+                    frozenset(advanced.signals.registered_tools),
+                    frozenset(path.relative_to(self.root).as_posix() for path in files),
+                )
+            )
+            from .typed_consumers import typed_required_get_findings
+
+            for candidate in typed_required_get_findings(self.topology, audited_paths):
+                if not any(
+                    previous.code == candidate.code
+                    and previous.path == candidate.path
+                    and previous.line == candidate.line
+                    for previous in findings
+                ):
+                    findings.append(candidate)
+            findings.extend(ToolConsumerContractRule().evaluate(bindings))
+            for item in MissingMappingKeyRule().evaluate_tool_bindings(bindings):
+                if not any(
+                    old.code == item.code
+                    and old.path == item.path
+                    and old.line == item.line
+                    for old in findings
+                ):
+                    findings.append(item)
         if not self.config.include_tests:
-            findings.extend(_repository_instruction_findings(self.root))
+            findings.extend(RepositoryInstructionUniquenessRule().evaluate(self.root))
+        inherited_docstrings = definition_evaluator.documented_overrides
         docstring_definitions = [
             definition
             for definition in definitions
-            if not (
+            if definition.symbol_id not in inherited_docstrings
+            and not (
                 self.config.skip_private_docstrings
                 and definition.name.startswith("_")
                 and not (
@@ -345,7 +392,7 @@ class RepositoryScanner:
             result: list[Path] = []
             for relative in self.analysis_snapshot.paths:
                 if not self.config.include_tests and is_test_path(
-                    relative, self.config.project_name
+                    relative, self.config.project_name, self.config.test_roots
                 ):
                     continue
                 if any(fnmatch(relative, pattern) for pattern in self.config.exclude):
@@ -384,7 +431,7 @@ class RepositoryScanner:
                 continue
             relative = path.relative_to(self.root).as_posix()
             if not self.config.include_tests and is_test_path(
-                relative, self.config.project_name
+                relative, self.config.project_name, self.config.test_roots
             ):
                 continue
             if any(fnmatch(relative, pattern) for pattern in self.config.exclude):

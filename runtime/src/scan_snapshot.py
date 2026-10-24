@@ -13,7 +13,7 @@ import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,15 +21,15 @@ from . import cli
 from .config import GuardConfig
 from .git_utils import run_readonly_git_bytes
 from .model import ScanReport
-from .process_lifecycle import process_alive
+from .process_lifecycle import process_alive, terminate_process_tree
+from .release_identity_rules import git_release_tags
 from .source_inputs import source_language
 
-SNAPSHOT_SCHEMA = "repository-quality-guard/current-scan-v2"
+SNAPSHOT_SCHEMA = "repository-quality-guard/current-scan-v3"
 _RELEVANT_EXACT = {
     "README.md",
     "README_zh.md",
     "pyproject.toml",
-    ".quality/semantic-heuristic-authorizations.toml",
 }
 
 
@@ -76,24 +76,22 @@ def _git_commit(root: Path, revision: str) -> str:
 
 
 def _relevant_worktree_paths(root: Path, config: GuardConfig) -> tuple[str, ...]:
-    """列出会影响现有扫描、配置、README 同步和 AGENTS 唯一性规则的输入。"""
+    """列出扫描器可能观察到的所有路径，而不只列出语言解析器的输入。
+
+    QG203 根据路径/文件名识别 release identity，QG205 读取任意合格文本文件；
+    因此非源码 Markdown、文本 fixture 与未跟踪文件的新增/删除/改名也必须进入
+    snapshot identity。仅覆盖 Python/C++ 等源码会导致缓存返回已删除路径的旧 Finding。
+    """
     listed = run_readonly_git_bytes(
         root, ("ls-files", "--cached", "--others", "--exclude-standard", "-z")
     )
     if listed.returncode != 0:
         detail = listed.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(detail or "无法列出 Git 工作树文件")
-    paths = {
+    relevant = {
         value.decode("utf-8", errors="surrogateescape")
         for value in listed.stdout.split(b"\0")
         if value
-    }
-    relevant = {
-        path
-        for path in paths
-        if source_language(path, config)
-        or path in _RELEVANT_EXACT
-        or Path(path).name.lower() == "agents.md"
     }
     # QG187 故意检查被 Git ignore 的 AGENTS.md，因此这里不能只依赖 ls-files。
     for current_root, directories, filenames in os.walk(root, followlinks=False):
@@ -107,6 +105,85 @@ def _relevant_worktree_paths(root: Path, config: GuardConfig) -> tuple[str, ...]
     return tuple(sorted(relevant))
 
 
+def _content_for_fingerprint(
+    root: Path, relative: str, config: GuardConfig
+) -> bytes | None:
+    """读取会影响规则结果的内容；所有路径名仍独立参与指纹。
+
+    Source/config/README/AGENTS 输入完整散列。其他文件仅在 QG205 可读取的
+    UTF-8 文本范围内散列；QG205 忽略二进制、含 NUL、非 UTF-8 与超过 2 MiB 的内容。
+    """
+    path = root / relative
+    if not path.is_file():
+        return None
+    if (
+        source_language(relative, config)
+        or relative in _RELEVANT_EXACT
+        or Path(relative).name.lower() == "agents.md"
+    ):
+        return path.read_bytes()
+    try:
+        if path.stat().st_size > 2 * 1024 * 1024:
+            return None
+        content = path.read_bytes()
+    except OSError:
+        return None
+    if b"\0" in content:
+        return None
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return content
+
+
+def _profile_fingerprint_inputs(
+    hasher: Any, config: GuardConfig, profile_directory: str | None
+) -> None:
+    """Bind cache identity to the effective policy and external Profile assets.
+
+    A Profile can live outside the target Git repository. Its declaration,
+    extension code, and auxiliary files can alter Findings without changing
+    the target HEAD or any target worktree file. Include their exact contents,
+    not just the Profile's name, and reject unreadable sources rather than
+    returning a stale cached report.
+
+    Args:
+        hasher: Active SHA-256 digest for the scan's input contract.
+        config: Effective, already validated Profile and scanner settings.
+        profile_directory: Selected authoring directory, not its selection-source label.
+
+    Returns:
+        None; adds deterministic policy and source bytes to the digest.
+    """
+    hasher.update(b"EFFECTIVE-CONFIG\0")
+    hasher.update(
+        json.dumps(asdict(config), sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+    hasher.update(b"\0")
+    if not profile_directory:
+        return
+    directory = Path(profile_directory).resolve()
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Profile source directory disappeared: {directory}")
+    for path in sorted(directory.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(directory).as_posix()
+        if any(
+            part in {".git", "__pycache__"}
+            for part in path.relative_to(directory).parts
+        ):
+            continue
+        hasher.update(b"PROFILE-FILE\0")
+        hasher.update(relative.encode("utf-8", errors="surrogateescape"))
+        hasher.update(b"\0")
+        with path.open("rb") as source:
+            while block := source.read(128 * 1024):
+                hasher.update(block)
+        hasher.update(b"\0")
+
+
 def _worktree_fingerprint(
     root: Path,
     profile: str,
@@ -115,8 +192,9 @@ def _worktree_fingerprint(
     focus_files: tuple[str, ...],
     release_seal: str,
     config: GuardConfig,
+    profile_directory: str | None = None,
 ) -> str:
-    """计算 release、Git 比较契约与全部相关工作树输入的强 SHA-256。"""
+    """计算 release、Git、Profile 和工作树输入的强 SHA-256。"""
     hasher = hashlib.sha256()
     metadata = (
         SNAPSHOT_SCHEMA,
@@ -130,6 +208,14 @@ def _worktree_fingerprint(
     )
     for value in metadata:
         hasher.update(value.encode("utf-8"))
+        hasher.update(b"\0")
+    _profile_fingerprint_inputs(hasher, config, profile_directory)
+    # QG205 reads matching Git tags as external semantic input. Tag refs can
+    # change without moving HEAD or editing any tracked/untracked file.
+    # Reuse the detector's own canonical tag selection, not a parallel parser.
+    for tag in git_release_tags(root):
+        hasher.update(b"GIT-TAG\0")
+        hasher.update(tag.encode("utf-8", errors="surrogateescape"))
         hasher.update(b"\0")
     if staged:
         index = run_readonly_git_bytes(root, ("ls-files", "-s", "-z"))
@@ -145,11 +231,17 @@ def _worktree_fingerprint(
         if not path.is_file():
             hasher.update(b"<MISSING>\0")
             continue
-        hasher.update(str(path.stat().st_size).encode("ascii"))
+        try:
+            hasher.update(str(path.stat().st_size).encode("ascii"))
+        except OSError:
+            hasher.update(b"<UNREADABLE>\0")
+            continue
         hasher.update(b"\0")
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                hasher.update(chunk)
+        content = _content_for_fingerprint(root, relative, config)
+        if content is not None:
+            hasher.update(content)
+        else:
+            hasher.update(b"<CONTENT-NOT-SCANNED>")
         hasher.update(b"\0")
     return hasher.hexdigest()
 
@@ -378,40 +470,6 @@ def _worker_status(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
-    """Stop the worker process group and reap its root process."""
-    if os.name == "nt":
-        if process.poll() is None:
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                    timeout=5,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                process.kill()
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
-
-
 def _worker_command(
     args: Any, target: cli.AuditTarget, output: Path, status_path: Path
 ) -> list[str]:
@@ -576,7 +634,7 @@ def _run_worker_in_dir(
         finally:
             if previous_handler is not None:
                 signal.signal(signal.SIGTERM, previous_handler)
-            _terminate_tree(process)
+            terminate_process_tree(process)
     if report.interface_diff is None:
         raise RuntimeError("完整扫描 worker 缺少 interface diff，拒绝使用不完整扫描。")
     return report, revision
@@ -603,7 +661,7 @@ def scan_target_cached(
     profile = selection.reference or selection.source
     focus_files = tuple(sorted(str(path.resolve()) for path in target.focus_files))
     release_seal = os.environ["REPO_QUALITY_GUARD_RELEASE_SEAL"]
-    source_config = cli.api_catalog_config(target, args.profile)
+    source_config, selected_profile = cli.api_catalog_context(target, args.profile)
     fingerprint = _worktree_fingerprint(
         target.root,
         profile,
@@ -612,6 +670,7 @@ def scan_target_cached(
         focus_files,
         release_seal,
         source_config,
+        selected_profile.source if selected_profile is not None else None,
     )
     snapshot_key = _SnapshotKey(
         profile, args.diff_base, args.staged, focus_files, release_seal, fingerprint

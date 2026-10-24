@@ -1,0 +1,380 @@
+{
+  "schema": "rqg.legacy-migration-v1",
+  "cases": [
+    {
+      "kind": "r2r3",
+      "samples": {
+        "handler.py": {
+          "source": "def caller(operation):\n    try:\n        operation()\n    except Exception:\n        pass\n",
+          "must_contain": [
+            "| QG215 | `handler.py:4` |",
+            "SOURCE_BOUND_BROAD_EXCEPTION_DIRECT_SUPPRESSION_OPEN_RUNTIME"
+          ]
+        },
+        "contract.py": {
+          "source": "from typing import TypedDict\nclass Item(TypedDict):\n    name: str\n    count: int\ndef build(ok: bool) -> Item:\n    if ok:\n        return {'name': 'ok', 'count': 1}\n    return {'name': 'ok'}\n",
+          "must_contain": [
+            "| `QG216` | `ERROR` | `contract.py:8` |",
+            "| QG216 | `contract.py:8` |",
+            "missing_required_fields",
+            "count"
+          ]
+        },
+        "partial.py": {
+          "source": "class Store:\n    def __init__(self):\n        self.seen: set[str] = set()\n        self.cache: dict[str, object] = {}\n    def save(self, key, value):\n        try:\n            self.seen.add(key)\n            self.cache[key] = value\n            return value\n        except Exception:\n            return None\n",
+          "must_contain": [
+            "| `QG213` |",
+            "`partial.py:8`",
+            "\"first_field\": \"seen\"",
+            "\"second_field\": \"cache\""
+          ]
+        },
+        "state.py": {
+          "source": "class Store:\n    def __init__(self):\n        initial = self.value\n        self.value = initial\n\ndef lookup(fetch, default=None):\n    try:\n        return fetch()\n    except Exception:\n        return default\n",
+          "must_contain": [
+            "| `QG210` |",
+            "| `QG214` |",
+            "\"field\": \"value\"",
+            "\"fallback\": \"parameter:default\""
+          ]
+        }
+      },
+      "expected": {
+        "audit_return": 3,
+        "integrity_audit": true,
+        "witnesses_section": true,
+        "hashes": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "markers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "verify_return": 3,
+        "integrity_verify": true,
+        "report_unchanged": true
+      },
+      "case_id": "b69-r2r3-multi-rule-witness"
+    },
+    {
+      "kind": "cpp-native",
+      "expected": {
+        "configure": 0,
+        "build": 0,
+        "ctest": 0,
+        "native": 0,
+        "schema": "rqg.testunit.result.v1",
+        "succeeded": false,
+        "passed": 4,
+        "keys": true,
+        "cases": [
+          [
+            "addition",
+            "PASS"
+          ],
+          [
+            "constructor-instance",
+            "PASS"
+          ],
+          [
+            "exception-kind-mismatch",
+            "INVALID_TEST"
+          ],
+          [
+            "bad-answer",
+            "FAIL"
+          ],
+          [
+            "expected-error",
+            "PASS"
+          ],
+          [
+            "wrong-error",
+            "FAIL"
+          ],
+          [
+            "public-sequence",
+            "PASS"
+          ],
+          [
+            "addition",
+            "INVALID_TEST"
+          ]
+        ],
+        "steps": [
+          [
+            "change",
+            "PASS"
+          ],
+          [
+            "reject",
+            "PASS"
+          ],
+          [
+            "change",
+            "PASS"
+          ]
+        ]
+      },
+      "case_id": "b69-cpp-native-public-ledger"
+    },
+    {
+      "kind": "native-provider",
+      "language": "java",
+      "expected": {
+        "schema": "rqg.testunit.result.v1",
+        "passed": 4,
+        "succeeded": false,
+        "public_keys": true,
+        "unsupported_inconclusive": true,
+        "cases": [
+          [
+            "return",
+            "PASS",
+            1
+          ],
+          [
+            "bad-oracle",
+            "FAIL",
+            1
+          ],
+          [
+            "exception",
+            "PASS",
+            1
+          ],
+          [
+            "instance",
+            "PASS",
+            1
+          ],
+          [
+            "stateful",
+            "PASS",
+            3
+          ],
+          [
+            "return",
+            "INVALID_TEST",
+            0
+          ]
+        ],
+        "steps": [
+          [
+            "add",
+            "PASS"
+          ],
+          [
+            "reject",
+            "PASS"
+          ],
+          [
+            "add",
+            "PASS"
+          ]
+        ]
+      },
+      "case_id": "b69-native-java-provider"
+    },
+    {
+      "kind": "native-provider",
+      "language": "c",
+      "expected": {
+        "schema": "rqg.testunit.result.v1",
+        "passed": 2,
+        "succeeded": false,
+        "public_keys": true,
+        "unsupported_inconclusive": true,
+        "cases": [
+          [
+            "return",
+            "PASS",
+            1
+          ],
+          [
+            "bad-oracle",
+            "FAIL",
+            1
+          ],
+          [
+            "exception-unsupported",
+            "INCONCLUSIVE",
+            0
+          ],
+          [
+            "stateful-unsupported",
+            "INCONCLUSIVE",
+            0
+          ],
+          [
+            "return",
+            "INVALID_TEST",
+            0
+          ],
+          [
+            "instance",
+            "PASS",
+            1
+          ]
+        ],
+        "steps": []
+      },
+      "case_id": "b69-native-c11-provider"
+    },
+    {
+      "kind": "native-equivalence",
+      "expected": {
+        "cpp": [
+          [
+            "return-pass",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "return-fail",
+            "FAIL",
+            1,
+            []
+          ],
+          [
+            "exception-pass",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "instance-pass",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "stateful-pass",
+            "PASS",
+            4,
+            [
+              [
+                1,
+                "add",
+                "PASS"
+              ],
+              [
+                2,
+                "reject",
+                "PASS"
+              ],
+              [
+                3,
+                "add",
+                "PASS"
+              ],
+              [
+                4,
+                "add",
+                "PASS"
+              ]
+            ]
+          ],
+          [
+            "duplicate-id",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "duplicate-id",
+            "INVALID_TEST",
+            0,
+            []
+          ]
+        ],
+        "java": [
+          [
+            "return-pass",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "return-fail",
+            "FAIL",
+            1,
+            []
+          ],
+          [
+            "exception-pass",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "instance-pass",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "stateful-pass",
+            "PASS",
+            4,
+            [
+              [
+                1,
+                "add",
+                "PASS"
+              ],
+              [
+                2,
+                "reject",
+                "PASS"
+              ],
+              [
+                3,
+                "add",
+                "PASS"
+              ],
+              [
+                4,
+                "add",
+                "PASS"
+              ]
+            ]
+          ],
+          [
+            "duplicate-id",
+            "PASS",
+            1,
+            []
+          ],
+          [
+            "duplicate-id",
+            "INVALID_TEST",
+            0,
+            []
+          ]
+        ],
+        "same": true,
+        "cpp_schema": "rqg.testunit.result.v1",
+        "java_schema": "rqg.testunit.result.v1",
+        "both_reject_injected_bad_cases": true
+      },
+      "case_id": "b69-native-cpp-java-equivalence"
+    }
+  ]
+}

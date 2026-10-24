@@ -1,0 +1,377 @@
+{
+  "cases": [
+    {
+      "case_id": "qg149-production-private-import",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "pkg/core.py": "def _compute():\n    return 1\n",
+        "pkg/api.py": "from .core import _compute\n"
+      },
+      "expected": [
+        [
+          "pkg/api.py",
+          1,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "private_parts": [
+            "_compute"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-production-public-import",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "pkg/core.py": "def compute():\n    return 1\n",
+        "pkg/api.py": "from .core import compute\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-test-private-import",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "engine.py": "def _internal():\n    return 1\n",
+        "tests/test_engine.py": "from engine import _internal\n"
+      },
+      "expected": [
+        [
+          "tests/test_engine.py",
+          1,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "test_context": true
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-test-public-import",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "engine.py": "def internal():\n    return 1\n",
+        "tests/test_engine.py": "from engine import internal\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-cross-owner-private-attribute",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "service.py": "class Service:\n    def _load(self):\n        return 1\n",
+        "api.py": "from service import Service\nvalue = Service()._load()\n"
+      },
+      "expected": [
+        [
+          "api.py",
+          2,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "attribute": "_load"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-same-owner-private-attribute",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "service.py": "class Service:\n    def _load(self):\n        return 1\n    def public(self):\n        return self._load()\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-subclass-inherited-private",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "model.py": "class Base:\n    def _refresh(self):\n        return 1\nclass Child(Base):\n    def execute(self):\n        return self._refresh()\n"
+      },
+      "expected": [
+        [
+          "model.py",
+          6,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "inherited_private": true
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-subclass-explicit-override",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "model.py": "class Base:\n    def _refresh(self):\n        return 1\nclass Child(Base):\n    def _refresh(self):\n        return 2\n    def execute(self):\n        return self._refresh()\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-untyped-peer-access",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "model.py": "class Model:\n    def __init__(self):\n        self._value = 1\n    def compare(self, other):\n        return other._value\n"
+      },
+      "expected": [
+        [
+          "model.py",
+          5,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "attribute": "_value"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-typed-peer-access",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "model.py": "class Model:\n    def __init__(self):\n        self._value = 1\n    def compare(self, other: \"Model\"):\n        return other._value\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-private-explicit-export",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "api.py": "def _hidden():\n    return 1\n__all__ = ['_hidden']\n"
+      },
+      "expected": [
+        [
+          "api.py",
+          3,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "export": "__all__"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-public-explicit-export",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "api.py": "def shown():\n    return 1\n__all__ = ['shown']\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-private-alias-export",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "api.py": "class _Engine:\n    pass\nEngine = _Engine\n"
+      },
+      "expected": [
+        [
+          "api.py",
+          3,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "export": "Engine"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-public-alias-export",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "api.py": "class Engine:\n    pass\nExportedEngine = Engine\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-test-private-reflection",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "client.py": "class Client:\n    def _parse(self):\n        return 1\n",
+        "tests/test_client.py": "def test_client(client):\n    return getattr(client, '_parse')()\n"
+      },
+      "expected": [
+        [
+          "tests/test_client.py",
+          2,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "reflection": true
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-test-public-reflection",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "client.py": "class Client:\n    def parse(self):\n        return 1\n",
+        "tests/test_client.py": "def test_client(client):\n    return getattr(client, 'parse')()\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-test-own-class-private-reflection",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "tests/test_client.py": "class Client:\n    def _parse(self):\n        return 1\n    def test_parse(self):\n        return getattr(self, '_parse')()\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-dunder-protocol-is-public",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "adapter.py": "class Adapter:\n    def __iter__(self):\n        return iter(())\n",
+        "demo.py": "from adapter import Adapter\nvalue = Adapter().__iter__()\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-source-derived-test-private-import-tp",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "pkg/core.py": "def _resolve():\n    return 2\n",
+        "tests/test_policy.py": "from pkg.core import _resolve\n"
+      },
+      "expected": [
+        [
+          "tests/test_policy.py",
+          1,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "test_context": true,
+          "private_parts": [
+            "_resolve"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-source-derived-test-public-import-tn",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "pkg/core.py": "def resolve():\n    return 2\n",
+        "tests/test_policy.py": "from pkg.core import resolve\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-source-derived-test-reflection-tp",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "pkg/core.py": "class Client:\n    def _decode(self, raw): return raw\n",
+        "tests/test_wire.py": "from pkg.core import Client\nclient=Client()\nresult=getattr(client, \"_decode\")(\"ok\")\n"
+      },
+      "expected": [
+        [
+          "tests/test_wire.py",
+          3,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "reflection": true,
+          "test_context": true,
+          "private_name": "_decode"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-source-derived-public-reflection-tn",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "pkg/core.py": "class Client:\n    def decode(self, raw): return raw\n",
+        "tests/test_wire.py": "from pkg.core import Client\nclient=Client()\nresult=getattr(client, \"decode\")(\"ok\")\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg149-source-derived-cross-owner-field-tp",
+      "rule": "QG149",
+      "kind": "TP",
+      "files": {
+        "pkg/engine.py": "class Graph:\n    def __init__(self): self._nodes={}\n",
+        "pkg/audit.py": "from .engine import Graph\ngraph=Graph()\nfound=graph._nodes\n"
+      },
+      "expected": [
+        [
+          "pkg/audit.py",
+          3,
+          "critical"
+        ]
+      ],
+      "evidence_required": [
+        {
+          "test_context": false,
+          "attribute": "_nodes",
+          "receiver": "graph"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-source-derived-public-view-tn",
+      "rule": "QG149",
+      "kind": "TN",
+      "files": {
+        "pkg/engine.py": "class Graph:\n    def __init__(self): self._nodes={}\n    def inspect(self): return self._nodes\n",
+        "pkg/audit.py": "from .engine import Graph\ngraph=Graph()\nfound=graph.inspect()\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    }
+  ]
+}

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
+from dataclasses import dataclass
 
 from .ast_utils import decorator_names, dotted_name
 from .config import GuardConfig
+from .core_rule_contract import CoreQualityRule
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
@@ -15,6 +17,46 @@ from .policy_common import (
 )
 
 MIN_CLASS_METHODS_FOR_FIELD_LOCALITY = 5
+
+
+@dataclass(slots=True, frozen=True)
+class ClassShapeContext:
+    """Shared class/AST data and ratios precomputed once for five rules.
+
+    Fields: facts, node, qualname, methods, config, public, private, static_like."""
+
+    facts: ModuleFacts
+    node: ast.ClassDef
+    qualname: str
+    methods: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    config: GuardConfig
+    public: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    private: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    static_like: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    no_self: list[ast.FunctionDef | ast.AsyncFunctionDef]
+
+
+@dataclass(slots=True, frozen=True)
+class MemberRuleContext:
+    """Carry typed rule inputs: facts, methods, qualname.
+
+    Fields: facts, methods, qualname."""
+
+    facts: ModuleFacts
+    methods: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    qualname: str
+
+
+@dataclass(slots=True, frozen=True)
+class ClassRuleContext:
+    """Carry typed rule inputs: facts, node, qualname, config.
+
+    Fields: facts, node, qualname, config."""
+
+    facts: ModuleFacts
+    node: ast.AST
+    qualname: str
+    config: GuardConfig
 
 
 def check_class_rules(
@@ -108,62 +150,15 @@ def check_class_method_shape(
         if set(decorator_names(method.decorator_list)) & {"staticmethod", "classmethod"}
     ]
     no_self = [method for method in methods if method_does_not_use_self(method)]
+    context = ClassShapeContext(
+        facts, node, qualname, methods, config, public, private, static_like, no_self
+    )
     findings: list[Finding] = []
-    if len(public) == 1 and len(methods) <= config.single_method_class_max_methods:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG080",
-                f"类 `{qualname}` 只有一个公开方法，可能只是函数包装。",
-                symbol=qualname,
-                severity="info",
-                suggestion="确认该类是否拥有生命周期、状态或协议边界；否则优先使用直接函数。",
-            )
-        )
-    if public and len(private) >= config.private_helper_ratio * len(public):
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG081",
-                f"类 `{qualname}` 有 {len(private)} 个私有 helper，仅 {len(public)} 个公开方法。",
-                symbol=qualname,
-                severity="info",
-                suggestion="检查 helper 是否只是切碎主流程，或是否应归入独立领域组件。",
-            )
-        )
-    if methods and len(static_like) / len(methods) >= config.static_method_ratio:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG082",
-                f"类 `{qualname}` 的大部分方法是 staticmethod/classmethod。",
-                symbol=qualname,
-                severity="info",
-                suggestion="若类不持有真实状态，考虑改为模块函数或更明确的领域对象。",
-            )
-        )
-    if methods and len(no_self) / len(methods) >= config.no_self_method_ratio:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG083",
-                f"类 `{qualname}` 中 {len(no_self)}/{len(methods)} 个实例方法不使用实例状态。",
-                symbol=qualname,
-                severity="info",
-                suggestion="检查是否为了面向对象而面向对象，或是否应收敛为函数。",
-            )
-        )
-    if is_single_field_dataclass(node):
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG084",
-                f"dataclass `{qualname}` 只有一个字段，可能只是再次包装已有值。",
-                symbol=qualname,
-                severity="info",
-                suggestion="仅在该类型提供独立不变量或领域语义时保留。",
-            )
-        )
+    findings.extend(SinglePublicMethodClassRule().evaluate(context))
+    findings.extend(PrivateHelperDominanceRule().evaluate(context))
+    findings.extend(StaticMethodDominanceRule().evaluate(context))
+    findings.extend(UnusedInstanceStateRule().evaluate(context))
+    findings.extend(SingleFieldDataclassRule().evaluate(context))
     return findings
 
 
@@ -183,18 +178,7 @@ def check_passthrough_members(
     Returns:
         无价值中间层候选列表。
     """
-    return [
-        facts.make_finding(
-            method,
-            "QG085",
-            f"`{qualname}.{method.name}` 只转发另一个对象的属性或方法。",
-            symbol=f"{qualname}.{method.name}",
-            severity="info",
-            suggestion="无独立契约、权限、事务或转换时删除该中间层。",
-        )
-        for method in methods
-        if is_passthrough_property(method) or is_passthrough_method(method)
-    ]
+    return PassThroughMemberRule().evaluate(MemberRuleContext(facts, methods, qualname))
 
 
 def register_class_relationships(
@@ -358,37 +342,9 @@ def check_constructor_shape(
     Returns:
         构造函数结构发现列表。
     """
-    parameters = [
-        argument.arg
-        for argument in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
-        if argument.arg not in {"self", "cls"}
-    ]
-    stored = {
-        target.attr
-        for statement in body_without_docstring(node)
-        if isinstance(statement, (ast.Assign, ast.AnnAssign))
-        for target in (
-            statement.targets
-            if isinstance(statement, ast.Assign)
-            else [statement.target]
-        )
-        if isinstance(target, ast.Attribute)
-        and isinstance(target.value, ast.Name)
-        and target.value.id == "self"
-    }
-    if len(parameters) <= config.max_constructor_dependencies:
-        return []
-    return [
-        facts.make_finding(
-            node,
-            "QG086",
-            f"`{qualname}.__init__` 接收 {len(parameters)} 个依赖，并保存其中 {len(stored)} 个。",
-            symbol=f"{qualname}.__init__",
-            severity="warning",
-            suggestion="检查类是否承担过多职责；不要仅用一个大配置对象掩盖依赖膨胀。",
-            evidence={"parameters": parameters, "stored_fields": sorted(stored)},
-        )
-    ]
+    return ConstructorDependencyRule().evaluate(
+        ClassRuleContext(facts, node, qualname, config)
+    )
 
 
 def check_field_locality(
@@ -409,33 +365,7 @@ def check_field_locality(
     Returns:
         字段局部性发现列表。
     """
-    decorators = {
-        name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
-    }
-    methods = class_methods(node)
-    if "dataclass" in decorators or len(methods) < MIN_CLASS_METHODS_FOR_FIELD_LOCALITY:
-        return []
-    init = next((method for method in methods if method.name == "__init__"), None)
-    if init is None:
-        return []
-    stored_fields = fields_stored_in_constructor(init)
-    usages = field_method_usages(methods, stored_fields)
-    local_fields = sorted(
-        field for field, method_names in usages.items() if len(method_names) == 1
-    )
-    if len(local_fields) < config.single_use_field_threshold:
-        return []
-    return [
-        facts.make_finding(
-            node,
-            "QG087",
-            f"类 `{qualname}` 有 {len(local_fields)} 个构造字段只在单个方法中使用。",
-            symbol=qualname,
-            severity="info",
-            suggestion="检查这些字段是否应为局部变量，或类是否混合多个彼此无关的流程。",
-            evidence={"fields": local_fields},
-        )
-    ]
+    return FieldLocalityRule().evaluate(ClassRuleContext(facts, node, qualname, config))
 
 
 def fields_stored_in_constructor(
@@ -494,3 +424,319 @@ def field_method_usages(
             ):
                 usages[item.attr].add(method.name)
     return usages
+
+
+class SinglePublicMethodClassRule(CoreQualityRule[ClassShapeContext]):
+    """Own the QG080 class-shape detection over shared class facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG080"
+
+    def evaluate(self, context: ClassShapeContext) -> list[Finding]:
+        """Evaluate QG080 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        methods = context.methods
+        config = context.config
+        public = context.public
+        findings: list[Finding] = []
+        if len(public) == 1 and len(methods) <= config.single_method_class_max_methods:
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG080",
+                    f"类 `{qualname}` 只有一个公开方法，可能只是函数包装。",
+                    symbol=qualname,
+                    severity="info",
+                    suggestion="确认该类是否拥有生命周期、状态或协议边界；否则优先使用直接函数。",
+                )
+            )
+        return findings
+
+
+class PrivateHelperDominanceRule(CoreQualityRule[ClassShapeContext]):
+    """Own the QG081 class-shape detection over shared class facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG081"
+
+    def evaluate(self, context: ClassShapeContext) -> list[Finding]:
+        """Evaluate QG081 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        config = context.config
+        public = context.public
+        private = context.private
+        findings: list[Finding] = []
+        if public and len(private) >= config.private_helper_ratio * len(public):
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG081",
+                    f"类 `{qualname}` 有 {len(private)} 个私有 helper，仅 {len(public)} 个公开方法。",
+                    symbol=qualname,
+                    severity="info",
+                    suggestion="检查 helper 是否只是切碎主流程，或是否应归入独立领域组件。",
+                )
+            )
+        return findings
+
+
+class StaticMethodDominanceRule(CoreQualityRule[ClassShapeContext]):
+    """Own the QG082 class-shape detection over shared class facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG082"
+
+    def evaluate(self, context: ClassShapeContext) -> list[Finding]:
+        """Evaluate QG082 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        methods = context.methods
+        config = context.config
+        static_like = context.static_like
+        findings: list[Finding] = []
+        if methods and len(static_like) / len(methods) >= config.static_method_ratio:
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG082",
+                    f"类 `{qualname}` 的大部分方法是 staticmethod/classmethod。",
+                    symbol=qualname,
+                    severity="info",
+                    suggestion="若类不持有真实状态，考虑改为模块函数或更明确的领域对象。",
+                )
+            )
+        return findings
+
+
+class UnusedInstanceStateRule(CoreQualityRule[ClassShapeContext]):
+    """Own the QG083 class-shape detection over shared class facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG083"
+
+    def evaluate(self, context: ClassShapeContext) -> list[Finding]:
+        """Evaluate QG083 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        methods = context.methods
+        config = context.config
+        no_self = context.no_self
+        findings: list[Finding] = []
+        if methods and len(no_self) / len(methods) >= config.no_self_method_ratio:
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG083",
+                    f"类 `{qualname}` 中 {len(no_self)}/{len(methods)} 个实例方法不使用实例状态。",
+                    symbol=qualname,
+                    severity="info",
+                    suggestion="检查是否为了面向对象而面向对象，或是否应收敛为函数。",
+                )
+            )
+        return findings
+
+
+class SingleFieldDataclassRule(CoreQualityRule[ClassShapeContext]):
+    """Own the QG084 class-shape detection over shared class facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG084"
+
+    def evaluate(self, context: ClassShapeContext) -> list[Finding]:
+        """Evaluate QG084 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        findings: list[Finding] = []
+        if is_single_field_dataclass(node):
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG084",
+                    f"dataclass `{qualname}` 只有一个字段，可能只是再次包装已有值。",
+                    symbol=qualname,
+                    severity="info",
+                    suggestion="仅在该类型提供独立不变量或领域语义时保留。",
+                )
+            )
+        return findings
+
+
+class PassThroughMemberRule(CoreQualityRule[MemberRuleContext]):
+    """Own QG085 detection without reparsing the class AST.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG085"
+
+    def evaluate(self, context: MemberRuleContext) -> list[Finding]:
+        """Evaluate QG085 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        methods = context.methods
+        qualname = context.qualname
+        return [
+            facts.make_finding(
+                method,
+                "QG085",
+                f"`{qualname}.{method.name}` 只转发另一个对象的属性或方法。",
+                symbol=f"{qualname}.{method.name}",
+                severity="info",
+                suggestion="无独立契约、权限、事务或转换时删除该中间层。",
+            )
+            for method in methods
+            if is_passthrough_property(method) or is_passthrough_method(method)
+        ]
+
+
+class ConstructorDependencyRule(CoreQualityRule[ClassRuleContext]):
+    """Own QG086 detection without reparsing the class AST.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG086"
+
+    def evaluate(self, context: ClassRuleContext) -> list[Finding]:
+        """Evaluate QG086 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        config = context.config
+        parameters = [
+            argument.arg
+            for argument in [
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            ]
+            if argument.arg not in {"self", "cls"}
+        ]
+        stored = {
+            target.attr
+            for statement in body_without_docstring(node)
+            if isinstance(statement, (ast.Assign, ast.AnnAssign))
+            for target in (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            if isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "self"
+        }
+        if len(parameters) <= config.max_constructor_dependencies:
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG086",
+                f"`{qualname}.__init__` 接收 {len(parameters)} 个依赖，并保存其中 {len(stored)} 个。",
+                symbol=f"{qualname}.__init__",
+                severity="warning",
+                suggestion="检查类是否承担过多职责；不要仅用一个大配置对象掩盖依赖膨胀。",
+                evidence={"parameters": parameters, "stored_fields": sorted(stored)},
+            )
+        ]
+
+
+class FieldLocalityRule(CoreQualityRule[ClassRuleContext]):
+    """Own QG087 detection without reparsing the class AST.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG087"
+
+    def evaluate(self, context: ClassRuleContext) -> list[Finding]:
+        """Evaluate QG087 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        config = context.config
+        decorators = {
+            name.rsplit(".", 1)[-1] for name in decorator_names(node.decorator_list)
+        }
+        methods = class_methods(node)
+        if (
+            "dataclass" in decorators
+            or len(methods) < MIN_CLASS_METHODS_FOR_FIELD_LOCALITY
+        ):
+            return []
+        init = next((method for method in methods if method.name == "__init__"), None)
+        if init is None:
+            return []
+        stored_fields = fields_stored_in_constructor(init)
+        usages = field_method_usages(methods, stored_fields)
+        local_fields = sorted(
+            field for field, method_names in usages.items() if len(method_names) == 1
+        )
+        if len(local_fields) < config.single_use_field_threshold:
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG087",
+                f"类 `{qualname}` 有 {len(local_fields)} 个构造字段只在单个方法中使用。",
+                symbol=qualname,
+                severity="info",
+                suggestion="检查这些字段是否应为局部变量，或类是否混合多个彼此无关的流程。",
+                evidence={"fields": local_fields},
+            )
+        ]

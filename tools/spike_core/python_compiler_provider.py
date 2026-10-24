@@ -187,20 +187,20 @@ class _PyreflyLsp:
             {"jsonrpc": "2.0", "id": requested, "method": method, "params": params}
         )
         deadline = time.monotonic() + timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("Python compiler request exceeded its deadline")
+        remaining = deadline - time.monotonic()
+        while remaining > 0:
             try:
                 response = self.messages.get(timeout=remaining)
             except queue.Empty as error:
                 raise TimeoutError("Python compiler request timed out") from error
             if response is None:
                 raise RuntimeError("Python compiler LSP terminated unexpectedly")
-            if response.get("id") == requested:
+            if response["id"] == requested:
                 if "error" in response:
                     raise RuntimeError("Python compiler rejected definition request")
-                return response.get("result")
+                return response["result"]
+            remaining = deadline - time.monotonic()
+        raise TimeoutError("Python compiler request exceeded its deadline")
 
     def definition(self, path: Path, source: str, line: int, col: int) -> object:
         """Request a source declaration location, opening the source document once per session.

@@ -1,0 +1,114 @@
+[
+  {
+    "case_id": "local-import-same",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from prod import target\n        return target(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        11,
+        "LocalOriginCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "local-import-different",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from other import target\n        return target(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "local-import-shadows-module",
+    "source": "from rqgtest import TestCase\nfrom prod import target\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from other import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        return target(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "local-module-same",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        import prod as p\n        return p.target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        import prod as q\n        return q.target(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        11,
+        "LocalOriginCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "local-module-different",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        import prod as p\n        return p.target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        import other as q\n        return q.target(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "local-alias-same",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target as entry\n        chosen = entry\n        return chosen\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from prod import target as source\n        return source(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        12,
+        "LocalOriginCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "local-alias-different",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target as entry\n        chosen = entry\n        return chosen\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from other import target as source\n        return source(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "local-output-alias",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from prod import target as source\n        resolved = source\n        return resolved(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        12,
+        "LocalOriginCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "local-rebinding-unknown",
+    "source": "from rqgtest import TestCase\nfrom other import target as other\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        source = other\n        return source(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "local-shadowed-repeat",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from prod import target as source\n        source = other\n        return source(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "getter-module-alias-vs-global",
+    "source": "from rqgtest import TestCase\nfrom prod import target\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        import other as alias\n        return alias.target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        return target(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "local-import-before-invocation",
+    "source": "from rqgtest import TestCase\n\nclass LocalOriginCase(TestCase):\n    def get_enterpoint(self):\n        from prod import target\n        return target\n    def get_input_data(self):\n        return ((2,), {})\n    def get_output_data(self):\n        from prod import target as source\n        return source(2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        11,
+        "LocalOriginCase.get_output_data"
+      ]
+    ]
+  }
+]

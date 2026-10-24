@@ -1,0 +1,276 @@
+{
+  "cases": [
+    {
+      "case_id": "b31-graph-inheritance-and-closure",
+      "sources": {
+        "base.py": "class Base:\n    def hook(self):\n        return None\n\n\ndef callback(value):\n    return value\n",
+        "worker.py": "from base import Base, callback\n\n__all__ = [\"Worker\"]\n\n\nclass Worker(Base):\n    def __init__(self):\n        self.state = 1\n\n    def hook(self):\n        return self.state\n\n    def _helper(self):\n        return self.state\n\n    def run(self):\n        return self._helper()\n\n\ndef consume(fn):\n    return fn\n\n\ndef main():\n    return consume(callback)\n\n\ndef outer(value):\n    def transform(item):\n        return item + value\n\n    return consume(transform)\n"
+      },
+      "checks": [
+        {
+          "kind": "exported",
+          "value": "worker.Worker"
+        },
+        {
+          "kind": "internal",
+          "value": "worker.Worker._helper"
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.Worker",
+            "base.Base",
+            "inheritance"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.Worker.hook",
+            "base.Base.hook",
+            "override"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.main",
+            "base.callback",
+            "callback_registration"
+          ]
+        },
+        {
+          "kind": "symbol",
+          "value": "field:worker.Worker.state"
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.Worker.__init__",
+            "field:worker.Worker.state",
+            "field_access"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.Worker._helper",
+            "field:worker.Worker.state",
+            "field_access"
+          ]
+        },
+        {
+          "kind": "symbol",
+          "value": "worker.outer.transform"
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.outer",
+            "worker.outer.transform",
+            "callback_registration"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "worker.outer.transform",
+            "binding:worker.outer:value",
+            "closure_capture"
+          ]
+        },
+        {
+          "kind": "component",
+          "value": "worker.Worker",
+          "members": [
+            "field:worker.Worker.state",
+            "worker.Worker.__init__",
+            "worker.Worker._helper",
+            "worker.Worker.hook"
+          ]
+        }
+      ],
+      "expected": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "stubs": {}
+    },
+    {
+      "case_id": "b31-graph-local-class-field",
+      "sources": {
+        "local_class.py": "def build():\n    class SpyBinder:\n        calls = 0\n        def require(self):\n            self.calls += 1\n            return self.calls\n    return SpyBinder().require()\n"
+      },
+      "checks": [
+        {
+          "kind": "symbol",
+          "value": "local_class.build.SpyBinder"
+        },
+        {
+          "kind": "symbol",
+          "value": "local_class.build.SpyBinder.require"
+        },
+        {
+          "kind": "symbol",
+          "value": "field:local_class.build.SpyBinder.calls"
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "local_class.build.SpyBinder.require",
+            "field:local_class.build.SpyBinder.calls",
+            "field_access"
+          ]
+        }
+      ],
+      "expected": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "stubs": {}
+    },
+    {
+      "case_id": "b31-graph-lexical-boundaries",
+      "sources": {
+        "other.py": "def unrelated():\n    is_valid = True\n    return is_valid\n",
+        "lexical.py": "def outer(value):\n    def is_valid(item):\n        return bool(item)\n    def inner(item):\n        return is_valid(item)\n    return inner(value)\n",
+        "class_scope.py": "class Worker:\n    def helper(self):\n        return 1\n    def run(self):\n        return helper()\n"
+      },
+      "checks": [
+        {
+          "kind": "edge",
+          "value": [
+            "lexical.outer.inner",
+            "lexical.outer.is_valid",
+            "direct_call"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "other.unrelated",
+            "lexical.outer.is_valid",
+            "direct_call"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "class_scope.Worker.run",
+            "class_scope.Worker.helper",
+            "direct_call"
+          ]
+        }
+      ],
+      "expected": [
+        true,
+        false,
+        false
+      ],
+      "stubs": {}
+    },
+    {
+      "case_id": "b31-graph-unimported-stub-protocol",
+      "sources": {
+        "model.py": "from fakefw import Layer\n\nclass Model(Layer):\n    def build(self, shape):\n        self.shape = shape\n\n    def call(self, inputs):\n        return inputs\n\n    def helper(self):\n        return 1\n"
+      },
+      "checks": [
+        {
+          "kind": "edge",
+          "value": [
+            "model.Model",
+            "external:fakefw.Layer",
+            "inheritance"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "model.Model.build",
+            "external:fakefw.Layer.build",
+            "protocol_hook"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "model.Model.call",
+            "external:fakefw.Layer.call",
+            "protocol_hook"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "model.Model.helper",
+            "external:fakefw.Layer.helper",
+            "protocol_hook"
+          ]
+        }
+      ],
+      "expected": [
+        true,
+        true,
+        true,
+        false
+      ],
+      "stubs": {
+        "fakefw/__init__.py": "from .layers import Layer\nraise RuntimeError('must not execute')\n",
+        "fakefw/layers.pyi": "class Layer:\n    def build(self, shape): ...\n    def call(self, inputs): ...\n"
+      }
+    },
+    {
+      "case_id": "b31-graph-unimported-tensorflow-alias",
+      "sources": {
+        "model.py": "import tensorflow as tf\n\nclass SoftThreshold(tf.keras.layers.Layer):\n    def build(self, input_shape):\n        self.shape = input_shape\n\n    def call(self, inputs):\n        return inputs\n"
+      },
+      "checks": [
+        {
+          "kind": "edge",
+          "value": [
+            "model.SoftThreshold",
+            "external:tensorflow.keras.layers.Layer",
+            "inheritance"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "model.SoftThreshold.build",
+            "external:tensorflow.keras.layers.Layer.build",
+            "protocol_hook"
+          ]
+        },
+        {
+          "kind": "edge",
+          "value": [
+            "model.SoftThreshold.call",
+            "external:tensorflow.keras.layers.Layer.call",
+            "protocol_hook"
+          ]
+        }
+      ],
+      "expected": [
+        true,
+        true,
+        true
+      ],
+      "stubs": {
+        "tensorflow/__init__.py": "raise RuntimeError('must not import tensorflow')\n",
+        "tensorflow/keras/layers.pyi": "class Layer:\n    def build(self, input_shape): ...\n    def call(self, inputs): ...\n"
+      }
+    }
+  ]
+}

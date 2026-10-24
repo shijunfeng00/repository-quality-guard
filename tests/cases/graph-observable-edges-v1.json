@@ -1,0 +1,389 @@
+{
+  "schema": "graph-observable-edges/v1",
+  "cases": [
+    {
+      "case_id": "graph-real-constructor-argument-reaches-field-and-method-call",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\nclass Root:\n    def __init__(self):\n        self.state = Ledger()\n        self.receiver = Receiver(source=self.state)\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": "domain.Ledger.record",
+          "path": "consumer.py",
+          "line": 6
+        }
+      ],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": null,
+          "target": "domain.Other.record",
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-argument-alias-chain-preserves-known-receiver-type",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef build():\n    state = Ledger()\n    intermediate = state\n    actual = intermediate\n    return Receiver(actual)\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": "domain.Ledger.record",
+          "path": "consumer.py",
+          "line": 6
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "graph-conflicting-injected-types-do-not-invent-unique-target",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger, Other\n\ndef one():\n    return Receiver(Ledger())\n\ndef two():\n    return Receiver(Other())\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-unknown-injected-parameter-is-not-resolved-by-method-name",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef one():\n    return Receiver(Ledger())\n\ndef other(x):\n    return Receiver(x)\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-mutated-alias-never-receives-stale-class-binding",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef other(x):\n    state = Ledger()\n    state = x\n    return Receiver(state)\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-grandparent-method-resolves-but-ambiguous-diamond-does-not-guess",
+      "files": {
+        "family.py": "class Grand:\n    def ping(self): return 1\nclass Parent(Grand): pass\nclass Child(Parent): pass\nclass Other:\n    def ping(self): return 2\nclass Two(Grand, Other): pass\n",
+        "work.py": "from family import Child, Two\n\ndef run(child: Child):\n    return child.ping()\n\ndef ambiguous(item: Two):\n    return item.ping()\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "work.run",
+          "target": "family.Grand.ping",
+          "path": "work.py",
+          "line": 4
+        }
+      ],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "work.ambiguous",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-invalid-duplicate-constructor-argument-never-fabricates-dispatch",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger, Other\n\ndef build():\n    return Receiver(Ledger(), source=Other())\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-invalid-positional-only-keyword-never-fabricates-dispatch",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source, /):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef build():\n    return Receiver(source=Ledger())\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-invalid-extra-constructor-keyword-never-fabricates-dispatch",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger, Other\n\ndef build():\n    return Receiver(Ledger(), bogus=Other())\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-valid-keyword-only-constructor-binding-preserves-dispatch",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, *, source):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef build():\n    return Receiver(source=Ledger())\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": "domain.Ledger.record",
+          "path": "consumer.py",
+          "line": 6
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "graph-missing-required-constructor-parameter-never-fabricates-dispatch",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source, required):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef build():\n    return Receiver(Ledger())\n"
+      },
+      "include": [],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": null,
+          "path": null,
+          "line": null
+        }
+      ]
+    },
+    {
+      "case_id": "graph-optional-constructor-parameter-does-not-block-valid-dispatch",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self):\n        return 1\n\nclass Other:\n    def record(self):\n        return 2\n",
+        "consumer.py": "class Receiver:\n    def __init__(self, source, optional=None):\n        self.channel = source\n\n    def work(self):\n        return self.channel.record()\n",
+        "root.py": "from consumer import Receiver\nfrom domain import Ledger\n\ndef build():\n    return Receiver(Ledger())\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "consumer.Receiver.work",
+          "target": "domain.Ledger.record",
+          "path": "consumer.py",
+          "line": 6
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "graph-service-bound-receiver-and-no-guess",
+      "files": {
+        "domain.py": "class Ledger:\n    def record(self, event):\n        return event\n\nclass Impostor:\n    def record(self, event):\n        return \"WRONG\"\n",
+        "service.py": "from domain import Ledger as Store, Impostor\n\nclass Handler:\n    def __init__(self):\n        self.store = Store()\n\n    def submit(self, event):\n        return self.store.record(event)\n\ndef direct(entry: Store):\n    return entry.record(\"ok\")\n\ndef build():\n    ledger = Store()\n    return ledger.record(\"ok\")\n\ndef inline():\n    return Store().record(\"ok\")\n\ndef pass_through(entry: Store):\n    return direct(entry)\n\ndef unknown(x):\n    return x.record(\"unknown\")\n\ndef overridden(entry: Store):\n    entry = Impostor()\n    return entry.record(\"wrong\")\n\ndef conditional(entry: Store, flag):\n    if flag:\n        entry = Impostor()\n    return entry.record(\"either\")\n\ndef nested(entry: Store):\n    def helper():\n        return entry.record(\"nested\")\n    return helper()\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.Handler.submit",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.direct",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.build",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.inline",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.Handler.submit",
+          "target": "domain.Ledger.record",
+          "path": "service.py",
+          "line": 8
+        },
+        {
+          "kind": "DIRECT_CALL",
+          "source": "service.pass_through",
+          "target": "service.direct"
+        }
+      ],
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.unknown",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.overridden",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.conditional",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.nested",
+          "target": "domain.Ledger.record"
+        },
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "service.unknown",
+          "target": "domain.Impostor.record"
+        }
+      ]
+    },
+    {
+      "case_id": "graph-package-search-unique-owner",
+      "files": {
+        "sources/domain.py": "class Ledger:\n    def commit(self): return 1\n",
+        "task.py": "from domain import Ledger\ndef entry():\n    return Ledger().commit()\n"
+      },
+      "include": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "task.entry",
+          "target": "sources.domain.Ledger.commit"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "graph-package-search-ambiguous-owner",
+      "files": {
+        "sources/domain.py": "class Ledger:\n    def commit(self): return 1\n",
+        "src/domain.py": "class Ledger:\n    def commit(self): return 1\n",
+        "task.py": "from domain import Ledger\ndef entry():\n    return Ledger().commit()\n"
+      },
+      "absent": [
+        {
+          "kind": "MAY_DISPATCH",
+          "source": "task.entry"
+        }
+      ],
+      "include": []
+    },
+    {
+      "case_id": "b64-graph-dfs-public-hidden-state-and-recursion",
+      "files": {
+        "sample.py": "class Partition:\n    def __init__(self, pieces, total):\n        self.pieces = pieces\n        self.total = total\n        self.used = [False] * len(pieces)\n\n    def dfs(self, target):\n        return self._dfs(1, 0, target, 0, self.total // target)\n\n    def _dfs(self, step, total, target, last, need):\n        if need == 0:\n            return total == 0\n        for index in range(last, len(self.pieces)):\n            if self.used[index] or total + self.pieces[index] > target:\n                continue\n            self.used[index] = True\n            next_total = total + self.pieces[index]\n            if next_total == target:\n                found = self._dfs(step + 1, 0, target, 0, need - 1)\n            else:\n                found = self._dfs(step + 1, next_total, target, index + 1, need)\n            self.used[index] = False\n            if found:\n                return True\n        return False\n\ndef consume(partition):\n    return partition.dfs(10)\n"
+      },
+      "include": [
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.Partition.dfs",
+          "target": "sample.Partition._dfs"
+        },
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.Partition._dfs",
+          "target": "sample.Partition._dfs"
+        }
+      ],
+      "absent": [
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.Partition.dfs",
+          "target": "sample.Partition.dfs"
+        }
+      ]
+    },
+    {
+      "case_id": "b64-graph-fhq-insert-split-merge-recursive",
+      "files": {
+        "sample.py": "class PersistentFHQ:\n    def __init__(self):\n        self.nodes = {0: (0, 0)}\n\n    def _split(self, root, value):\n        if not root:\n            return (0, 0)\n        left, right = self.nodes[root]\n        if root <= value:\n            first, second = self._split(right, value)\n            return (root, second)\n        first, second = self._split(left, value)\n        return (first, root)\n\n    def _merge(self, left, right):\n        if not left or not right:\n            return left or right\n        return self._merge(left, 0) or right\n\n    def insert(self, root, value):\n        left, right = self._split(root, value)\n        return self._merge(self._merge(left, value), right)\n\n    def erase(self, root, value):\n        before, after = self._split(root, value)\n        left, equal = self._split(before, value - 1)\n        if equal:\n            equal = self._merge(*self.nodes[equal])\n        return self._merge(self._merge(left, equal), after)\n\n    def rank(self, root, value):\n        answer = 1\n        while root:\n            left, right = self.nodes[root]\n            if root < value:\n                answer += 1\n                root = right\n            else:\n                root = left\n        return answer\n"
+      },
+      "include": [
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.PersistentFHQ.insert",
+          "target": "sample.PersistentFHQ._split"
+        },
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.PersistentFHQ.insert",
+          "target": "sample.PersistentFHQ._merge"
+        },
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.PersistentFHQ._split",
+          "target": "sample.PersistentFHQ._split"
+        }
+      ],
+      "absent": [
+        {
+          "kind": "DIRECT_CALL",
+          "source": "sample.PersistentFHQ.insert",
+          "target": "sample.PersistentFHQ.insert"
+        }
+      ]
+    }
+  ]
+}

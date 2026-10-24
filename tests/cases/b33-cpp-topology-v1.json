@@ -1,0 +1,395 @@
+{
+  "cases": [
+    {
+      "case_id": "b33-cpp-override-private",
+      "sources": {
+        "src/sample.cpp": "namespace app {\nclass Base {\npublic:\n    virtual void tick(int value) = 0;\n};\nclass Worker : public Base {\nprivate:\n    int count_ = 0;\n    void helper() {\n        count_++;\n    }\npublic:\n    void tick(int value) override {\n        helper();\n        if (value) {\n            count_ += value;\n        }\n    }\n    static void invoke(void (*callback)()) {\n        callback();\n    }\n};\nvoid free_helper() {}\nvoid run() {\n    Worker worker;\n    worker.tick(1);\n    auto callback = &free_helper;\n    Worker::invoke(callback);\n}\n}\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "helper"
+          },
+          "attr": "visibility",
+          "expected": "private"
+        },
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "tick",
+            "owner_contains": "Worker"
+          },
+          "attr": "visibility",
+          "expected": "public"
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "tick",
+            "owner_contains": "Worker"
+          },
+          "target": {
+            "name": "helper"
+          },
+          "usage": "direct_call",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "helper"
+          },
+          "target": {
+            "name": "count_"
+          },
+          "usage": "field_access",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "tick",
+            "owner_contains": "Worker"
+          },
+          "target": {
+            "name": "count_"
+          },
+          "usage": "field_access",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "tick",
+            "owner_contains": "Worker"
+          },
+          "target": {
+            "name": "tick",
+            "owner_contains": "Base"
+          },
+          "usage": "override",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "Worker"
+          },
+          "target": {
+            "name": "Base"
+          },
+          "usage": "inheritance",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "run"
+          },
+          "target": {
+            "name": "free_helper"
+          },
+          "usage": "callable_reference",
+          "expected": true
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-lambda-callback",
+      "sources": {
+        "src/sample.cpp": "namespace app {\nvoid consume(void (*callback)()) { callback(); }\nvoid run() {\n    auto local = []() {};\n    local();\n    consume(local);\n    consume([]() {});\n}\n}\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "prefix_count",
+          "prefix": "<lambda@",
+          "expected": 2
+        },
+        {
+          "kind": "all_prefix_nested",
+          "prefix": "<lambda@",
+          "expected": true
+        },
+        {
+          "kind": "lambda_edges",
+          "source": "run",
+          "usage": "callable_reference",
+          "index": 0,
+          "expected": true
+        },
+        {
+          "kind": "lambda_edges",
+          "source": "run",
+          "usage": "direct_call",
+          "index": 0,
+          "expected": true
+        },
+        {
+          "kind": "lambda_edges",
+          "source": "run",
+          "usage": "callback_registration",
+          "index": 0,
+          "expected": true
+        },
+        {
+          "kind": "lambda_edges",
+          "source": "run",
+          "usage": "callback_registration",
+          "index": 1,
+          "expected": true
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-lambda-arity",
+      "sources": {
+        "src/sample.cpp": "void run() {\n    auto transform = [](int value) { return value + 1; };\n    (void)transform(1);\n}\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name_prefix": "<lambda@"
+          },
+          "attr": "parameter_count",
+          "expected": 1
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-crtp-dispatch",
+      "sources": {
+        "src/sample.cpp": "namespace app {\ntemplate <class Derived>\nclass Base {\npublic:\n    int get_value() {\n        return static_cast<Derived*>(this)->get_value_impl();\n    }\n};\nclass Child : public Base<Child> {\npublic:\n    int get_value_impl() { return 7; }\n};\nint run() { Child child; return child.get_value(); }\n}\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "qualname_absent",
+          "qualname": "app::get_value",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "qualname": "app::Child"
+          },
+          "target": {
+            "qualname": "app::Base"
+          },
+          "usage": "inheritance",
+          "expected": true
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "qualname": "app::Base::get_value"
+          },
+          "target": {
+            "qualname": "app::Child::get_value_impl"
+          },
+          "usage": "static_polymorphic_dispatch",
+          "expected": true
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-template-no-fake-crtp",
+      "sources": {
+        "src/sample.cpp": "namespace app {\nclass Child {\npublic:\n    int get_value_impl() { return 7; }\n};\ntemplate <class T>\nint invoke(T& value) { return value.get_value_impl(); }\nint run() { Child child; return invoke(child); }\n}\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "edge_kind_count",
+          "usage": "static_polymorphic_dispatch",
+          "expected": 0
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-concept-protocol",
+      "sources": {
+        "src/sample.cpp": "namespace app {\ntemplate <typename T>\nconcept Incrementable = requires(T value) {\n    ++value;\n};\ntemplate <Incrementable T>\nvoid bump(T& value) {\n    ++value;\n}\n}\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "Incrementable"
+          },
+          "attr": "kind",
+          "expected": "protocol"
+        },
+        {
+          "kind": "edge",
+          "source": {
+            "name": "bump"
+          },
+          "target": {
+            "name": "Incrementable"
+          },
+          "usage": "protocol_hook",
+          "expected": true
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-unique-include-root",
+      "sources": {
+        "src/sample.cpp": "#include \"api.hpp\"\nint run() { return project::api(); }\n",
+        "vendor/api.hpp": "#pragma once\nnamespace project { inline int api() { return 1; } }\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "run"
+          },
+          "attr": "path",
+          "expected": "src/sample.cpp"
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-unrelated-include",
+      "sources": {
+        "src/sample.cpp": "#include <iostream>\nint run() { return 0; }\n",
+        "vendor/include/wchar.h": "#error unrelated vendored header must not shadow libc\n"
+      },
+      "cpp_paths": [
+        "src/sample.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "run"
+          },
+          "attr": "path",
+          "expected": "src/sample.cpp"
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-per-tu-isolation",
+      "sources": {
+        "src/good.cpp": "namespace demo {\nint good(int x) { return x + 1; }\n}\n",
+        "src/bad.cpp": "namespace demo {\nint should_not_leak() { return 1; }\nint broken = ;\n}\n"
+      },
+      "cpp_paths": [
+        "src/good.cpp",
+        "src/bad.cpp"
+      ],
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "good"
+          },
+          "attr": null,
+          "expected": true
+        },
+        {
+          "kind": "name_absent",
+          "name": "should_not_leak",
+          "expected": true
+        }
+      ],
+      "compile": null
+    },
+    {
+      "case_id": "b33-cpp-gcc-build-truth",
+      "sources": {
+        "src/sample.cpp": "int run() { return 1; }\n"
+      },
+      "compile": {
+        "compiler": "g++",
+        "flags": [
+          "-std=gnu++20"
+        ]
+      },
+      "checks": [
+        {
+          "kind": "symbol_count",
+          "expected": 0
+        },
+        {
+          "kind": "edge_count",
+          "expected": 0
+        }
+      ],
+      "cpp_paths": null
+    },
+    {
+      "case_id": "b33-cpp-clang-compile-flags",
+      "sources": {
+        "src/sample.cpp": "#ifndef REQUIRED_VALUE\n#error missing compile definition\n#endif\nint run() { return REQUIRED_VALUE; }\n"
+      },
+      "compile": {
+        "compiler": "clang++",
+        "flags": [
+          "-DREQUIRED_VALUE=7",
+          "-std=c++20"
+        ]
+      },
+      "checks": [
+        {
+          "kind": "symbol",
+          "selector": {
+            "name": "run"
+          },
+          "attr": "path",
+          "expected": "src/sample.cpp"
+        }
+      ],
+      "cpp_paths": null
+    },
+    {
+      "case_id": "b33-cpp-clang-bad-tunit",
+      "sources": {
+        "src/sample.cpp": "#error provider unavailable for this TU\nint should_not_leak() { return 1; }\n"
+      },
+      "compile": {
+        "compiler": "clang++",
+        "flags": [
+          "-std=c++20"
+        ]
+      },
+      "checks": [
+        {
+          "kind": "symbol_count",
+          "expected": 0
+        }
+      ],
+      "cpp_paths": null
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "schema": "rqg/b29-graph-public-v02",
+  "cases": [
+    {
+      "case_id": "b29-constructor-mro-super-source-contract",
+      "query": "constructor_chain",
+      "sources": {
+        "pkg/classes.py": "class Root:\n    def __init__(self): self.item = 1\nclass Left(Root):\n    def __init__(arg): super().__init__()\nclass Right(Root):\n    def __init__(what): super().__init__()\nclass Child(Left, Right):\n    def __init__(different): super().__init__()\n"
+      },
+      "expected": {
+        "mro": [
+          "pkg.classes.Child",
+          "pkg.classes.Left",
+          "pkg.classes.Right",
+          "pkg.classes.Root"
+        ],
+        "constructor": "pkg.classes.Child.__init__",
+        "super_calls": [
+          [
+            "pkg.classes.Child.__init__",
+            8
+          ],
+          [
+            "pkg.classes.Left.__init__",
+            4
+          ],
+          [
+            "pkg.classes.Right.__init__",
+            6
+          ]
+        ],
+        "capability": "SOURCE_BOUND_CPYTHON_C3_OPEN_RUNTIME"
+      }
+    },
+    {
+      "case_id": "b29-constructor-rename-invariant",
+      "query": "inherited_constructor",
+      "sources": {
+        "pkg/classes.py": "class Base:\n    def __init__(renamed): pass\nclass Deriv(Base): pass\n"
+      },
+      "expected": [
+        {
+          "owner": "pkg.classes.Deriv",
+          "constructor": "pkg.classes.Base.__init__",
+          "mro": [
+            "pkg.classes.Deriv",
+            "pkg.classes.Base"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "b29-constructor-unbound-unknown",
+      "query": "dynamic_unknown",
+      "sources": {
+        "pkg/classes.py": "class Good:\n    pass\nclass External(UnknownClass):\n    pass\n@change\nclass Decorated(Good):\n    pass\nclass Dynamic(Good, f()):\n    pass\nclass NewOverride(Good):\n    def __new__(cls): return object.__new__(cls)\n"
+      },
+      "expected": [
+        {
+          "owner": "pkg.classes.External",
+          "unknown": true,
+          "no_proven_constructor": true,
+          "no_proven_mro": true
+        },
+        {
+          "owner": "pkg.classes.Decorated",
+          "unknown": true,
+          "no_proven_constructor": true,
+          "no_proven_mro": true
+        },
+        {
+          "owner": "pkg.classes.Dynamic",
+          "unknown": true,
+          "no_proven_constructor": true,
+          "no_proven_mro": true
+        },
+        {
+          "owner": "pkg.classes.NewOverride",
+          "unknown": true,
+          "no_proven_constructor": true,
+          "no_proven_mro": true
+        }
+      ]
+    },
+    {
+      "case_id": "b29-relative-import-typed-consumer",
+      "query": "typed_consumer",
+      "sources": {
+        "pkg/schema.py": "from typing import TypedDict\nclass Payload(TypedDict, total=False):\n    value: int\n",
+        "pkg/user.py": "from .schema import Payload as Alias\ndef consumer(x: Alias):\n    return x[\"value\"]\n"
+      },
+      "expected": [
+        {
+          "schema": "pkg.schema.Payload",
+          "field": "value",
+          "required": false,
+          "consumer": "pkg.user.consumer",
+          "guard": "NONE"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-method-c3-actual-overrides",
+      "query": "method_entries",
+      "sources": {
+        "pkg/lifecycle.py": "class Root:\n    def __init__(self): self.value = 1\n    def act(self): return self.value\nclass Left(Root):\n    def act(self): return 2\nclass Right(Root):\n    def check(self): return 3\nclass Child(Left, Right):\n    def fetch(self): return self.act()\n"
+      },
+      "expected": [
+        {
+          "owner": "pkg.lifecycle.Child",
+          "constructor": "pkg.lifecycle.Root.__init__",
+          "entries": [
+            [
+              "act",
+              "pkg.lifecycle.Left.act"
+            ],
+            [
+              "check",
+              "pkg.lifecycle.Right.check"
+            ],
+            [
+              "fetch",
+              "pkg.lifecycle.Child.fetch"
+            ]
+          ],
+          "unknown": [],
+          "capability": "SOURCE_BOUND_CPYTHON_C3_OPEN_RUNTIME"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-method-renamed-inherited-a",
+      "query": "method_entries",
+      "sources": {
+        "pkg/lifecycle.py": "class A:\n def run(self): return 1\nclass B(A): pass\n"
+      },
+      "expected": [
+        {
+          "owner": "pkg.lifecycle.B",
+          "constructor": "",
+          "entries": [
+            [
+              "run",
+              "pkg.lifecycle.A.run"
+            ]
+          ],
+          "unknown": [],
+          "capability": "SOURCE_BOUND_CPYTHON_C3_OPEN_RUNTIME"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-method-renamed-inherited-b",
+      "query": "method_entries",
+      "sources": {
+        "pkg/lifecycle.py": "class Y:\n def run(q): return 1\nclass Z(Y): pass\n"
+      },
+      "expected": [
+        {
+          "owner": "pkg.lifecycle.Z",
+          "constructor": "",
+          "entries": [
+            [
+              "run",
+              "pkg.lifecycle.Y.run"
+            ]
+          ],
+          "unknown": [],
+          "capability": "SOURCE_BOUND_CPYTHON_C3_OPEN_RUNTIME"
+        }
+      ]
+    },
+    {
+      "case_id": "b29-typed-guard-topology-source",
+      "query": "guard_consumer",
+      "sources": {
+        "sample.py": "from typing import TypedDict\nclass Record(TypedDict, total=False):\n    value: int\ndef process(state: Record):\n    if \"value\" not in state:\n        raise ValueError()\n    return state[\"value\"]\n"
+      },
+      "expected": [
+        {
+          "field": "value",
+          "required": false,
+          "guard_line": 5
+        }
+      ]
+    }
+  ]
+}

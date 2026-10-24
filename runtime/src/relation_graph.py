@@ -86,6 +86,71 @@ def _resolve_relative_module(path: str, module: str, level: int) -> str:
     return ".".join(base)
 
 
+def _lexical_callable_aliases(function: ast.FunctionDef | ast.AsyncFunctionDef):
+    """Return single-assignment, straight-line callable name bindings.
+
+    Only exact `alias = name` declarations at the function's top level are
+    candidates. Conditional writes, duplicate writes and nested scopes cannot
+    certify a forwarding edge; dynamic binding stays unresolved.
+    """
+    writes: dict[str, int] = defaultdict(int)
+    bindings = []
+
+    class _Writes(ast.NodeVisitor):
+        def visit_FunctionDef(self, node):
+            writes[node.name] += 1
+            return None
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+        visit_ClassDef = visit_FunctionDef
+
+        def visit_Lambda(self, node):
+            return None
+
+        def visit_Import(self, node):
+            for item in node.names:
+                writes[item.asname or item.name.split(".", 1)[0]] += 1
+
+        def visit_ImportFrom(self, node):
+            for item in node.names:
+                writes[item.asname or item.name] += 1
+
+        def visit_ExceptHandler(self, node):
+            if node.name:
+                writes[node.name] += 1
+            self.generic_visit(node)
+
+        def visit_Name(self, node):
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                writes[node.id] += 1
+
+    for formal in (
+        *function.args.posonlyargs,
+        *function.args.args,
+        *function.args.kwonlyargs,
+    ):
+        writes[formal.arg] += 1
+    if function.args.vararg is not None:
+        writes[function.args.vararg.arg] += 1
+    if function.args.kwarg is not None:
+        writes[function.args.kwarg.arg] += 1
+    visitor = _Writes()
+    for stmt in function.body:
+        visitor.visit(stmt)
+        if (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+            and isinstance(stmt.value, ast.Name)
+        ):
+            bindings.append((stmt.targets[0].id, stmt.value.id, stmt.lineno))
+    return tuple(
+        (dest, source, line)
+        for dest, source, line in bindings
+        if writes.get(dest) == 1 and dest != source
+    )
+
+
 @dataclass(slots=True, frozen=True)
 class _RelationNode:
     """保存一个可参与仓库关系分析的模块、类、函数、方法或测试节点。"""
@@ -220,7 +285,9 @@ class _Collector(ast.NodeVisitor):
         self.function_scopes: list[tuple[str, set[str]]] = []
         self.nodes: list[_RelationNode] = []
         self.imports: dict[str, str] = {}
+        self.ambiguous_imports: set[str] = set()
         self.calls: list[tuple[str, ast.expr]] = []
+        self.callable_aliases: list[tuple[str, str, str, int]] = []
         self.references: list[tuple[str, ast.expr, UsageKind]] = []
         self.reference_context: list[UsageKind] = []
         self.field_accesses: list[tuple[str, str, str, int]] = []
@@ -287,7 +354,7 @@ class _Collector(ast.NodeVisitor):
         """
         for alias in node.names:
             local = alias.asname or alias.name.split(".", 1)[0]
-            self.imports[local] = alias.name
+            self._bind_import(local, alias.name)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """记录绝对或相对 from-import 的本地绑定。
@@ -305,7 +372,23 @@ class _Collector(ast.NodeVisitor):
             if alias.name == "*":
                 continue
             local = alias.asname or alias.name
-            self.imports[local] = f"{module}.{alias.name}"
+            self._bind_import(local, f"{module}.{alias.name}")
+
+    def _bind_import(self, local: str, target: str) -> None:
+        """Record one import binding or deliberately leave a conflicting alias open.
+
+        Multiple imported targets for the same local spelling cannot prove a
+        call target.  Dropping the binding prevents every downstream graph rule
+        from selecting whichever import happened to be visited last.
+        """
+        existing = self.imports.get(local)
+        if local in self.ambiguous_imports:
+            return
+        if existing is None or existing == target:
+            self.imports[local] = target
+            return
+        self.imports.pop(local, None)
+        self.ambiguous_imports.add(local)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """记录类节点、父类声明并继续遍历类体。
@@ -420,6 +503,10 @@ class _Collector(ast.NodeVisitor):
                     ).encode("utf-8")
                 ).hexdigest()[:20],
             )
+        )
+        self.callable_aliases.extend(
+            (node_id, destination, source, line)
+            for destination, source, line in _lexical_callable_aliases(node)
         )
         self.function_stack.append(node.name)
         self.scope_stack.append(node.name)
@@ -557,6 +644,7 @@ class RepositoryRelationGraph:
         self._imports: dict[str, dict[str, str]] = {}
         self._class_bases: dict[str, tuple[str, ...]] = {}
         self._pending_calls: list[tuple[str, str, ast.expr]] = []
+        self._pending_callable_aliases: list[tuple[str, str, str, str, int]] = []
         self._pending_references: list[tuple[str, str, ast.expr, UsageKind]] = []
         self._pending_field_accesses: list[tuple[str, str, str, int]] = []
         self._pending_closure_captures: list[tuple[str, str, str, int]] = []
@@ -612,6 +700,9 @@ class RepositoryRelationGraph:
                 self.nodes[node.node_id] = node
             self._pending_calls.extend(
                 (collector.module, caller, expr) for caller, expr in collector.calls
+            )
+            self._pending_callable_aliases.extend(
+                (collector.module, *item) for item in collector.callable_aliases
             )
             self._pending_references.extend(
                 (collector.module, caller, expr, kind)
@@ -676,8 +767,39 @@ class RepositoryRelationGraph:
 
     def _link_calls(self) -> None:
         """解析普通调用，并同时归并 callable-reference 与 field-access 补充事实。"""
+        aliases = {
+            (caller, destination): (module, source, line)
+            for module, caller, destination, source, line in self._pending_callable_aliases
+        }
+
+        def alias_target(module, caller, expr):
+            """Resolve only exact, acyclic, previously declared name aliases."""
+            if not isinstance(expr, ast.Name):
+                return None
+            name = expr.id
+            seen = set()
+            for _ in range(5):
+                binding = aliases.get((caller, name))
+                if binding is None or name in seen:
+                    return None
+                seen.add(name)
+                source_module, source_name, line = binding
+                if line >= expr.lineno:
+                    return None
+                target = self._resolve_name(source_module, caller, source_name)
+                if target is not None and self.nodes[target].kind in {
+                    "function",
+                    "method",
+                    "test",
+                }:
+                    return target
+                name = source_name
+            return None
+
         for module, caller, expr in self._pending_calls:
             target = self._resolve_expr(module, caller, expr)
+            if target is None:
+                target = alias_target(module, caller, expr)
             if target is None:
                 continue
             target_node = self.nodes[target]
@@ -792,14 +914,22 @@ class RepositoryRelationGraph:
                     # Verify this lexical capture actually binds the class
                     # instance formal, rather than a reassigned local named self.
                     unit = self.snapshot.units.get(outer.path)
-                    outer_method = next(
-                        (
-                            node for node in ast.walk(unit.tree)
-                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                            and node.lineno == outer.line and node.name == outer.name
-                        ),
-                        None,
-                    ) if unit is not None and unit.tree is not None else None
+                    outer_method = (
+                        next(
+                            (
+                                node
+                                for node in ast.walk(unit.tree)
+                                if isinstance(
+                                    node, (ast.FunctionDef, ast.AsyncFunctionDef)
+                                )
+                                and node.lineno == outer.line
+                                and node.name == outer.name
+                            ),
+                            None,
+                        )
+                        if unit is not None and unit.tree is not None
+                        else None
+                    )
                     if outer_method is None:
                         return None
                     formals = [*outer_method.args.posonlyargs, *outer_method.args.args]
@@ -807,10 +937,19 @@ class RepositoryRelationGraph:
                         return None
                     for statement in outer_method.body:
                         for item in ast.walk(statement):
-                            if isinstance(item, ast.Name) and item.id == parts[0] and isinstance(item.ctx, (ast.Store, ast.Del)):
+                            if (
+                                isinstance(item, ast.Name)
+                                and item.id == parts[0]
+                                and isinstance(item.ctx, (ast.Store, ast.Del))
+                            ):
                                 return None
-                    outer_class = f"{outer.module}.{outer.owner}" if outer.module else outer.owner
-                    if outer_class in self.nodes and self.nodes[outer_class].kind == "class":
+                    outer_class = (
+                        f"{outer.module}.{outer.owner}" if outer.module else outer.owner
+                    )
+                    if (
+                        outer_class in self.nodes
+                        and self.nodes[outer_class].kind == "class"
+                    ):
                         class_id = outer_class
         if class_id not in self.nodes or self.nodes[class_id].kind != "class":
             return None

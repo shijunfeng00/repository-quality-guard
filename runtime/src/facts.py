@@ -20,6 +20,31 @@ from .config import GuardConfig, is_test_path
 from .docstrings import definition_code_lines, function_parameter_names, parse_docstring
 from .model import Confidence, Definition, Finding, Severity, Usage
 from .mapping_get_semantics import MappingGetSemantics
+from .visitor_rule_objects import (
+    CallRuleContext,
+    MissingMappingKeyRule,
+    MappingAccessRule,
+    UnknownMappingOwnerRule,
+    MappingSetdefaultRule,
+    MappingPopDefaultRule,
+    HasattrContractRule,
+    GetattrDefaultContractRule,
+    SuppressedExceptionRule,
+    ExceptionRuleContext,
+    BroadExceptionRule,
+    SwallowedContractExceptionRule,
+    FallbackImportRule,
+    ProjectionRuleContext,
+    ManualMappingProjectionRule,
+    NestedDefinitionRuleContext,
+    NestedDefinitionVisibilityRule,
+    ContractClaimRuleContext,
+    UnsupportedCompatibilityClaimRule,
+    MappingFallbackContext,
+    GuardedMappingFallbackRule,
+    UnreachableRuleContext,
+    UnreachableControlFlowRule,
+)
 from .topology_facts import (
     ContractFact,
     ContractOwnership,
@@ -31,7 +56,6 @@ DICT_DEFAULT_ARG_COUNT = 2
 GETATTR_DEFAULT_ARG_COUNT = 3
 MANUAL_DICT_PROJECTION_MIN_FIELDS = 3
 TINY_METHOD_MAX_LINES = 5
-TERMINATING_STATEMENTS = (ast.Return, ast.Raise, ast.Break, ast.Continue)
 SETDEFAULT_AGGREGATION_METHODS = {"add", "append", "extend", "update"}
 UNCHANGED_CN = "保持" + "不变"
 PREVIOUSLY_EQUAL_CN = "与此前" + "一致"
@@ -187,23 +211,6 @@ def contract_comparison_claim(text: str) -> str:
         if match is not None:
             return match.group(0)
     return ""
-
-
-def first_unreachable_statement(statements: list[ast.stmt]) -> ast.stmt | None:
-    """返回同一语句块中首个明显不可达语句。
-
-    Args:
-        statements: 同一控制流语句块内的语句序列。
-
-    Returns:
-        终止语句后的第一条普通语句；没有明显不可达语句时返回 None。
-    """
-    terminated = False
-    for statement in statements:
-        if terminated:
-            return statement
-        terminated = isinstance(statement, TERMINATING_STATEMENTS)
-    return None
 
 
 def _literal_comparison_truth(node: ast.Compare) -> bool | None:
@@ -400,6 +407,12 @@ class ModuleFacts:
     imports: dict[str, str] = field(default_factory=dict)
     mapping_names: set[str] = field(default_factory=set)
     contracts: list[ContractFact] = field(default_factory=list)
+    external_api_lexical_bindings: dict[ast.AST, frozenset[str]] = field(
+        default_factory=dict, repr=False
+    )
+    external_api_local_module_cache: dict[str, bool] = field(
+        default_factory=dict, repr=False
+    )
 
     def make_finding(
         self,
@@ -797,17 +810,18 @@ class _FactsCollectorNodeVisitor(ast.NodeVisitor):
             None。
         """
         for block_name, block in blocks:
-            unreachable = first_unreachable_statement(block)
-            if unreachable is None:
-                continue
-            self.add_finding(
-                unreachable,
-                "QG155",
-                f"{statement_kind} 语句的 {block_name} 分支中存在终止语句后的不可达代码。",
-                severity="error",
-                confidence="high",
-                suggestion="删除不可达代码，保留唯一真实执行路径。",
-                evidence={"branch": block_name, "statement_kind": statement_kind},
+            self.facts.findings.extend(
+                UnreachableControlFlowRule().evaluate(
+                    UnreachableRuleContext(
+                        self.facts,
+                        block[0] if block else self.facts.tree,
+                        self.scope,
+                        kind="block",
+                        statements=tuple(block),
+                        branch=block_name,
+                        statement_kind=statement_kind,
+                    )
+                )
             )
 
 
@@ -894,16 +908,18 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         if projection is None:
             return
         receiver_name, fields, confidence = projection
-        self.add_finding(
-            value,
-            "QG153",
-            f"从映射 `{receiver_name}` 逐字段 .get() 手写构造新 dict，建议核查投影契约。",
-            severity="warning",
-            confidence=confidence,
-            suggestion=(
-                "确认字段投影是否为明确的结构变换；只有上游与下游字段契约证实冗余时才能删除。"
-            ),
-            evidence={"receiver": receiver_name, "fields": fields},
+        self.facts.findings.extend(
+            ManualMappingProjectionRule().evaluate(
+                ProjectionRuleContext(
+                    self.facts,
+                    value,
+                    self.scope,
+                    receiver=receiver_name,
+                    fields=fields,
+                    confidence=confidence,
+                    is_argument=False,
+                )
+            )
         )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
@@ -938,14 +954,16 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         """
         if self.class_stack or self.function_stack:
             owner = ".".join(self.class_stack + self.function_stack)
-            self.add_finding(
-                node,
-                "QG154",
-                f"类 `{node.name}` 定义在 `{owner}` 内部，会降低接口数量和边界审查的可见性。",
-                severity="info",
-                confidence="high",
-                suggestion="新增嵌套类仍须在修改说明中全量披露；只有形成稳定共享契约时才提升到模块级。",
-                evidence={"outer_scope": owner, "nested_class": node.name},
+            self.facts.findings.extend(
+                NestedDefinitionVisibilityRule().evaluate(
+                    NestedDefinitionRuleContext(
+                        self.facts,
+                        node,
+                        self.scope,
+                        owner=owner,
+                        is_class=True,
+                    )
+                )
             )
         direct_methods = [
             child
@@ -1039,31 +1057,29 @@ class _DefinitionFactsVisitor(_FactsCollectorNodeVisitor):
         if self.function_node_stack and not is_decorator_inner_function(
             node, self.function_node_stack[-1]
         ):
-            self.add_finding(
-                node,
-                "QG154",
-                f"函数 `{node.name}` 定义在函数 `{self.function_stack[-1]}` 内部，会降低接口数量审查的可见性。",
-                severity="info",
-                confidence="high",
-                suggestion=(
-                    "新增嵌套函数仍须在修改说明中全量披露；仅在形成稳定共享契约时提升到模块级。"
-                ),
-                evidence={
-                    "outer_function": self.function_stack[-1],
-                    "nested_function": node.name,
-                },
+            self.facts.findings.extend(
+                NestedDefinitionVisibilityRule().evaluate(
+                    NestedDefinitionRuleContext(
+                        self.facts,
+                        node,
+                        self.scope,
+                        owner=self.function_stack[-1],
+                        is_class=False,
+                    )
+                )
             )
-        unreachable = first_unreachable_statement(node.body)
-        if unreachable is not None:
-            self.add_finding(
-                unreachable,
-                "QG155",
-                f"函数 `{qualname}` 中存在 return/raise/break/continue 后的不可达代码。",
-                severity="error",
-                confidence="high",
-                suggestion="删除不可达分支；如果是调试残留或兼容占位，应回到真实调用路径修复。",
-                evidence={"function": qualname},
+        self.facts.findings.extend(
+            UnreachableControlFlowRule().evaluate(
+                UnreachableRuleContext(
+                    self.facts,
+                    node,
+                    self.scope,
+                    kind="function",
+                    statements=tuple(node.body),
+                    qualname=qualname,
+                )
             )
+        )
         complexity = ComplexityVisitor()
         for statement in node.body:
             complexity.visit(statement)
@@ -1207,23 +1223,18 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
                 receiver_name, field_name = fallback
                 receiver_tail = receiver_name.rsplit(".", 1)[-1]
                 confirmed_mapping = receiver_tail in self.mapping_names
-                self.add_finding(
-                    node,
-                    "QG157",
-                    f"通过成员判断后读取 `{receiver_name}[{field_name!r}]` 并回退默认值，仍在消费方猜测字段契约。",
-                    severity=(
-                        "warning"
-                        if is_test_path(self.facts.path)
-                        else "critical"
-                        if confirmed_mapping
-                        else "error"
-                    ),
-                    confidence="high" if confirmed_mapping else "medium",
-                    suggestion=(
-                        "不要只替换访问语法来隐藏缺字段；内部必需字段应由生产方和类型契约保证并直接读取。"
-                        "真正可选字段应在 schema/TypedDict/Pydantic 模型中显式表达，并在输入边界集中处理。"
-                    ),
-                    evidence={"receiver": receiver_name, "field": field_name},
+                self.facts.findings.extend(
+                    GuardedMappingFallbackRule().evaluate(
+                        MappingFallbackContext(
+                            self.facts,
+                            node,
+                            self.scope,
+                            receiver_name,
+                            field_name,
+                            confirmed_mapping,
+                            "expression",
+                        )
+                    )
                 )
         self.generic_visit(node)
 
@@ -1254,41 +1265,31 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
                         receiver_name, field_name = fallback
                         receiver_tail = receiver_name.rsplit(".", 1)[-1]
                         confirmed_mapping = receiver_tail in self.mapping_names
-                        self.add_finding(
-                            node,
-                            "QG157",
-                            f"分支赋值通过成员判断读取 `{receiver_name}[{field_name!r}]` 并回退默认值，仍在消费方猜测字段契约。",
-                            severity=(
-                                "warning"
-                                if is_test_path(self.facts.path)
-                                else "critical"
-                                if confirmed_mapping
-                                else "error"
-                            ),
-                            confidence="high" if confirmed_mapping else "medium",
-                            suggestion=(
-                                "把字段必需性或可选性写入正式 schema，并在唯一输入边界处理；"
-                                "内部消费方不要重复维护缺字段兼容分支。"
-                            ),
-                            evidence={"receiver": receiver_name, "field": field_name},
+                        self.facts.findings.extend(
+                            GuardedMappingFallbackRule().evaluate(
+                                MappingFallbackContext(
+                                    self.facts,
+                                    node,
+                                    self.scope,
+                                    receiver_name,
+                                    field_name,
+                                    confirmed_mapping,
+                                    "assignment",
+                                )
+                            )
                         )
         static_result = _static_truth_value(node.test)
-        if static_result is not None:
-            unreachable_branch = node.orelse if static_result else node.body
-            location = unreachable_branch[0] if unreachable_branch else node
-            branch_name = "else" if static_result else "body"
-            self.add_finding(
-                location,
-                "QG155",
-                f"if 条件可静态确定为 {static_result}，{branch_name} 分支不可达。",
-                severity="error",
-                confidence="high",
-                suggestion="删除死分支，只保留真实执行路径。",
-                evidence={
-                    "static_result": static_result,
-                    "unreachable_branch": branch_name,
-                },
+        self.facts.findings.extend(
+            UnreachableControlFlowRule().evaluate(
+                UnreachableRuleContext(
+                    self.facts,
+                    node,
+                    self.scope,
+                    kind="if",
+                    static_result=static_result,
+                )
             )
+        )
         reachable_blocks = (
             [("body", node.body), ("orelse", node.orelse)]
             if static_result is None
@@ -1309,27 +1310,17 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
             None。
         """
         static_result = _static_truth_value(node.test)
-        if static_result is False:
-            location = node.body[0] if node.body else node
-            self.add_finding(
-                location,
-                "QG155",
-                "while 条件可静态确定为 False，循环体永远不可达。",
-                severity="error",
-                confidence="high",
-                suggestion="删除不会执行的循环体和废弃分支。",
-                evidence={"static_result": False, "unreachable_branch": "body"},
+        self.facts.findings.extend(
+            UnreachableControlFlowRule().evaluate(
+                UnreachableRuleContext(
+                    self.facts,
+                    node,
+                    self.scope,
+                    kind="while",
+                    static_result=static_result,
+                )
             )
-        elif static_result is True and node.orelse:
-            self.add_finding(
-                node.orelse[0],
-                "QG155",
-                "while 条件可静态确定为 True，循环正常结束后的 else 分支不可达。",
-                severity="error",
-                confidence="high",
-                suggestion="删除不可达 else 分支；需要退出时使用可变化条件并明确生命周期。",
-                evidence={"static_result": True, "unreachable_branch": "orelse"},
-            )
+        )
         reachable_blocks = (
             [("body", node.body), ("orelse", node.orelse)]
             if static_result is None
@@ -1402,23 +1393,18 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
         receiver_name, field_name = access
         receiver_tail = receiver_name.rsplit(".", 1)[-1]
         confirmed_mapping = receiver_tail in self.mapping_names
-        self.add_finding(
-            handler,
-            "QG157",
-            f"捕获 KeyError 后为 `{receiver_name}[{field_name!r}]` 回退默认值，仍在消费方猜测字段契约。",
-            severity=(
-                "warning"
-                if is_test_path(self.facts.path)
-                else "critical"
-                if confirmed_mapping
-                else "error"
-            ),
-            confidence="high" if confirmed_mapping else "medium",
-            suggestion=(
-                "在输入边界验证或建模字段可选性；内部必需字段缺失应显式失败，"
-                "不要用异常分支维持隐式兼容。"
-            ),
-            evidence={"receiver": receiver_name, "field": field_name},
+        self.facts.findings.extend(
+            GuardedMappingFallbackRule().evaluate(
+                MappingFallbackContext(
+                    self.facts,
+                    handler,
+                    self.scope,
+                    receiver_name,
+                    field_name,
+                    confirmed_mapping,
+                    "exception",
+                )
+            )
         )
 
     def _check_exception_contracts(
@@ -1427,59 +1413,23 @@ class _ControlFlowFactsVisitor(_DefinitionFactsVisitor):
         exception_names: set[str],
     ) -> None:
         """检查宽泛异常、契约异常吞噬与 ImportError 兼容分支。"""
-        broad = exception_names & {"", "BaseException", "Exception"}
-        if broad:
-            exception_name = next(
-                name for name in ("", "BaseException", "Exception") if name in broad
-            )
-            swallowed = bool(handler.body) and all(
-                is_constant_default(item) for item in handler.body
-            )
-            self.add_finding(
-                handler,
-                "QG007",
-                "宽泛异常被捕获" + ("并转换为默认结果。" if swallowed else "。"),
-                severity="error" if swallowed else "warning",
-                suggestion=(
-                    "捕获可预期的具体异常；失败若影响契约，应记录上下文并显式传播。"
-                    "显式 best-effort 接口也应限制捕获范围并保留诊断信息。"
-                ),
-                evidence={
-                    "exception": exception_name or "bare except",
-                    "swallowed": swallowed,
-                },
-            )
-        contract_exceptions = exception_names & {
-            "AttributeError",
-            "KeyError",
-            "TypeError",
-        }
-        if contract_exceptions:
-            swallowed = bool(handler.body) and all(
-                is_constant_default(item) for item in handler.body
-            )
-            if swallowed:
-                self.add_finding(
-                    handler,
-                    "QG023",
-                    "通过捕获契约类异常返回默认结果，可能隐藏字段、属性或类型错误。",
-                    severity="warning",
-                    confidence="high",
-                    suggestion="在输入边界验证结构；内部契约失败应显式暴露，不要转成 None、空容器或常量。",
-                    evidence={"exceptions": sorted(contract_exceptions)},
-                )
-        if exception_names & {"ImportError", "ModuleNotFoundError"}:
-            has_fallback_import = any(
-                isinstance(item, (ast.Import, ast.ImportFrom)) for item in handler.body
-            )
-            if has_fallback_import:
-                self.add_finding(
-                    handler,
-                    "QG009",
-                    "通过 ImportError 选择备用实现，形成运行时兼容分支。",
-                    severity="info",
-                    suggestion="确认是否仍需兼容旧依赖；不需要时删除备用路径并固定依赖。",
-                )
+        swallowed = bool(handler.body) and all(
+            is_constant_default(item) for item in handler.body
+        )
+        has_fallback_import = any(
+            isinstance(item, (ast.Import, ast.ImportFrom)) for item in handler.body
+        )
+        context = ExceptionRuleContext(
+            self.facts,
+            handler,
+            self.scope,
+            frozenset(exception_names),
+            swallowed,
+            has_fallback_import,
+        )
+        self.facts.findings.extend(BroadExceptionRule().evaluate(context))
+        self.facts.findings.extend(SwallowedContractExceptionRule().evaluate(context))
+        self.facts.findings.extend(FallbackImportRule().evaluate(context))
 
 
 class _UsageFactsVisitor(_ControlFlowFactsVisitor):
@@ -1499,17 +1449,10 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         if isinstance(node.value, str):
             claim = contract_comparison_claim(node.value)
             if claim:
-                self.add_finding(
-                    node,
-                    "QG158",
-                    "字符串声称接口、返回结构或行为“保持不变/兼容”，但代码内没有可验证的 Git before/after 基线。",
-                    severity="warning",
-                    confidence="high",
-                    suggestion=(
-                        "运行时代码、prompt 和字段描述应直接陈述当前固定契约；"
-                        "历史兼容性结论放入修改报告，并基于 diff-base、before/after 和上下游调用证据验证。"
-                    ),
-                    evidence={"claim": claim[:160]},
+                self.facts.findings.extend(
+                    UnsupportedCompatibilityClaimRule().evaluate(
+                        ContractClaimRuleContext(self.facts, node, self.scope, claim)
+                    )
                 )
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -1567,17 +1510,18 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             if projection is None:
                 continue
             receiver_name, fields, confidence = projection
-            self.add_finding(
-                argument,
-                "QG153",
-                f"从映射 `{receiver_name}` 逐字段 .get() 手写构造新 dict，属于重复字段投影。",
-                severity="warning",
-                confidence=confidence,
-                suggestion=(
-                    "不要把 metadata/payload 等 dict 字段逐项抄写一遍；若需要完整传递，直接复用原 dict；"
-                    "若必须裁剪字段，集中声明字段白名单并用索引或专门模型表达契约。"
-                ),
-                evidence={"receiver": receiver_name, "fields": fields},
+            self.facts.findings.extend(
+                ManualMappingProjectionRule().evaluate(
+                    ProjectionRuleContext(
+                        self.facts,
+                        argument,
+                        self.scope,
+                        receiver=receiver_name,
+                        fields=fields,
+                        confidence=confidence,
+                        is_argument=True,
+                    )
+                )
             )
 
     def _check_dynamic_attribute_probe(self, node: ast.Call) -> None:
@@ -1589,7 +1533,6 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             return
         if node.func.id == "getattr" and len(node.args) < GETATTR_DEFAULT_ARG_COUNT:
             return
-        test_context = is_test_path(self.facts.path)
         receiver_name = dotted_name(node.args[0]) if node.args else ""
         receiver_tail = receiver_name.rsplit(".", 1)[-1] if receiver_name else ""
         selector = (
@@ -1615,63 +1558,24 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             confidence,
             ownership_evidence,
         )
-        if test_context:
-            severity: Severity = "warning"
-        elif ownership is ContractOwnership.INTERNAL_FORMAL:
-            severity = "error"
-        else:
-            severity = "info"
-        semantic_unknown = ownership is ContractOwnership.UNKNOWN
-        common_evidence: dict[str, object] = {
-            "receiver": receiver_name,
-            "selector": selector,
-            "statically_typed": statically_typed,
-            "test_context": test_context,
-            "contract_ownership": ownership.value,
-            "ownership_evidence": list(ownership_evidence),
-        }
-        if semantic_unknown:
-            common_evidence.update(
-                {
-                    "semantic_review_required": True,
-                    "semantic_review_question": "Q4,Q6",
-                    "semantic_review_kind": "contract-ownership",
-                }
-            )
-        if node.func.id == "hasattr":
-            self.add_finding(
-                node,
-                "QG005",
-                (
-                    "使用 hasattr() 探测内部正式对象字段，把明确类型契约降级为运行时猜测。"
-                    if ownership is ContractOwnership.INTERNAL_FORMAL
-                    else "hasattr() 探测位于外部/动态/未解析契约边界，保留所有权证据供复核。"
-                ),
-                severity=severity,
-                confidence=confidence,
-                suggestion=(
-                    "内部正式对象应直接访问声明属性；多态使用 Protocol/ABC/联合类型或显式 adapter。"
-                    "外部可选能力只有在依赖契约静态可证明时才可保留，unknown 不得反推为内部错误。"
-                ),
-                evidence=common_evidence,
-            )
-        else:
-            self.add_finding(
-                node,
-                "QG006",
-                (
-                    "getattr(..., default) 在内部正式对象契约缺失时静默兜底。"
-                    if ownership is ContractOwnership.INTERNAL_FORMAL
-                    else "getattr(..., default) 位于外部/动态/未解析契约边界，保留所有权证据供复核。"
-                ),
-                severity=severity,
-                confidence=confidence,
-                suggestion=(
-                    "内部正式对象应直接访问声明字段并让契约错误暴露；真正可选的外部字段必须由"
-                    "静态依赖契约、Protocol/联合类型或唯一 adapter 明确表达。"
-                ),
-                evidence=common_evidence,
-            )
+        rule_context = CallRuleContext(
+            facts=self.facts,
+            node=node,
+            scope=self.scope,
+            full_name=node.func.id,
+            receiver_name=receiver_name,
+            ownership=ownership,
+            ownership_confidence=confidence,
+            ownership_evidence=ownership_evidence,
+            selector=selector,
+            statically_typed=statically_typed,
+        )
+        rule = (
+            HasattrContractRule()
+            if node.func.id == "hasattr"
+            else GetattrDefaultContractRule()
+        )
+        self.facts.findings.extend(rule.evaluate(rule_context))
 
     def _check_attribute_call(self, node: ast.Call) -> None:
         """
@@ -1690,6 +1594,8 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             isinstance(receiver, ast.Dict) or receiver_name in self.mapping_names
         )
         if attribute == "get":
+            if self.mapping_get_semantics.rebound_formal_receiver(receiver_name):
+                confirmed_mapping = False
             owner = self.mapping_get_semantics.local_get_owner(receiver_name)
             if owner == "method":
                 # A proven authored method is not Mapping.get; its body is
@@ -1706,13 +1612,29 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
                 return
             if owner == "mapping":
                 confirmed_mapping = True
+        mapping_receiver = (
+            self.mapping_get_semantics.source_bound_receiver(receiver_name, node)
+            if attribute == "get"
+            else receiver_name
+        )
+        if attribute == "get" and mapping_receiver != receiver_name:
+            alias_owner = self.mapping_get_semantics.local_get_owner(mapping_receiver)
+            if alias_owner == "method":
+                return
+            confirmed_mapping = confirmed_mapping or alias_owner == "mapping"
         self._check_mapping_call(
             node,
             attribute,
             receiver_name,
             confirmed_mapping,
+            proven_receiver=mapping_receiver
+            if mapping_receiver != receiver_name
+            else None,
         )
-        self._check_special_attribute_call(node, dotted_name(node.func))
+        context = CallRuleContext(
+            self.facts, node, self.scope, full_name=dotted_name(node.func)
+        )
+        self.facts.findings.extend(SuppressedExceptionRule().evaluate(context))
 
     def _check_mapping_call(
         self,
@@ -1720,6 +1642,7 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
         attribute: str,
         receiver_name: str,
         confirmed_mapping: bool,
+        proven_receiver: str | None = None,
     ) -> None:
         """检查映射读取、聚合初始化与删除时的隐式兜底契约。"""
         receiver_tail = receiver_name.rsplit(".", 1)[-1]
@@ -1742,6 +1665,11 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
                 )
             ),
         )
+        if proven_receiver is not None:
+            ownership_evidence = (
+                *ownership_evidence,
+                f"local_alias_source:{proven_receiver}",
+            )
         context = _MappingCallContext(
             receiver_name=receiver_name,
             receiver_tail=receiver_tail,
@@ -1752,25 +1680,30 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             ownership_evidence=ownership_evidence,
         )
         if attribute == "get":
-            self._check_mapping_get(node, context)
+            self._check_mapping_get(node, context, proven_receiver)
         elif attribute == "setdefault":
             self._check_mapping_setdefault(node, context)
         elif attribute == "pop":
             self._check_mapping_pop(node, context)
 
-    def _check_mapping_get(self, node: ast.Call, context: _MappingCallContext) -> None:
-        """检查 mapping.get 是否在错误的契约 owner 上承担缺字段兜底。"""
+    def _check_mapping_get(
+        self,
+        node: ast.Call,
+        context: _MappingCallContext,
+        proven_receiver: str | None = None,
+    ) -> None:
+        """Resolve owner once; QG003/QG004/QG026 independently own detection."""
         explicit_default = len(node.args) >= DICT_DEFAULT_ARG_COUNT
         if not node.args and not node.keywords and context.confirmed_mapping:
-            self.add_finding(
+            rule_context = CallRuleContext(
+                self.facts,
                 node,
-                "QG003",
-                "已确认 Mapping.get() 调用缺少必需的 key 参数。",
-                severity="error",
-                confidence="high",
-                suggestion="按真实映射契约传入 key；若是自定义方法，请先证明实际 owner。",
-                evidence={"receiver": context.receiver_name, "arity": 0},
+                self.scope,
+                full_name="get",
+                receiver_name=context.receiver_name,
+                confirmed_mapping=True,
             )
+            self.facts.findings.extend(MissingMappingKeyRule().evaluate(rule_context))
             return
         selector = (
             node.args[0].value
@@ -1789,142 +1722,82 @@ class _UsageFactsVisitor(_ControlFlowFactsVisitor):
             context.ownership_evidence,
         )
         declared_empty = self.mapping_get_semantics.explicit_empty_return(node)
-        evidence: dict[str, object] = {
-            "requiredness": "UNKNOWN",
-            "receiver": context.receiver_name,
-            "selector": selector,
-            "explicit_default": explicit_default,
-            "confirmed_mapping": context.confirmed_mapping,
-            "contract_ownership": context.ownership.value,
-            "ownership_evidence": list(context.ownership_evidence),
-            "declared_empty_return": declared_empty,
-        }
-        if (
-            declared_empty
-            and context.ownership is ContractOwnership.INTERNAL_FORMAL
-            and not self.mapping_get_semantics.required_schema_key(
-                context.receiver_name, selector
+        key_requirement = (
+            self.mapping_get_semantics.schema_key_requirement(
+                proven_receiver or context.receiver_name, selector
             )
-        ):
-            # The declared Optional result is an actual public return contract;
-            # it does not prove a required schema key optional. Leave required
-            # schema and source-path review to explicit contract rules.
-            return
-        if context.ownership is ContractOwnership.UNKNOWN:
-            evidence.update(
-                {
-                    "semantic_review_required": True,
-                    "semantic_review_question": "Q4,Q6",
-                    "semantic_review_kind": "contract-ownership",
-                }
-            )
-            self.add_finding(
-                node,
-                "QG026",
-                "发现无法静态确认 owner 的 .get() 契约访问。",
-                severity="warning" if context.test_context else "info",
-                confidence=context.ownership_confidence,
-                suggestion=(
-                    "先确认 receiver 是内部正式 mapping、外部可选 API 还是动态边界；"
-                    "证据不足时保持 unknown，不得仅凭变量名或 strict_get 猜成内部 schema。"
-                ),
-                evidence=evidence,
-            )
-            return
-        code = "QG004" if explicit_default else "QG003"
-        if context.test_context:
-            severity: Severity = "warning"
-        elif context.ownership is ContractOwnership.INTERNAL_FORMAL:
-            severity = "warning"
-        else:
-            severity = "info"
-        internal = context.ownership is ContractOwnership.INTERNAL_FORMAL
-        self.add_finding(
-            node,
-            code,
-            (
-                "已绑定内部映射类型，但字段必需性未证明；.get() 兜底需要核查字段契约。"
-                if internal
-                else ".get() 位于显式外部可选/动态边界；记录 owner 证据而不按内部 schema 失败处理。"
-            ),
-            severity=severity,
-            confidence=context.ownership_confidence,
-            suggestion=(
-                "内部稳定映射的必需字段使用 [] 直接读取；真正可选字段在 TypedDict/Pydantic/"
-                "Protocol 或外部依赖契约中显式声明，并在唯一 adapter/ingestion 边界归一化。"
-            ),
-            evidence=evidence,
+            if context.ownership is ContractOwnership.INTERNAL_FORMAL
+            else None
         )
+        required_schema_key = key_requirement is True
+        optional_schema_key = key_requirement is False
+        established_key_guard = (
+            self.mapping_get_semantics.established_key_guard(
+                context.receiver_name, selector, node
+            )
+            if required_schema_key
+            else False
+        )
+        rule_context = CallRuleContext(
+            facts=self.facts,
+            node=node,
+            scope=self.scope,
+            full_name="get",
+            receiver_name=context.receiver_name,
+            confirmed_mapping=context.confirmed_mapping,
+            ownership=context.ownership,
+            ownership_confidence=context.ownership_confidence,
+            ownership_evidence=context.ownership_evidence,
+            declared_empty=declared_empty,
+            required_schema_key=required_schema_key,
+            optional_schema_key=optional_schema_key,
+            established_key_guard=established_key_guard,
+            selector=selector,
+        )
+        # At most one owner emits for a call; explicit source order is stable.
+        rule = (
+            UnknownMappingOwnerRule()
+            if context.ownership is ContractOwnership.UNKNOWN
+            else MappingAccessRule()
+            if explicit_default
+            else MissingMappingKeyRule()
+        )
+        self.facts.findings.extend(rule.evaluate(rule_context))
 
     def _check_mapping_setdefault(
         self, node: ast.Call, context: _MappingCallContext
     ) -> None:
-        """检查 setdefault 是否把读取、兜底与状态写入混成一个隐式入口。"""
-        if not (context.confirmed_mapping or self.config.strict_get):
-            return
-        if id(node) in self.aggregation_setdefault_calls:
-            return
-        self.add_finding(
-            node,
-            "QG012",
-            "setdefault() 同时承担读取、兜底和写入，容易隐藏状态归并副作用。",
-            severity="warning" if context.confirmed_mapping else "info",
-            suggestion=(
-                "不要把 setdefault() 机械展开成 `if key not in mapping: mapping[key] = default`。"
-                "若缺键是合法的聚合/缓存语义，保留 setdefault 或封装到唯一状态入口；"
-                "若字段按契约必需，直接索引并让缺失错误暴露。"
-            ),
-            confidence="high" if context.confirmed_mapping else "medium",
-            evidence={"requiredness": "UNKNOWN", "receiver": context.receiver_name},
+        """Apply QG012 to already-resolved mapping ownership and aggregation facts."""
+        self.facts.findings.extend(
+            MappingSetdefaultRule().evaluate(
+                CallRuleContext(
+                    self.facts,
+                    node,
+                    self.scope,
+                    full_name="setdefault",
+                    receiver_name=context.receiver_name,
+                    confirmed_mapping=context.confirmed_mapping,
+                    strict_get=self.config.strict_get,
+                    is_aggregation=id(node) in self.aggregation_setdefault_calls,
+                )
+            )
         )
 
     def _check_mapping_pop(self, node: ast.Call, context: _MappingCallContext) -> None:
-        """检查 pop(key, default) 是否把必需字段缺失静默转换成正常删除。"""
-        if len(node.args) < DICT_DEFAULT_ARG_COUNT:
-            return
-        if not (context.confirmed_mapping or self.config.strict_get):
-            return
-        self.add_finding(
-            node,
-            "QG025",
-            "映射 pop(key, default) 在删除字段时静默忽略缺失。",
-            severity="warning" if context.confirmed_mapping else "info",
-            confidence="high" if context.confirmed_mapping else "medium",
-            suggestion="若字段按契约必须存在，使用 pop(key)；真正可选字段必须在类型中显式声明。",
-            evidence={"receiver": context.receiver_name, "requiredness": "UNKNOWN"},
+        """Apply QG025 to one already-resolved mapping call."""
+        self.facts.findings.extend(
+            MappingPopDefaultRule().evaluate(
+                CallRuleContext(
+                    self.facts,
+                    node,
+                    self.scope,
+                    full_name="pop",
+                    receiver_name=context.receiver_name,
+                    confirmed_mapping=context.confirmed_mapping,
+                    strict_get=self.config.strict_get,
+                )
+            )
         )
-
-    def _check_special_attribute_call(self, node: ast.Call, full_name: str) -> None:
-        """
-        检查 suppress 与配置默认值等特殊调用。
-
-        Args:
-            node: 待分析的 AST 节点。
-            full_name: 调用目标的完整点分名称。
-
-        Returns:
-            None。
-        """
-        if full_name == "contextlib.suppress":
-            self.add_finding(
-                node,
-                "QG024",
-                "contextlib.suppress() 会完全隐藏指定异常。",
-                severity="warning",
-                confidence="high",
-                suggestion="确认异常确实可安全忽略；否则记录上下文或使用显式异常分支。",
-            )
-        if (
-            full_name in {"os.getenv", "os.environ.get"}
-            and len(node.args) >= DICT_DEFAULT_ARG_COUNT
-        ):
-            self.add_finding(
-                node,
-                "QG011",
-                "配置读取提供默认值，部署缺项可能被静默掩盖。",
-                suggestion="对必填配置使用强制读取并在启动阶段报错；仅为真正可选配置保留默认值。",
-                evidence={"call": full_name},
-            )
 
     def visit_Name(self, node: ast.Name) -> None:
         """

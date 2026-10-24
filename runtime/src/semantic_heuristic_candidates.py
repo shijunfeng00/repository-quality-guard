@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import re
-import tomllib
 from collections import defaultdict
 from dataclasses import dataclass
 from fnmatch import fnmatch
@@ -11,6 +10,7 @@ from pathlib import Path
 from .analysis_snapshot import RepositoryAnalysisSnapshot
 from .config import GuardConfig
 from .git_utils import run_readonly_git
+from .core_rule_contract import CoreQualityRule
 from .model import Finding
 
 _HUNK_HEADER = re.compile(r"@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
@@ -270,27 +270,117 @@ def _changed_line_map(root: Path, revision: str, staged: bool) -> dict[str, set[
     return dict(changed)
 
 
-def _baseline_authorizations(
-    root: Path, revision: str, relative_path: str
-) -> frozenset[str]:
-    """读取 Git 基线中预先存在的精确授权指纹。"""
-    if not relative_path:
-        return frozenset()
-    result = run_readonly_git(root, ("show", f"{revision}:{relative_path}"))
-    if result.returncode != 0:
-        return frozenset()
-    try:
-        payload = tomllib.loads(result.stdout)
-    except tomllib.TOMLDecodeError:
-        return frozenset()
-    if payload.get("version") != 1:
-        return frozenset()
-    authorized = payload.get("authorized", [])
-    if not isinstance(authorized, list) or not all(
-        isinstance(item, str) for item in authorized
-    ):
-        return frozenset()
-    return frozenset(authorized)
+@dataclass(frozen=True, slots=True)
+class SemanticCandidateContext:
+    """Bundle one AST-grounded candidate with its deterministic source identity.
+
+    Fields:
+        relative: Repository-relative path of the candidate source.
+        candidate: AST-grounded mechanism and source location.
+        fingerprint: Deterministic candidate identity across scans."""
+
+    relative: str
+    candidate: _Candidate
+    fingerprint: str
+
+
+class ManualProtocolCandidateRule(CoreQualityRule[SemanticCandidateContext]):
+    """QG191: surface handwritten OpenAI tool-call protocol implementations.
+
+    Only candidates classified as openai_tool_call_protocol belong to QG191;
+    generic text-heuristic candidates are owned by QG178 instead."""
+
+    code = "QG191"
+
+    def evaluate(self, context: SemanticCandidateContext) -> list[Finding]:
+        """Report the manual tool-call protocol mechanism with its exact source evidence.
+
+        Args:
+            context: Candidate mechanism, fingerprint and attribution path.
+
+        Returns:
+            A QG191 informational finding for manual protocol candidates, else []."""
+        if context.candidate.mechanism != "openai_tool_call_protocol":
+            return []
+        relative = context.relative
+        candidate = context.candidate
+        fingerprint = context.fingerprint
+        return [
+            Finding(
+                code="QG191",
+                severity="info",
+                confidence="high",
+                path=relative,
+                line=candidate.line,
+                column=candidate.column,
+                symbol=candidate.owner,
+                message=(
+                    "本轮代码手工拼装 OpenAI tool_call 协议对象；必须先检索并阅读项目既有 "
+                    "Tool schema/validator/调用账本能力，确认这里确实应成为新的协议所有者。"
+                ),
+                suggestion=(
+                    "执行 doc-search 检索标准 tool_call 生成、参数校验和 tool result/history 能力；"
+                    "优先复用唯一协议 owner，避免调用方复制标准 JSON 结构。"
+                ),
+                evidence={
+                    "mechanism": candidate.mechanism,
+                    "detail": candidate.detail,
+                    "changed_line": candidate.line,
+                    "target": candidate.target,
+                    "fingerprint": fingerprint,
+                },
+                source="protocol-construction-candidate",
+            )
+        ]
+
+
+class TextHeuristicCandidateRule(CoreQualityRule[SemanticCandidateContext]):
+    """QG178: review text heuristics not precisely exempted by the Profile.
+
+    OpenAI tool-call protocol candidates belong to QG191 instead."""
+
+    code = "QG178"
+
+    def evaluate(self, context: SemanticCandidateContext) -> list[Finding]:
+        """Report a non-protocol text heuristic without inventing an exemption.
+
+        Args:
+            context: AST candidate and deterministic source fingerprint.
+
+        Returns:
+            Findings for QG178 candidate mechanisms outside the tool protocol."""
+        if context.candidate.mechanism == "openai_tool_call_protocol":
+            return []
+        relative = context.relative
+        candidate = context.candidate
+        fingerprint = context.fingerprint
+        return [
+            Finding(
+                code="QG178",
+                severity="info",
+                confidence="medium",
+                path=relative,
+                line=candidate.line,
+                column=candidate.column,
+                symbol=candidate.owner,
+                message=(
+                    f"新增文本启发式候选 `{candidate.detail}`。该位置未命中 profile "
+                    "精确静态豁免；合法的确定性词法契约须由 Profile 精确指纹授权。"
+                ),
+                suggestion=(
+                    "有独立证据的确定性词法解析应由 Profile 精确豁免；"
+                    "否则删除模糊语义启发式并在 Q10 标记 BLOCKING。"
+                ),
+                evidence={
+                    "mechanism": candidate.mechanism,
+                    "detail": candidate.detail,
+                    "changed_line": candidate.line,
+                    "target": candidate.target,
+                    "fingerprint": fingerprint,
+                },
+                source="semantic-heuristic-candidate",
+            )
+        ]
 
 
 def semantic_heuristic_candidate_findings(
@@ -300,9 +390,8 @@ def semantic_heuristic_candidate_findings(
     target_analysis: RepositoryAnalysisSnapshot | None = None,
     staged: bool = False,
     static_exemptions: tuple[str, ...] = (),
-    authorization_path: str = "",
 ) -> list[Finding]:
-    """列出非静态豁免的文本启发式候选，并附带基线授权事实。
+    """列出未命中 Profile 精确豁免的文本启发式候选。
 
     Args:
         root: 待审计 Git 仓库根目录。
@@ -310,15 +399,13 @@ def semantic_heuristic_candidate_findings(
         revision: 作为授权和新增行比较基线的 Git revision。
         staged: 是否审计暂存区而不是普通工作区。
         static_exemptions: 由 Guard profile 固定发布的精确候选指纹。
-        authorization_path: 只从 Git 基线读取的授权账本相对路径。
         target_analysis: 可选的 after 统一源码/AST 快照。
 
     Returns:
-        QG178 启发式候选与 QG191 手工协议构造候选；QG178 携带基线授权事实。
+        QG178 启发式候选与 QG191 手工协议构造候选。
     """
     findings: list[Finding] = []
     exemptions = frozenset(static_exemptions)
-    authorizations = _baseline_authorizations(root, revision, authorization_path)
     for relative, changed_lines in sorted(
         _changed_line_map(root, revision, staged).items()
     ):
@@ -349,63 +436,11 @@ def semantic_heuristic_candidate_findings(
             if fingerprint in exemptions or fingerprint in seen:
                 continue
             seen.add(fingerprint)
-            if candidate.mechanism == "openai_tool_call_protocol":
-                findings.append(
-                    Finding(
-                        code="QG191",
-                        severity="info",
-                        confidence="high",
-                        path=relative,
-                        line=candidate.line,
-                        column=candidate.column,
-                        symbol=candidate.owner,
-                        message=(
-                            "本轮代码手工拼装 OpenAI tool_call 协议对象；必须先检索并阅读项目既有 "
-                            "Tool schema/validator/调用账本能力，确认这里确实应成为新的协议所有者。"
-                        ),
-                        suggestion=(
-                            "执行 doc-search 检索标准 tool_call 生成、参数校验和 tool result/history 能力；"
-                            "优先复用唯一协议 owner，避免调用方复制标准 JSON 结构。"
-                        ),
-                        evidence={
-                            "mechanism": candidate.mechanism,
-                            "detail": candidate.detail,
-                            "changed_line": candidate.line,
-                            "target": candidate.target,
-                            "fingerprint": fingerprint,
-                        },
-                        source="protocol-construction-candidate",
-                    )
-                )
-                continue
-            authorized = fingerprint in authorizations
-            findings.append(
-                Finding(
-                    code="QG178",
-                    severity="info",
-                    confidence="medium",
-                    path=relative,
-                    line=candidate.line,
-                    column=candidate.column,
-                    symbol=candidate.owner,
-                    message=(
-                        f"新增文本启发式候选 `{candidate.detail}`。该位置未命中 profile "
-                        "精确静态豁免；是否获得授权由 Git 基线授权账本决定，报告模型无权自行豁免。"
-                    ),
-                    suggestion=(
-                        "未获基线授权时删除该启发式，把判断交回 Agent/LLM/正式分类模型，"
-                        "并在 Q10 标记 BLOCKING。确定性协议例外只能修改质量守卫 profile 的精确指纹。"
-                    ),
-                    evidence={
-                        "mechanism": candidate.mechanism,
-                        "detail": candidate.detail,
-                        "changed_line": candidate.line,
-                        "target": candidate.target,
-                        "fingerprint": fingerprint,
-                        "authorized_by_baseline": authorized,
-                        "authorization_path": authorization_path,
-                    },
-                    source="semantic-heuristic-candidate",
-                )
+            context = SemanticCandidateContext(
+                relative,
+                candidate,
+                fingerprint,
             )
+            findings.extend(ManualProtocolCandidateRule().evaluate(context))
+            findings.extend(TextHeuristicCandidateRule().evaluate(context))
     return findings

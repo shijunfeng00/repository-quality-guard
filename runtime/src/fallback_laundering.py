@@ -8,6 +8,7 @@ from pathlib import Path
 from .analysis_snapshot import RepositoryAnalysisSnapshot
 from .config import GuardConfig, is_test_path
 from .git_utils import run_readonly_git
+from .core_rule_contract import CoreQualityRule
 from .model import Finding
 from .policy_common import is_boundary_module
 
@@ -675,6 +676,118 @@ def _laundering_finding(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class FallbackLaunderingContext:
+    """Hold original Git delta identity and optional precomputed source snapshots.
+
+    Fields:
+        root: Repository root containing the before/after Git revisions.
+        config: Rule applicability and lexical fallback policies.
+        base_revision: Exact Git base for the before-state comparison.
+        staged: Whether the after-state is the Git index rather than the worktree.
+        base_analysis: Optional already-parsed base source units.
+        target_analysis: Optional already-parsed target source units."""
+
+    root: Path
+    config: GuardConfig
+    base_revision: str
+    staged: bool = False
+    base_analysis: RepositoryAnalysisSnapshot | None = None
+    target_analysis: RepositoryAnalysisSnapshot | None = None
+
+
+class FallbackLaunderingRule(CoreQualityRule[FallbackLaunderingContext]):
+    """QG176: detect relocated fallback semantics across changed Python functions.
+
+    It compares before/after lexical behavior, including moved or transformed
+    default-to-empty paths. Being present only in historical code is not proof
+    that a removed fallback survives the change."""
+
+    code = "QG176"
+
+    def evaluate(self, context: FallbackLaunderingContext) -> list[Finding]:
+        """Compare changed Python source against its Git baseline to find retained fallbacks.
+
+        Source is reused from the supplied analysis snapshots when available;
+        otherwise immutable Git show reads supply the exact before/index bytes.
+        Findings require a matched fallback witness, not merely syntax similarity.
+
+        Args:
+            context: Base revision, target selection, quality configuration and snapshots.
+
+        Returns:
+            QG176 findings for evidenced relocation or laundering of fallback logic."""
+        root = context.root
+        config = context.config
+        base_revision = context.base_revision
+        staged = context.staged
+        base_analysis = context.base_analysis
+        target_analysis = context.target_analysis
+
+        findings: list[Finding] = []
+        for path in _changed_python_paths(root, base_revision, staged):
+            before_unit = (
+                base_analysis.unit(path) if base_analysis is not None else None
+            )
+            after_unit = (
+                target_analysis.unit(path) if target_analysis is not None else None
+            )
+            if before_unit is not None:
+                before_source = before_unit.source
+            else:
+                before_result = run_readonly_git(
+                    root, ("show", f"{base_revision}:{path}")
+                )
+                before_source = (
+                    before_result.stdout if before_result.returncode == 0 else None
+                )
+
+            if after_unit is not None:
+                after_source = after_unit.source
+            elif staged:
+                after_result = run_readonly_git(root, ("show", f":{path}"))
+                after_source = (
+                    after_result.stdout if after_result.returncode == 0 else None
+                )
+            else:
+                try:
+                    after_source = (root / path).read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    after_source = None
+            if before_source is None or after_source is None:
+                continue
+            before = extract_fallback_patterns(
+                path,
+                before_source,
+                before_unit.tree if before_unit is not None else None,
+            )
+            after = extract_fallback_patterns(
+                path,
+                after_source,
+                after_unit.tree if after_unit is not None else None,
+            )
+            removed, added = _changed_patterns(before, after)
+            added_by_key: dict[tuple[str, str, str, str], list[FallbackPattern]] = (
+                defaultdict(list)
+            )
+            for pattern in added:
+                added_by_key[(pattern.qualname, *pattern.semantic_key)].append(pattern)
+            seen: set[tuple[str, str, str, str, str, str]] = set()
+            for old in removed:
+                match_key = (old.qualname, *old.semantic_key)
+                for new in added_by_key[match_key]:
+                    identity = (*match_key, old.syntax, new.syntax)
+                    if old.syntax == new.syntax or identity in seen:
+                        continue
+                    seen.add(identity)
+                    findings.append(
+                        _laundering_finding(path, old, new, config, base_revision)
+                    )
+                    break
+        findings.sort(key=lambda item: (item.path, item.line, item.symbol, item.code))
+        return findings
+
+
 def fallback_laundering_findings(
     root: Path,
     config: GuardConfig,
@@ -683,70 +796,20 @@ def fallback_laundering_findings(
     base_analysis: RepositoryAnalysisSnapshot | None = None,
     target_analysis: RepositoryAnalysisSnapshot | None = None,
 ) -> list[Finding]:
-    """检测把被禁止兜底改写为等价控制流的无效修复。
+    """Run QG176 against a selected Git delta through its dedicated rule owner.
 
     Args:
-        root: Git 工作树根目录。
-        config: 当前仓库质量配置。
-        base_revision: Git before 快照。
-        staged: 是否读取暂存区作为 after。
-        base_analysis: 可选的 before 统一源码/AST 快照。
-        target_analysis: 可选的 after 统一源码/AST 快照。
+        root: Repository containing the changed Python files.
+        config: Effective quality configuration and rule applicability.
+        base_revision: Git commit supplying the immutable before-state.
+        staged: Select staged index instead of current worktree as after-state.
+        base_analysis: Optional precomputed analysis of the before-state.
+        target_analysis: Optional precomputed analysis of the after-state.
 
     Returns:
-        每一处 fallback 行为洗白对应的 QG176 Critical。
-    """
-    findings: list[Finding] = []
-    for path in _changed_python_paths(root, base_revision, staged):
-        before_unit = base_analysis.unit(path) if base_analysis is not None else None
-        after_unit = target_analysis.unit(path) if target_analysis is not None else None
-        if before_unit is not None:
-            before_source = before_unit.source
-        else:
-            before_result = run_readonly_git(root, ("show", f"{base_revision}:{path}"))
-            before_source = (
-                before_result.stdout if before_result.returncode == 0 else None
-            )
-
-        if after_unit is not None:
-            after_source = after_unit.source
-        elif staged:
-            after_result = run_readonly_git(root, ("show", f":{path}"))
-            after_source = after_result.stdout if after_result.returncode == 0 else None
-        else:
-            try:
-                after_source = (root / path).read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
-                after_source = None
-        if before_source is None or after_source is None:
-            continue
-        before = extract_fallback_patterns(
-            path,
-            before_source,
-            before_unit.tree if before_unit is not None else None,
+        Evidence-bound QG176 findings from the fallback laundering evaluator."""
+    return FallbackLaunderingRule().evaluate(
+        FallbackLaunderingContext(
+            root, config, base_revision, staged, base_analysis, target_analysis
         )
-        after = extract_fallback_patterns(
-            path,
-            after_source,
-            after_unit.tree if after_unit is not None else None,
-        )
-        removed, added = _changed_patterns(before, after)
-        added_by_key: dict[tuple[str, str, str, str], list[FallbackPattern]] = (
-            defaultdict(list)
-        )
-        for pattern in added:
-            added_by_key[(pattern.qualname, *pattern.semantic_key)].append(pattern)
-        seen: set[tuple[str, str, str, str, str, str]] = set()
-        for old in removed:
-            match_key = (old.qualname, *old.semantic_key)
-            for new in added_by_key[match_key]:
-                identity = (*match_key, old.syntax, new.syntax)
-                if old.syntax == new.syntax or identity in seen:
-                    continue
-                seen.add(identity)
-                findings.append(
-                    _laundering_finding(path, old, new, config, base_revision)
-                )
-                break
-    findings.sort(key=lambda item: (item.path, item.line, item.symbol, item.code))
-    return findings
+    )

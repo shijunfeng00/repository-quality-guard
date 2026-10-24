@@ -6,8 +6,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+import urllib.error
+import urllib.request
 
 from .model import Finding
+from .process_lifecycle import run_bounded_command
 
 
 class RuffRunner:
@@ -35,6 +38,7 @@ class RuffRunner:
             None。
         """
         self.root = root
+        self._install_error = ""
         self.subprocess_env = dict(environment)
         self.subprocess_env["UV_CACHE_DIR"] = str(cache_root / "uv-cache")
         self.subprocess_env["UV_TOOL_DIR"] = str(cache_root / "uv-tools")
@@ -55,15 +59,24 @@ class RuffRunner:
         """
         command = self._resolve_ruff_command()
         if isinstance(command, Finding):
-            return [command]
+            raise RuntimeError(command.message)
         findings = self._run_linter(command)
+        failed = [finding for finding in findings if finding.code == "QG901"]
+        if failed:
+            raise RuntimeError(failed[0].message)
         if check_format:
-            findings.extend(self._run_formatter(command))
+            formatter_findings = self._run_formatter(command)
+            failed = [
+                finding for finding in formatter_findings if finding.code == "QG902"
+            ]
+            if failed:
+                raise RuntimeError(failed[0].message)
+            findings.extend(formatter_findings)
         return findings
 
     def _resolve_ruff_command(self) -> list[str] | Finding:
         """
-        解析可用 Ruff 命令，必要时从本地 wheelhouse 或 pip 安装。
+        解析可用 Ruff 命令，必要时只从随包离线 wheelhouse 安装。
 
         Returns:
             可执行 Ruff 命令前缀；失败时返回 QG900 发现。
@@ -73,7 +86,7 @@ class RuffRunner:
             return [executable]
         if importlib.util.find_spec("ruff") is not None:
             return [sys.executable, "-m", "ruff"]
-        directory = Path(__file__).resolve().parents[2] / "offline" / "wheels"
+        directory = Path(__file__).resolve().parents[2] / "offline" / "wheelhouse"
         wheelhouse = (
             directory
             if directory.is_dir() and any(directory.glob("ruff*.whl"))
@@ -83,10 +96,12 @@ class RuffRunner:
             ["--no-index", "--find-links", str(wheelhouse)]
         ):
             return [sys.executable, "-m", "ruff"]
-        uvx = shutil.which("uvx")
-        if uvx is not None:
-            return [uvx, "ruff"]
-        if self._install_ruff([]):
+        # The local installation is authoritative first. A missing/incompatible
+        # local Wheel may be resolved online, but never with pip's default
+        # multi-minute retry/connection waits.
+        if self._online_registry_reachable() and self._install_ruff(
+            ["--retries", "0", "--timeout", "3"]
+        ):
             return [sys.executable, "-m", "ruff"]
         return Finding(
             code="QG900",
@@ -95,12 +110,32 @@ class RuffRunner:
             path=".",
             line=1,
             column=1,
-            message="未找到或无法安装 ruff，Ruff 没有真正运行。",
-            suggestion=(
-                "安装 Ruff，或让 `.skill.zip` 的 offline/wheelhouse 提供匹配平台的 Ruff wheel 后重跑。"
-            ),
+            message=("Ruff 依赖安装失败，扫描未执行：" + self._install_error),
+            suggestion="优先安装本地 Ruff Wheel；联网可用时允许从索引安装后重试。",
             source="integration",
         )
+
+    def _online_registry_reachable(self) -> bool:
+        """Check index reachability once before a potentially long pip invocation.
+
+        Returns:
+            True when an HTTP registry responds, including an authorization error.
+        """
+        index = self.subprocess_env.get("PIP_INDEX_URL", "https://pypi.org/simple/")
+        if not index.startswith(("http://", "https://")):
+            self._install_error = "unsupported HTTP package index; no online fallback"
+            return False
+        try:
+            with urllib.request.urlopen(index, timeout=3) as response:
+                response.read(1)
+            return True
+        except urllib.error.HTTPError:
+            # HTTP 403/404 still demonstrates a working network; pip reports
+            # authorization/package failures with its own exact diagnostics.
+            return True
+        except (OSError, urllib.error.URLError) as error:
+            self._install_error = f"network probe failed: {type(error).__name__}"
+            return False
 
     def _install_ruff(self, extra_args: list[str]) -> bool:
         """
@@ -112,26 +147,45 @@ class RuffRunner:
         Returns:
             安装后当前 Python 能 import ruff 时返回 True。
         """
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", *extra_args, "ruff==0.15.20"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            check=False,
-            env=self.subprocess_env,
-        )
-        if result.returncode != 0:
+        offline = "--no-index" in extra_args
+        self._install_error = ""
+        try:
+            result = run_bounded_command(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-input",
+                    *extra_args,
+                    "ruff==0.15.20",
+                ],
+                env=self.subprocess_env,
+                timeout=12 if offline else 15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self._install_error = f"pip {'offline' if offline else 'online'}: {error}"
             return False
-        probe = subprocess.run(
-            [sys.executable, "-c", "import ruff"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            check=False,
-            env=self.subprocess_env,
-        )
+        if result.returncode != 0:
+            self._install_error = (
+                f"pip {'offline' if offline else 'online'} exit={result.returncode}: "
+                f"{(result.stderr or result.stdout)[-1000:]}"
+            )
+            return False
+        try:
+            probe = run_bounded_command(
+                [sys.executable, "-c", "import ruff"],
+                env=self.subprocess_env,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self._install_error = f"Ruff import probe: {error}"
+            return False
+        if probe.returncode != 0:
+            self._install_error = (
+                f"Ruff import probe exit={probe.returncode}: {probe.stderr[-1000:]}"
+            )
         return probe.returncode == 0
 
     def _run_linter(self, command: list[str]) -> list[Finding]:
@@ -144,27 +198,27 @@ class RuffRunner:
         Returns:
             Ruff lint 诊断转换后的发现列表。
         """
-        result = subprocess.run(
-            [
-                *command,
-                "check",
-                ".",
-                "--extend-exclude",
-                ".agents",
-                "--extend-exclude",
-                ".git",
-                "--output-format",
-                "json",
-                "--no-cache",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            check=False,
-            env=self.subprocess_env,
-        )
+        try:
+            result = run_bounded_command(
+                [
+                    *command,
+                    "check",
+                    ".",
+                    "--extend-exclude",
+                    ".agents",
+                    "--extend-exclude",
+                    ".git",
+                    "--output-format",
+                    "json",
+                    "--no-cache",
+                ],
+                cwd=self.root,
+                env=self.subprocess_env,
+                stall_timeout=60,
+                heartbeat_interval=10,
+            )
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as error:
+            return [self._command_failure("QG901", "Ruff lint 子进程失败", error)]
         if result.returncode not in {0, 1}:
             return [self._execution_failure("QG901", "Ruff lint 执行失败", result)]
         if result.returncode == 1 and not result.stdout.strip():
@@ -208,26 +262,26 @@ class RuffRunner:
         Returns:
             格式检查问题列表。
         """
-        result = subprocess.run(
-            [
-                *command,
-                "format",
-                "--check",
-                ".",
-                "--exclude",
-                ".agents",
-                "--exclude",
-                ".git",
-                "--no-cache",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            check=False,
-            env=self.subprocess_env,
-        )
+        try:
+            result = run_bounded_command(
+                [
+                    *command,
+                    "format",
+                    "--check",
+                    ".",
+                    "--exclude",
+                    ".agents",
+                    "--exclude",
+                    ".git",
+                    "--no-cache",
+                ],
+                cwd=self.root,
+                env=self.subprocess_env,
+                stall_timeout=60,
+                heartbeat_interval=10,
+            )
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as error:
+            return [self._command_failure("QG902", "Ruff format 子进程失败", error)]
         if result.returncode == 0:
             return []
         if result.returncode not in {1}:
@@ -258,6 +312,20 @@ class RuffRunner:
             )
             for path in candidates
         ]
+
+    @staticmethod
+    def _command_failure(code: str, message: str, error: BaseException) -> Finding:
+        """Report execution errors immediately, preserving their real exception."""
+        return Finding(
+            code=code,
+            severity="error",
+            confidence="high",
+            path=".",
+            line=1,
+            column=1,
+            message=f"{message}: {type(error).__name__}: {error}",
+            source="integration",
+        )
 
     def _execution_failure(
         self,

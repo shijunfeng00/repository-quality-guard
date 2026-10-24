@@ -16,6 +16,15 @@ Repository Quality Guard（RQG）是一套面向 Git 或无 Git 源码目录的�
 
 RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并提供 API catalog、RelationGraph、接口差分、测试契约分析、报告完整性和 release integrity 检查。机器扫描负责事实与候选；需要源码语义判断的项目保留在审计账本中，由使用者完成裁决后再交给 `verify` 重新验证。
 
+## Where to look before making changes
+
+- **Finding or suspected defect (`QGxxx`)** → look up the exact rule and required *repair direction* in `references/RULES.md` by running `python scripts/evidence_lookup.py --rule QGxxx`. Use the same CLI with `--repo`, `--file/--line/--name` or `--symbol` to follow producer → initialization/assignment → schema/guard → consumer and its real effects. Read the actual complete functions, not just the returned excerpt. The CLI is an evidence locator, **not** a business-necessity oracle.
+- **Writing or restructuring code or an interface** → read `references/CODING_GUIDE.md` first.
+- **Writing or restructuring Python unit tests** → read `references/TEST.md` for the standard Case API and execution commands; apply `references/CODING_GUIDE.md` for test quality requirements.
+- **Changing a QG detector, exemption, severity or existing Case oracle** → require reproducible TP/TN evidence and **explicit maintainer approval of rule semantics first**. Neither a type annotation, a protocol's theoretical possibilities, a framework allowance nor a passing test alone authorizes a detection downgrade. Fix upstream/consumer code before considering a rule change.
+
+This section only routes to the authoritative references; the detailed evidence standard and rule-specific remediation policy live in `RULES.md`, not here.
+
 ## Release identity audit
 
 `v0.20.1` 新增通用 release-identity coupling 审计：
@@ -62,6 +71,8 @@ python scripts/evidence_lookup.py --repo /repo \
 同一快照可复用，`--cache-dir` 可指定目录；API Catalog 仍使用原生 BM25 保鲜。
 Agent 必须逐个核验真实 Producer/Consumer/Guard/Case；找不到边不等于没有调用者。
 任何稳定 QG 的检测器修改必须先有独立正反 Case 及用户裁决。
+编写/迁移 Python 单测前先阅读 `references/TEST.md`，按其标准 Case 接口提供独立输入、预期结果与比较方法，并使用统一的 `python -m rqgtest.run` 运行；真实行为与 TP/TN Oracle 的质量要求仍以 `references/CODING_GUIDE.md` 及 `references/RULES.md` 为准，新增测试按适用的 QG240–246 门禁验证。
+已有行为 Case 以对外可观察输入/输出、异常与契约证据为长期预期；内部优化或实现重组若不改变行为，复用原 Case，无需为内部实现细节机械增加测试。发现真实 QG 误报或漏报时，先用独立正反输入冻结期望、登记裁决与证据；经维护者确认后改规则并长期保留回归 Case。实际单元测试源码（包括质量工具自身）仍须通过适用 QG 和两类 Case 和单一 ITestCase 接口，故意违规的 Case 输入应在隔离目标中运行，不能混入被审计工程的真实源码。
 
 ## 1. 稳定命令
 
@@ -119,9 +130,10 @@ Python 的源文件中唯一、无装饰器、无重绑定的模块级调用默�
 参数绑定；不要求配置 Pyright/Pyrefly。该能力只给出 OPEN_WORLD Warning，
 动态调用和不确定目标保留 UNKNOWN，不推断封闭世界。
 Python/JS/TS/CSS/HTML 及 C/C++ 通过仓库快照识别，只有权威编译数据库
-中的 C++ 翻译单元可用原项目编译器复查语法并输出 `QG212 ERROR`。
-没有构建契约、缺依赖或不可用时输出 `QG208` 并要求 REVIEW_REQUIRED，
-不可擅自猜 C++ 标准或把零发现当成无缺陷。CMake/Make/Meson 自动准备
+中的 C++ 翻译单元可用原项目编译器复查语法；编译失败仅作为独立执行诊断记录，
+不构成 QG Finding，不影响静态质量结论；原始退出码、命令与诊断保留供开发者使用。
+没有构建契约、缺依赖或不可用时输出非阻断 Info `QG208`，
+不可擅自猜 C++ 标准或把零发现当成原生编译已通过。CMake/Make/Meson 自动准备
 原始编译契约、Java Provider 与完整跨语言语义 IR 仍在计划中，不得宣称完成。
 
 **回归验收唯一有效事实源：** 使用经完整性检验的 Skill 官方启动器执行
@@ -169,16 +181,18 @@ python scripts/evidence_lookup.py --rule QG153 --rule QG176
 
 查询后仍必须核验 Finding 的现场源码与上下游 Producer → Schema → Consumer、真实 Owner 和调用方；`RULES.md` 是修复指导而不是静态规则绝对正确的证明。结论矛盾时登记可复现的 RQG BUG，不得为了消掉 Finding 破坏正确契约。对同一 owner / 契约的批量 Finding 可合并检索和裁决，无须重复写长报告。
 
-### QG003/QG004 已裁决的稳定规则变更（P0）
+### QG003/QG004 真实来源与规则授权边界
 
-本次经用户授权，修复普通类/多层继承 `get` 被误判为 Mapping，
-保留真实字典和 `self._data.get` 路径；QG004 将明确的空结果与
-随机非空哨兵严格区别，结合返回注解、必需 Schema 与稀疏生产者 Case。
-在 `RULES.md` 查询该编号时，必须同时展示新修复方向、正反 Case，
-并使用本 CLI 追查真实方法 owner / 参数来源及所有可见 Producer；
-映射字段需要时由业务 Fail-Fast，而不是为降低告警直接放弃检查。
-本次不改变 QG033。所有规则实现仍需官方全量自审和只读 verify
-通过后方可宣称 v0.22.5 正式发布。
+先按编号查询 `references/RULES.md`，并沿真实方法 owner、参数来源、
+生产者初始化/赋值、可达合法分支及消费者副作用追踪。普通类的 `get`
+不能仅因同名误归类为 Mapping；真实字典及 `self._data.get` 仍须审查。
+`Optional` / `NotRequired`、外部协议规范、示例或人为构造的缺失输入，
+都不能独立证明业务上允许缺键、空值或默认 ID。
+
+对被证实必需的字段，优先删除静默兜底并修复 owner/consumer，
+不要为令 Finding 消失而修改 QG003/QG004 的检测范围；如发现规则
+本身有确切误报/漏报，先冻结独立 TP/TN 与真实证据，取得维护者
+对**规则行为变更**的明确批准后再改检测器和规则说明。QG033 不随之附带修改。
 
 ### 仓库证据查询（P0：QG 规则 + 静态调用图统一入口）
 
@@ -381,11 +395,11 @@ Node.js/npm/Clang 属于宿主系统能力；只有显式 `--install-system` 或
 
 唯一 canonical full-repository ZIP：
 
-- 包含 `.git`、完整第一方 Skill、`README.md`、`README_zh.md`、`dev-tests/`、authoring/release tools、全部本地 Profile 与离线依赖；
+- 包含 `.git`、完整第一方 Skill、`README.md`、`README_zh.md`、`tests/`、独立发布验收 fixtures、authoring/release tools、全部本地 Profile 与离线依赖；
 - Profile 与离线二进制仍遵守 `.gitignore`，因此它们可以存在于本地完整 ZIP，但不会因此进入 public Git 历史；
 - 不包含构建缓存、一次性审计工作目录或 `修改说明.md`。
 
-不再维护 public/internal 两套 ZIP。GitHub 分发使用仓库 + npx 安装路径；若未来单独发布 GitHub Release asset，也应复用同一 canonical ZIP 规则。deploy 到 `.agents` 时继续剥离 `README.md`、`README_zh.md`、`dev-tests/`、`tools/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
+不再维护 public/internal 两套 ZIP。GitHub 分发使用仓库 + npx 安装路径；若未来单独发布 GitHub Release asset，也应复用同一 canonical ZIP 规则。deploy 到 `.agents` 时继续剥离 `README.md`、`README_zh.md`、`tests/`、`tools/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
 
 ## 10. 审计原则
 

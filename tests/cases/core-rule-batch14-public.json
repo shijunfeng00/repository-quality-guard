@@ -1,0 +1,124 @@
+{
+  "cases": [
+    {
+      "case_id": "b14-qg209-tp",
+      "rule": "QG209",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG209",
+          "warning",
+          "module.py",
+          "module.make"
+        ]
+      ],
+      "source": "def make(first, second):\n return first\nmake(1)\n"
+    },
+    {
+      "case_id": "b14-qg209-tn",
+      "rule": "QG209",
+      "kind": "TN",
+      "expected": [],
+      "source": "def make(first, second):\n return first\nmake(1,2)\n"
+    },
+    {
+      "case_id": "b14-qg210-tp",
+      "rule": "QG210",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG210",
+          "warning",
+          "module.py",
+          "Store.__init__"
+        ]
+      ],
+      "source": "class Store:\n def __init__(self):\n  prev=self.items\n  self.items=[]\n"
+    },
+    {
+      "case_id": "b14-qg210-tn",
+      "rule": "QG210",
+      "kind": "TN",
+      "expected": [],
+      "source": "class Store:\n def __init__(self):\n  self.items=[]\n  prev=self.items\n"
+    },
+    {
+      "case_id": "b14-qg213-tp",
+      "rule": "QG213",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG213",
+          "warning",
+          "module.py",
+          "Owner.save"
+        ]
+      ],
+      "source": "class Owner:\n def __init__(self):\n  self.done=set()\n  self.results={}\n def save(self,key,value):\n  try:\n   self.done.add(key)\n   self.results[key]=value\n  except Exception:\n   return None\n"
+    },
+    {
+      "case_id": "b14-qg213-tn",
+      "rule": "QG213",
+      "kind": "TN",
+      "expected": [],
+      "source": "class Owner:\n def __init__(self):\n  self.done=set()\n  self.results={}\n def save(self,key,value):\n  try:\n   self.done.add(key)\n   self.results[key]=value\n  except Exception:\n   raise\n"
+    },
+    {
+      "case_id": "b14-qg208-tp",
+      "rule": "QG208",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG208",
+          "info",
+          "fixture.cpp",
+          ""
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg208-tn",
+      "rule": "QG208",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b14-qg169-tp",
+      "rule": "QG169",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG169",
+          "critical",
+          ".",
+          "repository.missing_docstrings"
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg169-tn",
+      "rule": "QG169",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b14-qg179-tp",
+      "rule": "QG179",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG179",
+          "critical",
+          ".",
+          "repository.quality_fingerprint_regression"
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg179-tn",
+      "rule": "QG179",
+      "kind": "TN",
+      "expected": []
+    }
+  ]
+}

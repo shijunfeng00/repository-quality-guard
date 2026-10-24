@@ -1,0 +1,59 @@
+{
+  "schema": "release-identity-rules-public/v02",
+  "cases": [
+    {
+      "case_id": "qg203-path-tp",
+      "rule": "QG203",
+      "kind": "TP",
+      "source": "",
+      "mode": "release",
+      "expected": [
+        [
+          "QG203",
+          "critical",
+          "pkg/v2.4/schema.py",
+          1
+        ]
+      ],
+      "path": "pkg/v2.4/schema.py",
+      "token": "v2.4"
+    },
+    {
+      "case_id": "qg203-path-tn",
+      "rule": "QG203",
+      "kind": "TN",
+      "source": "",
+      "mode": "release",
+      "expected": [],
+      "path": "pkg/schema.py",
+      "token": ""
+    },
+    {
+      "case_id": "qg205-content-tp",
+      "rule": "QG205",
+      "kind": "TP",
+      "source": "",
+      "mode": "content",
+      "expected": [
+        [
+          "QG205",
+          "info",
+          "pkg/schema.py",
+          2
+        ]
+      ],
+      "path": "pkg/schema.py",
+      "token": "1.2.3"
+    },
+    {
+      "case_id": "qg205-content-tn",
+      "rule": "QG205",
+      "kind": "TN",
+      "source": "",
+      "mode": "content",
+      "expected": [],
+      "path": "pkg/schema.py",
+      "token": ""
+    }
+  ]
+}

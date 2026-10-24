@@ -1,0 +1,182 @@
+{
+  "cases": [
+    {
+      "case_id": "qg150-constant-tp",
+      "rule": "QG150",
+      "kind": "TP",
+      "source": "name = 123\n",
+      "mode": "module",
+      "expected": [
+        [
+          "QG150",
+          "warning",
+          "fixture.py",
+          1
+        ]
+      ]
+    },
+    {
+      "case_id": "qg150-constant-tn",
+      "rule": "QG150",
+      "kind": "TN",
+      "source": "NAME = 123\n",
+      "mode": "module",
+      "expected": []
+    },
+    {
+      "case_id": "qg157-expression-tp",
+      "rule": "QG157",
+      "kind": "TP",
+      "source": "result = data['x'] if 'x' in data else 0\n",
+      "mode": "mapping",
+      "expected": [
+        [
+          "QG157",
+          "critical",
+          "fixture.py",
+          1
+        ]
+      ],
+      "form": "expression",
+      "confirmed": true,
+      "receiver": "data",
+      "field": "x"
+    },
+    {
+      "case_id": "qg157-expression-tn",
+      "rule": "QG157",
+      "kind": "TN",
+      "source": "result = data['x']\n",
+      "mode": "mapping",
+      "expected": [],
+      "form": "expression",
+      "confirmed": true
+    },
+    {
+      "case_id": "qg157-assignment-tp",
+      "rule": "QG157",
+      "kind": "TP",
+      "source": "if 'x' in data:\n    output = data['x']\nelse:\n    output = 0\n",
+      "mode": "mapping",
+      "expected": [
+        [
+          "QG157",
+          "error",
+          "fixture.py",
+          1
+        ]
+      ],
+      "form": "assignment",
+      "confirmed": false,
+      "receiver": "data",
+      "field": "x"
+    },
+    {
+      "case_id": "qg157-exception-tp",
+      "rule": "QG157",
+      "kind": "TP",
+      "source": "try:\n    result = data['x']\nexcept KeyError:\n    result = 0\n",
+      "mode": "mapping",
+      "expected": [
+        [
+          "QG157",
+          "warning",
+          "tests/fixture.py",
+          3
+        ]
+      ],
+      "form": "exception",
+      "confirmed": true,
+      "receiver": "data",
+      "field": "x"
+    },
+    {
+      "case_id": "qg187-nested-tp",
+      "rule": "QG187",
+      "kind": "TP",
+      "source": "",
+      "mode": "instruction",
+      "expected": [
+        [
+          "QG187",
+          "critical",
+          "nested/AGENTS.md",
+          1
+        ]
+      ],
+      "files": [
+        "AGENTS.md",
+        "nested/AGENTS.md"
+      ]
+    },
+    {
+      "case_id": "qg187-root-tn",
+      "rule": "QG187",
+      "kind": "TN",
+      "source": "",
+      "mode": "instruction",
+      "expected": [],
+      "files": [
+        "AGENTS.md"
+      ]
+    },
+    {
+      "case_id": "qg010-wrapper-tp",
+      "rule": "QG010",
+      "kind": "TP",
+      "source": "",
+      "mode": "wrapper",
+      "expected": [
+        [
+          "QG010",
+          "warning",
+          "fixture.py",
+          2
+        ]
+      ],
+      "reported": true,
+      "critical": false,
+      "private": false
+    },
+    {
+      "case_id": "qg010-wrapper-tn",
+      "rule": "QG010",
+      "kind": "TN",
+      "source": "",
+      "mode": "wrapper",
+      "expected": [],
+      "reported": false,
+      "critical": false,
+      "private": false
+    },
+    {
+      "case_id": "qg185-facade-tp",
+      "rule": "QG185",
+      "kind": "TP",
+      "source": "",
+      "mode": "wrapper",
+      "expected": [
+        [
+          "QG185",
+          "critical",
+          "fixture.py",
+          2
+        ]
+      ],
+      "reported": true,
+      "critical": true,
+      "private": true
+    },
+    {
+      "case_id": "qg185-facade-tn",
+      "rule": "QG185",
+      "kind": "TN",
+      "source": "",
+      "mode": "wrapper",
+      "expected": [],
+      "reported": true,
+      "critical": false,
+      "private": false
+    }
+  ]
+}

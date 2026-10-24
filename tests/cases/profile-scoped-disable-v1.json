@@ -1,0 +1,1534 @@
+{
+  "schema": "rqg/profile-scoped-disable-case-v1",
+  "source": {
+    "app.py": "class Alpha:\n    def perform(self, value: int):\n        if isinstance(value, str): return int(value)\n        return value\n    def other(self, value: int):\n        if isinstance(value, str): return int(value)\n        return value\n\nclass Beta:\n    def perform(self, value: int):\n        if isinstance(value, str): return int(value)\n        return value\n\ndef perform(value: int):\n    if isinstance(value, str): return int(value)\n    return value\n",
+    "other.py": "def perform(value: int):\n    if isinstance(value, str): return int(value)\n    return value\n"
+  },
+  "cases": [
+    {
+      "case_id": "no-policy",
+      "disable": [],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "only-file",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 11,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 15,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "only-class",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "Alpha"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 6,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 11,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "only-method",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "Alpha.perform"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 6,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 11,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "method-same-name",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "Beta.perform"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 11,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 15,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "module-function",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "perform"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 15,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "nonexistent-symbol",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "Alpha.missing"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 6,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "unrelated-code",
+      "disable": [
+        {
+          "code": "QG061",
+          "path": "app.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "two-independent",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "Alpha.other"
+        },
+        {
+          "code": "QG060",
+          "path": "other.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 6,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": true
+        }
+      ]
+    },
+    {
+      "case_id": "file-name-exact",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "other.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "other.py",
+          "line": 2,
+          "suppressed": true
+        }
+      ]
+    },
+    {
+      "case_id": "multi-qg-live-baseline",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "multi-qg060-method-only",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "symbol": "A.first"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 9,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "multi-qg003-method-only",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "symbol": "A.first"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "multi-qg003-class-only",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "symbol": "A"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 10,
+          "suppressed": true
+        },
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 14,
+          "suppressed": false
+        },
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "multi-qg060-file-only",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "multi.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 14,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 13,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": true
+        }
+      ]
+    },
+    {
+      "case_id": "multi-two-code-single-method",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "symbol": "A.first"
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "symbol": "A.first"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 9,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "multi-unrelated-code",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG149",
+          "path": "multi.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "general-varied-codes-baseline",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n",
+        "other.py": "class B:\n    def f(self):\n        pass\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060",
+        "QG149",
+        "QG10000",
+        "QG205"
+      ],
+      "format": "code-path-line",
+      "disable": [],
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "error",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 7,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 10,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG10000",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 14,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG205",
+          "severity": "info",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 13,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "other.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent proof"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": false
+        },
+        {
+          "code": "QG149",
+          "path": "multi.py",
+          "line": 10,
+          "suppressed": false
+        },
+        {
+          "code": "QG149",
+          "path": "other.py",
+          "line": 3,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "general-qg149-only-method",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n",
+        "other.py": "class B:\n    def f(self):\n        pass\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060",
+        "QG149",
+        "QG10000",
+        "QG205"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG149",
+          "path": "multi.py",
+          "symbol": "A.other"
+        }
+      ],
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "error",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 7,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 10,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG10000",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 14,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG205",
+          "severity": "info",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 13,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "other.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent proof"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG060",
+          "path": "multi.py",
+          "line": 6,
+          "suppressed": false
+        },
+        {
+          "code": "QG149",
+          "path": "multi.py",
+          "line": 10,
+          "suppressed": true
+        },
+        {
+          "code": "QG149",
+          "path": "other.py",
+          "line": 3,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "general-custom-qg10000-class",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n",
+        "other.py": "class B:\n    def f(self):\n        pass\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060",
+        "QG149",
+        "QG10000",
+        "QG205"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG10000",
+          "path": "multi.py",
+          "symbol": "B"
+        }
+      ],
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "error",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 7,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 10,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG10000",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 14,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG205",
+          "severity": "info",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 13,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "other.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent proof"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG10000",
+          "path": "multi.py",
+          "line": 14,
+          "suppressed": true
+        },
+        {
+          "code": "QG205",
+          "path": "multi.py",
+          "line": 13,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "case_id": "general-mixed-code-and-path",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n",
+        "other.py": "class B:\n    def f(self):\n        pass\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060",
+        "QG149",
+        "QG10000",
+        "QG205"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG149",
+          "path": "other.py"
+        },
+        {
+          "code": "QG205",
+          "path": "multi.py",
+          "symbol": "B.first"
+        }
+      ],
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "error",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 7,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 10,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG10000",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 14,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG205",
+          "severity": "info",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 13,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "other.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent proof"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG149",
+          "path": "multi.py",
+          "line": 10,
+          "suppressed": false
+        },
+        {
+          "code": "QG149",
+          "path": "other.py",
+          "line": 3,
+          "suppressed": true
+        },
+        {
+          "code": "QG205",
+          "path": "multi.py",
+          "line": 13,
+          "suppressed": true
+        }
+      ]
+    },
+    {
+      "case_id": "general-code-mismatch-does-not-suppress",
+      "sources": {
+        "multi.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\nclass A:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n    def other(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\nclass B:\n    def first(self, payload: Payload, value: int):\n        if isinstance(value, str): return int(value)\n        return payload.get('id')\n",
+        "other.py": "class B:\n    def f(self):\n        pass\n"
+      },
+      "codes": [
+        "QG003",
+        "QG060",
+        "QG149",
+        "QG10000",
+        "QG205"
+      ],
+      "format": "code-path-line",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "other.py"
+        },
+        {
+          "code": "QG149",
+          "path": "multi.py",
+          "symbol": "A.first"
+        }
+      ],
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "error",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 7,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 10,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG10000",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 14,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG205",
+          "severity": "info",
+          "confidence": "high",
+          "path": "multi.py",
+          "line": 13,
+          "column": 1,
+          "message": "independent proof"
+        },
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "other.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent proof"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "multi.py",
+          "line": 7,
+          "suppressed": false
+        },
+        {
+          "code": "QG149",
+          "path": "multi.py",
+          "line": 10,
+          "suppressed": false
+        },
+        {
+          "code": "QG149",
+          "path": "other.py",
+          "line": 3,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "sources": {
+        "repeat.py": "class Repeat:\n    def target(self):\n        return 1\nclass Repeat:\n    def target(self):\n        return 2\nclass Unique:\n    def target(self):\n        return 3\n"
+      },
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        }
+      ],
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "case_id": "duplicate-class-fail-closed",
+      "disable": [
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "symbol": "Repeat"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "sources": {
+        "repeat.py": "class Repeat:\n    def target(self):\n        return 1\nclass Repeat:\n    def target(self):\n        return 2\nclass Unique:\n    def target(self):\n        return 3\n"
+      },
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        }
+      ],
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "case_id": "duplicate-method-fail-closed",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "symbol": "Repeat.target"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 3,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": false
+        }
+      ]
+    },
+    {
+      "sources": {
+        "repeat.py": "class Repeat:\n    def target(self):\n        return 1\nclass Repeat:\n    def target(self):\n        return 2\nclass Unique:\n    def target(self):\n        return 3\n"
+      },
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        }
+      ],
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "case_id": "unique-method-other-rules-preserved",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "symbol": "Unique.target"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 6,
+          "suppressed": false
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": true
+        }
+      ]
+    },
+    {
+      "sources": {
+        "repeat.py": "class Repeat:\n    def target(self):\n        return 1\nclass Repeat:\n    def target(self):\n        return 2\nclass Unique:\n    def target(self):\n        return 3\n"
+      },
+      "findings": [
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG003",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 3,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 6,
+          "column": 1,
+          "message": "independent fixture"
+        },
+        {
+          "code": "QG060",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "repeat.py",
+          "line": 9,
+          "column": 1,
+          "message": "independent fixture"
+        }
+      ],
+      "codes": [
+        "QG003",
+        "QG060"
+      ],
+      "format": "code-path-line",
+      "case_id": "duplicate-names-file-scope-valid",
+      "disable": [
+        {
+          "code": "QG003",
+          "path": "repeat.py"
+        }
+      ],
+      "checks": [
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 3,
+          "suppressed": true
+        },
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 6,
+          "suppressed": true
+        },
+        {
+          "code": "QG003",
+          "path": "repeat.py",
+          "line": 9,
+          "suppressed": true
+        },
+        {
+          "code": "QG060",
+          "path": "repeat.py",
+          "line": 3,
+          "suppressed": false
+        }
+      ]
+    }
+  ],
+  "reject": [
+    {
+      "id": "protected",
+      "disable": [
+        {
+          "code": "QG990",
+          "path": "app.py"
+        }
+      ]
+    },
+    {
+      "id": "parent-escape",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "../app.py"
+        }
+      ]
+    },
+    {
+      "id": "absolute-path",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "/tmp/app.py"
+        }
+      ]
+    },
+    {
+      "id": "wildcard",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "src/*.py"
+        }
+      ]
+    },
+    {
+      "id": "unknown-fields",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "reason": "x"
+        }
+      ]
+    },
+    {
+      "id": "bad-symbol",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.py",
+          "symbol": "Alpha.*"
+        }
+      ]
+    },
+    {
+      "id": "non-python-symbol",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "app.js",
+          "symbol": "Alpha.method"
+        }
+      ]
+    },
+    {
+      "id": "wrong-array",
+      "disable": {
+        "code": "QG060",
+        "path": "app.py"
+      }
+    },
+    {
+      "id": "bad-code",
+      "disable": [
+        {
+          "code": "QG60",
+          "path": "app.py"
+        }
+      ]
+    },
+    {
+      "id": "protected-qg980",
+      "disable": [
+        {
+          "code": "QG980",
+          "path": "app.py"
+        }
+      ]
+    },
+    {
+      "id": "protected-qg999",
+      "disable": [
+        {
+          "code": "QG999",
+          "path": "app.py",
+          "symbol": "A"
+        }
+      ]
+    },
+    {
+      "id": "current-directory-not-file",
+      "disable": [
+        {
+          "code": "QG060",
+          "path": "."
+        }
+      ]
+    }
+  ]
+}

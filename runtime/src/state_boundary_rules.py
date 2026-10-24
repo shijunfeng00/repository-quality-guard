@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from .ast_utils import dotted_name, enclosing_class_name
 from .config import GuardConfig
+from .core_rule_contract import CoreQualityRule
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import ParsedModule, all_parameters, annotation_names
@@ -112,32 +113,22 @@ class StateBoundaryEvaluator:
         """
         if not self._enabled:
             return []
-        facts = module.facts
-        findings = (
-            _dynamic_execution_findings(
-                facts,
-                module.nodes,
-                module.parents,
-                self._dynamic_hint,
-                self.config_name,
+        context = StateBoundaryRuleContext(module, self._state_contract, self._holders)
+        findings: list[Finding] = []
+        if self._dynamic_enabled:
+            findings.extend(
+                DynamicExecutionBoundaryRule().evaluate(
+                    DynamicExecutionContext(
+                        module.facts,
+                        module.nodes,
+                        module.parents,
+                        self._dynamic_hint,
+                        self.config_name,
+                    )
+                )
             )
-            if self._dynamic_enabled
-            else []
-        )
-        for node in module.nodes:
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            owner = enclosing_class_name(node, module.parents)
-            if not self._state_enabled or owner == self._state_contract.state_type:
-                continue
-            analyzer = _FunctionMutationAnalyzer(
-                facts=facts,
-                function=node,
-                owner=owner,
-                holder_fields=self._holders,
-                contract=self._state_contract,
-            )
-            findings.extend(analyzer.run())
+        if self._state_enabled:
+            findings.extend(StateMutationBoundaryRule().evaluate(context))
         return findings
 
 
@@ -437,46 +428,6 @@ def _is_state_value(
     return False  # Constructor identity needs a resolved TypeChecker declaration.
 
 
-def _dynamic_execution_findings(
-    facts: ModuleFacts,
-    nodes: tuple[ast.AST, ...],
-    parents: dict[ast.AST, ast.AST],
-    nonblocking_hint: str,
-    profile_name: str,
-) -> list[Finding]:
-    """报告 Profile 启用后的生产动态执行和动态导入。"""
-    findings: list[Finding] = []
-    for node in nodes:
-        if not isinstance(node, ast.Call):
-            continue
-        name = dotted_name(node.func)
-        if name not in _DYNAMIC_EXECUTION_CALLS:
-            continue
-        owner = "<module>"
-        current = parents[node] if node in parents else None
-        while current is not None:
-            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                owner = current.name
-                break
-            current = parents[current] if current in parents else None
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG190",
-                f"检测到动态执行或动态导入入口 `{name}()`。",
-                symbol=_qualname(facts.module, "", owner),
-                severity="critical",
-                suggestion=(
-                    "改用显式解析器、固定分发表或静态 import；"
-                    + nonblocking_hint
-                    + " 仍单独审计但不进入生产绝对门禁。"
-                ),
-                evidence={"absolute_blocker": True, "profile": profile_name},
-            )
-        )
-    return findings
-
-
 def _node_text(node: ast.AST) -> str:
     """把 AST 节点转换为可读源码文本。"""
     try:
@@ -488,3 +439,120 @@ def _node_text(node: ast.AST) -> str:
 def _qualname(module: str, owner: str, function: str) -> str:
     """拼接稳定的模块、类和函数限定名。"""
     return ".".join(part for part in (module, owner, function) if part)
+
+
+@dataclass(slots=True, frozen=True)
+class StateBoundaryRuleContext:
+    """Share state ownership facts across function-level mutation checks.
+
+    Fields:
+        module: Parsed source and parent maps of the module under review.
+        contract: Configured authoritative state owner and allowed write paths.
+        holders: Known state-bearing variable/field relationships collected once."""
+
+    module: ParsedModule
+    contract: _StateBoundaryContract
+    holders: set[tuple[str, str, str]]
+
+
+class StateMutationBoundaryRule(CoreQualityRule[StateBoundaryRuleContext]):
+    """QG189: detect mutation of designated state from unauthorized owners.
+
+    Actual enclosing class identity and tracked state-holder edges determine
+    applicability; the configured owning state class is not itself penalized."""
+
+    code = "QG189"
+
+    def evaluate(self, context: StateBoundaryRuleContext) -> list[Finding]:
+        """Audit state-mutating operations outside the configured state owner class.
+
+        Args:
+            context: Parsed module, state ownership contract and holder facts.
+
+        Returns:
+            QG189 findings for functions with provable cross-owner state writes."""
+        module = context.module
+        findings: list[Finding] = []
+        for node in module.nodes:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            owner = enclosing_class_name(node, module.parents)
+            if owner == context.contract.state_type:
+                continue
+            analyzer = _FunctionMutationAnalyzer(
+                facts=module.facts,
+                function=node,
+                owner=owner,
+                holder_fields=context.holders,
+                contract=context.contract,
+            )
+            findings.extend(analyzer.run())
+        return findings
+
+
+@dataclass(slots=True, frozen=True)
+class DynamicExecutionContext:
+    """Share dynamic call candidates and their lexical ownership context.
+
+    Fields:
+        facts: Module source and Finding constructor.
+        nodes: AST nodes to check for execution/import calls.
+        parents: AST-to-parent map for resolving the nearest lexical callable.
+        nonblocking_hint: Configured rule-report explanation for selected scopes.
+        profile_name: Profile enabling this dynamic execution check."""
+
+    facts: ModuleFacts
+    nodes: tuple[ast.AST, ...]
+    parents: dict[ast.AST, ast.AST]
+    nonblocking_hint: str
+    profile_name: str
+
+
+class DynamicExecutionBoundaryRule(CoreQualityRule[DynamicExecutionContext]):
+    """QG190: report eval/exec/dynamic-import calls within an enabled Profile.
+
+    This rule examines exact call spellings and uses the nearest parsed
+    enclosing callable for source attribution, without evaluating the call."""
+
+    code = "QG190"
+
+    def evaluate(self, context: DynamicExecutionContext) -> list[Finding]:
+        """Find prohibited dynamic execution calls and report their lexical owners.
+
+        Args:
+            context: Source AST, parent relationships, Profile and blocker policy.
+
+        Returns:
+            QG190 findings at the actual dynamic call locations, otherwise []."""
+        facts, nodes, parents = context.facts, context.nodes, context.parents
+        nonblocking_hint, profile_name = context.nonblocking_hint, context.profile_name
+        findings: list[Finding] = []
+        for node in nodes:
+            if not isinstance(node, ast.Call):
+                continue
+            name = dotted_name(node.func)
+            if name not in _DYNAMIC_EXECUTION_CALLS:
+                continue
+            owner = "<module>"
+            current = parents[node] if node in parents else None
+            while current is not None:
+                if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    owner = current.name
+                    break
+                current = parents[current] if current in parents else None
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG190",
+                    f"检测到动态执行或动态导入入口 `{name}()`。",
+                    symbol=_qualname(facts.module, "", owner),
+                    severity="critical",
+                    suggestion=(
+                        "改用显式解析器、固定分发表或静态 import；"
+                        + nonblocking_hint
+                        + " 仍单独审计但不进入生产绝对门禁。"
+                    ),
+                    evidence={"absolute_blocker": True, "profile": profile_name},
+                )
+            )
+        return findings

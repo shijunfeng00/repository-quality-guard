@@ -1,0 +1,116 @@
+{
+  "cases": [
+    {
+      "case_id": "qg048-source-tp-0",
+      "rule": "QG048",
+      "kind": "TP",
+      "files": {
+        "module.py": "def f(logger):\n    try:\n        load()\n    except OSError:\n        logger.error(\"failure\")\n    return True\n"
+      },
+      "expected": [
+        [
+          "module.py",
+          4,
+          "error"
+        ]
+      ],
+      "evidence_required": [
+        {}
+      ]
+    },
+    {
+      "case_id": "qg048-source-tn-1",
+      "rule": "QG048",
+      "kind": "TN",
+      "files": {
+        "module.py": "def f(logger):\n    try:\n        load()\n    except OSError:\n        logger.error(\"failure\")\n        raise\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg049-source-tp-2",
+      "rule": "QG049",
+      "kind": "TP",
+      "files": {
+        "module.py": "def f():\n    try:\n        load()\n    except OSError as error:\n        raise RuntimeError(\"failed\")\n"
+      },
+      "expected": [
+        [
+          "module.py",
+          4,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {}
+      ]
+    },
+    {
+      "case_id": "qg049-source-tn-3",
+      "rule": "QG049",
+      "kind": "TN",
+      "files": {
+        "module.py": "def f():\n    try:\n        load()\n    except OSError as error:\n        raise RuntimeError(\"failed\") from error\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg051-source-tp-4",
+      "rule": "QG051",
+      "kind": "TP",
+      "files": {
+        "module.py": "count = 0\ndef f():\n    global count\n    count += 1\n"
+      },
+      "expected": [
+        [
+          "module.py",
+          3,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {}
+      ]
+    },
+    {
+      "case_id": "qg051-source-tn-5",
+      "rule": "QG051",
+      "kind": "TN",
+      "files": {
+        "module.py": "def f(counter: int):\n    return counter + 1\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    },
+    {
+      "case_id": "qg052-source-tp-6",
+      "rule": "QG052",
+      "kind": "TP",
+      "files": {
+        "module.py": "def f():\n    print(\"result\")\n"
+      },
+      "expected": [
+        [
+          "module.py",
+          2,
+          "warning"
+        ]
+      ],
+      "evidence_required": [
+        {}
+      ]
+    },
+    {
+      "case_id": "qg052-source-tn-7",
+      "rule": "QG052",
+      "kind": "TN",
+      "files": {
+        "module.py": "def f(logger):\n    logger.info(\"result\")\n"
+      },
+      "expected": [],
+      "evidence_required": []
+    }
+  ]
+}

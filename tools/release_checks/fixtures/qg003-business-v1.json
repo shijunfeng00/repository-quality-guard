@@ -1,0 +1,95 @@
+{
+  "schema": "rqg.qg003.business-behavior.v1",
+  "cases": [
+    {
+      "case_id": "qg003-known-key",
+      "source": "LOOKUP: dict[str, int] = {key: len(key) for key in ('A', 'BB')}\ndef _index(key: str) -> int | None:\n    return LOOKUP.get(key)\ndef resolve(key: str) -> int:\n    entry = _index(key)\n    if entry is not None:\n        return entry\n    return -1\n",
+      "expected_findings": 0,
+      "symbol": "resolve",
+      "args": [
+        "BB"
+      ],
+      "expected_result": 2,
+      "constructor_args": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg003-legitimate-miss",
+      "source": "LOOKUP: dict[str, int] = {key: len(key) for key in ('A', 'BB')}\ndef _index(key: str) -> int | None:\n    return LOOKUP.get(key)\ndef resolve(key: str) -> int:\n    entry = _index(key)\n    if entry is not None:\n        return entry\n    return -1\n",
+      "expected_findings": 0,
+      "symbol": "resolve",
+      "args": [
+        "unknown"
+      ],
+      "expected_result": -1,
+      "constructor_args": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg003-unchecked-default",
+      "source": "LOOKUP: dict[str, int] = {'id': 1}\ndef _index(key: str) -> int | None:\n    return LOOKUP.get(key)\ndef consume(key: str):\n    entry = _index(key)\n    return entry or 999\n",
+      "expected_findings": 0,
+      "symbol": "consume",
+      "args": [
+        "missing"
+      ],
+      "expected_result": 999,
+      "constructor_args": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg003-second-unguarded-caller",
+      "source": "LOOKUP: dict[str, int] = {'id': 1}\ndef _index(key: str) -> int | None:\n    return LOOKUP.get(key)\ndef consume(key: str):\n    entry = _index(key)\n    if entry is not None:\n        return entry\n    return 0\ndef second(key: str):\n    return _index(key)\n",
+      "expected_findings": 0,
+      "symbol": "second",
+      "args": [
+        "missing"
+      ],
+      "expected_result": null,
+      "constructor_args": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg003-required-typed-dict",
+      "source": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\ndef consume(payload: Payload) -> str:\n    return payload.get('id')\n",
+      "expected_findings": 1,
+      "symbol": "consume",
+      "args": [
+        {
+          "id": "K"
+        }
+      ],
+      "expected_result": "K",
+      "constructor_args": [],
+      "kind": "TP"
+    },
+    {
+      "case_id": "qg003-sparse-case",
+      "source": "class Index:\n    def __init__(self, keys):\n        self._values: dict[str, int] = {}\n        for key in keys:\n            self._values[key] = len(key)\n    def classify(self, key: str) -> str:\n        found = self._values.get(key)\n        if found is None:\n            return 'absent'\n        else:\n            return 'present'\n",
+      "expected_findings": 0,
+      "symbol": "Index.classify",
+      "args": [
+        "B"
+      ],
+      "expected_result": "absent",
+      "constructor_args": [
+        "A"
+      ],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg003-fake-sentinel",
+      "source": "class Index:\n    def __init__(self, keys):\n        self._values: dict[str, int] = {}\n        for key in keys:\n            self._values[key] = len(key)\n    def classify(self, key: str) -> str:\n        found = self._values.get(key)\n        if found is None:\n            pass\n        else:\n            pass\n        return str(found or 'UNKNOWN')\n",
+      "expected_findings": 0,
+      "symbol": "Index.classify",
+      "args": [
+        "B"
+      ],
+      "expected_result": "UNKNOWN",
+      "constructor_args": [
+        "A"
+      ],
+      "kind": "TN"
+    }
+  ]
+}

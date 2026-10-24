@@ -1,0 +1,86 @@
+{
+  "cases": [
+    {
+      "case_id": "b33-real-repo-sparse-index-evidence",
+      "scenario": "repo-source",
+      "args": [
+        "--file",
+        "runtime/src/topology_facts.py",
+        "--line",
+        "396",
+        "--name",
+        "_incoming_index",
+        "--kind",
+        "variable",
+        "--max-edges",
+        "4"
+      ],
+      "must_contain": [
+        "incoming.setdefault(edge.target_id, [])",
+        "RepositoryTopology.__post_init__",
+        "MAY_DISPATCH, declared type",
+        "runtime.src.call_chain_rules._incoming_direct_edges",
+        "runtime/src/call_chain_rules.py:37"
+      ],
+      "expected": {
+        "success": true,
+        "evidence": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "case_id": "b33-real-repo-parameter-producer",
+      "scenario": "repo-source",
+      "args": [
+        "--symbol",
+        "runtime.src.contract_rules._calls_declared_registration_operation",
+        "--variable",
+        "operations",
+        "--depth",
+        "3",
+        "--max-edges",
+        "8"
+      ],
+      "must_contain": [
+        "abstract_operations =",
+        "_verified_registration_guard",
+        "operations"
+      ],
+      "expected": {
+        "success": true,
+        "evidence": [
+          true,
+          true,
+          true
+        ]
+      }
+    },
+    {
+      "case_id": "b33-evidence-cache-rebuild-on-equal-size-edit",
+      "scenario": "cache-invalidate",
+      "args": [
+        "--file",
+        "sample.py",
+        "--line",
+        "15",
+        "--name",
+        "identifier",
+        "--kind",
+        "variable"
+      ],
+      "source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 42\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n",
+      "changed_source": "from typing import TypedDict, NotRequired\n\nclass Payload(TypedDict):\n    id: str\n    note: NotRequired[str]\n\nclass Base:\n    def get(self):\n        return 43\n\nclass Plugin(Base):\n    def get(self):\n        return super().get()\n\ndef consume(identifier: str) -> str:\n    return identifier\n\ndef normalize(payload: Payload) -> str:\n    identifier = payload[\"id\"]\n    return consume(identifier)\n\ndef entry() -> str:\n    return normalize({\"id\": \"A\"})\n",
+      "expected": {
+        "all_success": true,
+        "first_rebuild": true,
+        "second_hit": true,
+        "changed_rebuild": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "schema": "rqg.public-rule-finding-cases.v1",
+  "cases": [
+    {
+      "case_id": "qg066-required-dict",
+      "rule": "QG066",
+      "source": "def submit(payload: dict):\n    return dict(payload or {})\n",
+      "expected": [
+        "warning"
+      ],
+      "kind": "TP"
+    },
+    {
+      "case_id": "qg066-required-generic-dict",
+      "rule": "QG066",
+      "source": "def submit(value: dict[str, object]):\n    return {**(value or {})}\n",
+      "expected": [
+        "warning"
+      ],
+      "kind": "TP"
+    },
+    {
+      "case_id": "qg066-optional-union",
+      "rule": "QG066",
+      "source": "def submit(payload: dict | None):\n    return dict(payload or {})\n",
+      "expected": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg066-default-null",
+      "rule": "QG066",
+      "source": "def submit(payload: dict = None):\n    return dict(payload or {})\n",
+      "expected": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg066-untyped-param",
+      "rule": "QG066",
+      "source": "def submit(payload):\n    return dict(payload or {})\n",
+      "expected": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg066-no-fallback",
+      "rule": "QG066",
+      "source": "def submit(payload: dict):\n    return dict(payload)\n",
+      "expected": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg066-nonempty-fallback",
+      "rule": "QG066",
+      "source": "def submit(payload: dict):\n    return dict(payload or {'key': 1})\n",
+      "expected": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg066-shadowed-builtin",
+      "rule": "QG066",
+      "source": "class dict: pass\ndef submit(payload: dict):\n    return payload or {}\n",
+      "expected": [],
+      "kind": "TN"
+    },
+    {
+      "case_id": "qg066-reassigned-param",
+      "rule": "QG066",
+      "source": "def submit(payload: dict):\n    payload = {'x': 1}\n    return dict(payload or {})\n",
+      "expected": [],
+      "kind": "TN"
+    }
+  ]
+}

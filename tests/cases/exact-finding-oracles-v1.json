@@ -1,0 +1,362 @@
+{
+  "cases": [
+    {
+      "case_id": "qg149-private-import-tp",
+      "rule": "QG149",
+      "polarity": "TP",
+      "source": "from pkg._internal import _Profiler\n",
+      "findings": [
+        {
+          "code": "QG149",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 1,
+          "column": 1,
+          "message": "跨模块导入私有符号 `_Profiler`。",
+          "symbol": "subject",
+          "suggestion": "需要被其他模块使用的函数、变量或模块应改为公开名称；不得通过 __init__.py、别名或 __all__ 重导出私有实现。",
+          "evidence": {
+            "private_parts": [
+              "_internal",
+              "_Profiler"
+            ],
+            "local_name": "_Profiler",
+            "test_context": false
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "qg149-public-import-tn",
+      "rule": "QG149",
+      "polarity": "TN",
+      "source": "from pkg.public import Adapter\n",
+      "findings": []
+    },
+    {
+      "case_id": "qg066-required-dict-tp",
+      "rule": "QG066",
+      "polarity": "TP",
+      "source": "def submit(payload: dict):\n    return dict(payload or {})\n",
+      "findings": [
+        {
+          "code": "QG066",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 2,
+          "column": 17,
+          "message": "必需字典参数 `payload` 被 `or {}` 静默转换为可用空结构。",
+          "symbol": "submit",
+          "suggestion": "保留必需输入的非空契约；不合法输入应在边界显式拒绝。",
+          "evidence": {
+            "parameter": "payload",
+            "annotation": "dict",
+            "classification": "PROVEN_REQUIRED_CONTRACT"
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "qg066-optional-dict-tn",
+      "rule": "QG066",
+      "polarity": "TN",
+      "source": "def submit(payload: dict | None):\n    return dict(payload or {})\n",
+      "findings": []
+    },
+    {
+      "case_id": "qg183-private-reflection",
+      "rule": "QG183",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def _hidden(self):\n        return 1\na = Adapter()\ngetattr(a, '_hidden')\n",
+      "findings": [
+        {
+          "code": "QG183",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 5,
+          "column": 1,
+          "message": "生产代码通过反射访问 private 成员 `a._hidden`。",
+          "symbol": "subject",
+          "suggestion": "运行时改类/模块契约、反射调用和 private 反射不可解释保留；必须改为直接调用正式 public 接口，或将能力迁回正确所有者。",
+          "evidence": {
+            "accessor": "getattr",
+            "receiver": "a",
+            "member_name": "_hidden",
+            "private_member": true,
+            "invoked": false,
+            "broad_reflection": false,
+            "statically_typed": false,
+            "runtime_contract_patch": false,
+            "test_context": false
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "qg183-public-direct",
+      "rule": "QG183",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.public()\n",
+      "findings": []
+    },
+    {
+      "case_id": "qg184-typed-reflection",
+      "rule": "QG184",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def public(self):\n        return 1\ndef run(a: Adapter):\n    return getattr(a, 'public')\n",
+      "findings": [
+        {
+          "code": "QG184",
+          "severity": "error",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 5,
+          "column": 12,
+          "message": "生产代码对静态契约对象使用 `getattr` 动态探测或修改成员。",
+          "symbol": "subject",
+          "suggestion": "静态类型对象不得用反射猜测固定成员；请直接访问公开字段/方法，或用 Protocol、联合类型和显式 Optional 契约表达可选性。",
+          "evidence": {
+            "accessor": "getattr",
+            "receiver": "a",
+            "member_name": "public",
+            "private_member": false,
+            "invoked": false,
+            "broad_reflection": false,
+            "statically_typed": true,
+            "runtime_contract_patch": false,
+            "test_context": false
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "qg184-unknown-probe",
+      "rule": "QG184",
+      "polarity": "TN",
+      "source": "def run(a):\n    return hasattr(a, 'public')\n",
+      "findings": []
+    },
+    {
+      "case_id": "qg186-class-monkeypatch",
+      "rule": "QG186",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def public(self):\n        return 1\nsetattr(Adapter, 'public', lambda self: 3)\n",
+      "findings": [
+        {
+          "code": "QG186",
+          "severity": "critical",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 4,
+          "column": 1,
+          "message": "生产代码通过 `setattr` 在运行时修改类或模块契约。",
+          "symbol": "subject",
+          "suggestion": "运行时改类/模块契约、反射调用和 private 反射不可解释保留；必须改为直接调用正式 public 接口，或将能力迁回正确所有者。",
+          "evidence": {
+            "accessor": "setattr",
+            "receiver": "Adapter",
+            "member_name": "public",
+            "private_member": false,
+            "invoked": false,
+            "broad_reflection": false,
+            "statically_typed": true,
+            "runtime_contract_patch": true,
+            "test_context": false
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "qg186-public-direct",
+      "rule": "QG186",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.public()\n",
+      "findings": []
+    },
+    {
+      "case_id": "oracle-qg062-unprotected-zip",
+      "source": "def combine(left, right):\n    return list(zip(left, right))\n",
+      "rule": "QG062",
+      "polarity": "TP",
+      "findings": [
+        {
+          "code": "QG062",
+          "severity": "info",
+          "confidence": "medium",
+          "path": "subject.py",
+          "line": 2,
+          "column": 17,
+          "message": "zip() 未指定 strict=True，长度不一致时可能静默截断。",
+          "symbol": "combine",
+          "suggestion": "等长属于契约时使用 strict=True；明确需要最短序列语义时保留并写明。",
+          "evidence": {
+            "arguments": [
+              "left",
+              "right"
+            ]
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "oracle-qg062-strict",
+      "source": "def combine(left, right):\n    return list(zip(left, right, strict=True))\n",
+      "rule": "QG062",
+      "polarity": "TN",
+      "findings": []
+    },
+    {
+      "case_id": "oracle-qg063-silent-length-repair",
+      "source": "def combine(left, right):\n    return left[:min(len(left), len(right))]\n",
+      "rule": "QG063",
+      "polarity": "TP",
+      "findings": [
+        {
+          "code": "QG063",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 2,
+          "column": 18,
+          "message": "使用 min(len(...)) 或交叉长度切片静默修复列表长度。",
+          "symbol": "combine",
+          "suggestion": "让生产方保证长度关系；非法结构应显式失败。",
+          "evidence": {},
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "oracle-qg063-no-repair",
+      "source": "def combine(left):\n    return left[:]\n",
+      "rule": "QG063",
+      "polarity": "TN",
+      "findings": []
+    },
+    {
+      "case_id": "oracle-qg069-assert-parameter",
+      "source": "def submit(value):\n    assert value is not None\n    return value\n",
+      "rule": "QG069",
+      "polarity": "TP",
+      "findings": [
+        {
+          "code": "QG069",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 2,
+          "column": 5,
+          "message": "使用 assert 校验函数输入或接口契约。",
+          "symbol": "submit",
+          "suggestion": "外部输入和运行时契约使用显式异常；assert 仅用于可被优化移除的内部不变量。",
+          "evidence": {
+            "parameters": [
+              "value"
+            ]
+          },
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "oracle-qg069-explicit-check",
+      "source": "def submit(value):\n    if value is None:\n        raise ValueError('missing')\n    return value\n",
+      "rule": "QG069",
+      "polarity": "TN",
+      "findings": []
+    },
+    {
+      "case_id": "oracle-qg070-unused-result",
+      "source": "def process():\n    'value'.strip()\n",
+      "rule": "QG070",
+      "polarity": "TP",
+      "findings": [
+        {
+          "code": "QG070",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 2,
+          "column": 5,
+          "message": "调用不可变对象方法 `strip` 后丢弃返回值。",
+          "symbol": "process",
+          "suggestion": "接收返回值或删除无效调用。",
+          "evidence": {},
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "oracle-qg070-return-result",
+      "source": "def process():\n    return 'value'.strip()\n",
+      "rule": "QG070",
+      "polarity": "TN",
+      "findings": []
+    },
+    {
+      "case_id": "oracle-qg064-field-alias-fallback",
+      "source": "def resolve(data: dict):\n    return data.get('new') or data.get('old')\n",
+      "rule": "QG064",
+      "polarity": "TP",
+      "findings": [
+        {
+          "code": "QG064",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 2,
+          "column": 12,
+          "message": "同一位置兼容多个字段名，形成永久字段别名层。",
+          "symbol": "resolve",
+          "suggestion": "统一生产方字段并迁移旧数据。",
+          "evidence": {},
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "oracle-qg064-single-field",
+      "source": "def resolve(data: dict):\n    return data.get('new')\n",
+      "rule": "QG064",
+      "polarity": "TN",
+      "findings": []
+    },
+    {
+      "case_id": "oracle-qg065-dict-and-attribute",
+      "source": "def resolve(data: dict):\n    first = data['key']\n    second = data.value\n    return first, second\n",
+      "rule": "QG065",
+      "polarity": "TP",
+      "findings": [
+        {
+          "code": "QG065",
+          "severity": "warning",
+          "confidence": "high",
+          "path": "subject.py",
+          "line": 1,
+          "column": 1,
+          "message": "`data` 在同一函数中同时按对象属性和字典结构访问。",
+          "symbol": "resolve",
+          "suggestion": "固定一种内部协议，不要同时兼容对象与字典。",
+          "evidence": {},
+          "source": "quality-guard"
+        }
+      ]
+    },
+    {
+      "case_id": "oracle-qg065-single-protocol",
+      "source": "def resolve(data: dict):\n    return data['key']\n",
+      "rule": "QG065",
+      "polarity": "TN",
+      "findings": []
+    }
+  ]
+}

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
+
+from .core_rule_contract import CoreQualityRule
 import re
 
 from .config import GuardConfig
@@ -161,37 +164,27 @@ def check_config_ast_node(
     is_config_boundary: bool,
     signals: RepositorySignals,
 ) -> list[Finding]:
-    """
-    检查单个 AST 节点中的配置质量问题。
+    """Classify a configuration expression through the appropriate rule owner.
+
+    Calls are checked for configuration-source fallback, string literals for
+    hard-coded endpoints, and other AST nodes for fallback-source patterns.
+    The boundary flag suppresses findings for intentional configuration entrypoints.
 
     Args:
-        facts: 当前模块静态事实。
-        node: 待检查节点。
-        is_config_boundary: 当前模块是否为配置或外部输入边界。
-        signals: 跨模块信号汇总对象。
+        facts: Source-bound module facts used to construct findings.
+        node: Expression or statement currently inspected.
+        is_config_boundary: Whether the containing module owns configuration IO.
+        signals: Repository-wide evidence of configuration sources and references.
 
     Returns:
-        当前节点产生的配置发现列表。
-    """
+        Findings for the matching expression category, without double dispatch."""
     if isinstance(node, ast.Call):
         return check_config_call(facts, node, is_config_boundary, signals)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return check_hardcoded_endpoint(facts, node)
-    if (
-        isinstance(node, ast.BoolOp)
-        and config_source_fallback_count(node) >= MIN_CONFIG_SOURCES_FOR_FALLBACK
-    ):
-        return [
-            facts.make_finding(
-                node,
-                "QG106",
-                "同一表达式在多个配置来源之间回退。",
-                symbol=facts.module,
-                severity="warning",
-                suggestion="明确唯一权威来源；迁移逻辑不要永久留在运行时。",
-            )
-        ]
-    return []
+    return ConfigFallbackSourceRule().evaluate(
+        ConfigNodeRuleContext(facts, node, is_config_boundary, signals)
+    )
 
 
 def check_config_call(
@@ -215,17 +208,10 @@ def check_config_call(
     name = call_name(node)
     if name in CONFIG_CALLS:
         return check_environment_read(facts, node, name, is_config_boundary, signals)
-    if name in CONFIG_FILE_CALLS and not is_config_boundary:
-        return [
-            facts.make_finding(
-                node,
-                "QG100",
-                f"非配置模块直接调用 `{name}` 读取配置文件。",
-                symbol=facts.module,
-                severity="warning",
-                suggestion="配置应有唯一权威来源，业务模块不要自行读取 YAML/JSON/TOML。",
-            )
-        ]
+    if name in CONFIG_FILE_CALLS:
+        return AuthoritativeConfigModuleRule().evaluate(
+            ConfigCallContext(facts, node, name, "", None, is_config_boundary)
+        )
     return []
 
 
@@ -259,36 +245,126 @@ def check_environment_read(
     if key in PROCESS_ENVIRONMENT_KEYS:
         return []
     signals.env_reads[key].append((facts.path, node.lineno, name))
-    findings: list[Finding] = []
     default = config_default_value(node)
     if default is not None:
         signals.config_defaults[(key, default)].append((facts.path, node.lineno))
-        findings.append(
+    context = ConfigCallContext(facts, node, name, key, default, is_config_boundary)
+    findings = ConfigDefaultRule().evaluate(context)
+    findings.extend(DynamicConfigKeyRule().evaluate(context))
+    findings.extend(AuthoritativeConfigModuleRule().evaluate(context))
+    return findings
+
+
+@dataclass(frozen=True)
+class ConfigCallContext:
+    """One source-bound config read; repository signals were collected once.
+
+    Fields: facts, node, name, key, default, is_config_boundary."""
+
+    facts: ModuleFacts
+    node: ast.Call
+    name: str
+    key: str
+    default: str | None
+    is_config_boundary: bool
+
+
+class ConfigDefaultRule(CoreQualityRule[ConfigCallContext]):
+    """QG103: a config read has an explicit fallback value.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG103"
+
+    def evaluate(self, context: ConfigCallContext) -> list[Finding]:
+        """Evaluate QG103 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        if context.default is None:
+            return []
+        facts, node, key, default = (
+            context.facts,
+            context.node,
+            context.key,
+            context.default,
+        )
+        severity = configuration_default_severity(key)
+        return [
             facts.make_finding(
                 node,
                 "QG103",
                 f"读取配置 `{key}` 时提供默认值 {default}。",
                 symbol=facts.module,
-                severity=configuration_default_severity(key),
-                confidence="high"
-                if configuration_default_severity(key) == "warning"
-                else "medium",
+                severity=severity,
+                confidence="high" if severity == "warning" else "medium",
                 suggestion="必填配置缺失时直接失败；真实可选配置只在唯一配置模型中声明默认值。",
             )
-        )
-    if key == "<dynamic>":
-        findings.append(
-            facts.make_finding(
-                node,
+        ]
+
+
+class DynamicConfigKeyRule(CoreQualityRule[ConfigCallContext]):
+    """QG104: config source key is not statically recovered.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG104"
+
+    def evaluate(self, context: ConfigCallContext) -> list[Finding]:
+        """Evaluate QG104 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        if context.key != "<dynamic>":
+            return []
+        return [
+            context.facts.make_finding(
+                context.node,
                 "QG104",
                 "配置键由动态表达式生成，无法静态确认权威来源。",
-                symbol=facts.module,
+                symbol=context.facts.module,
                 severity="warning",
                 suggestion="配置键使用稳定常量并集中声明。",
             )
-        )
-    if not is_config_boundary:
-        findings.append(
+        ]
+
+
+class AuthoritativeConfigModuleRule(CoreQualityRule[ConfigCallContext]):
+    """QG100: application modules must not read config from ad-hoc sources.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG100"
+
+    def evaluate(self, context: ConfigCallContext) -> list[Finding]:
+        """Evaluate QG100 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        if context.is_config_boundary:
+            return []
+        facts, node, name, key = context.facts, context.node, context.name, context.key
+        if name in CONFIG_FILE_CALLS:
+            return [
+                facts.make_finding(
+                    node,
+                    "QG100",
+                    f"非配置模块直接调用 `{name}` 读取配置文件。",
+                    symbol=facts.module,
+                    severity="warning",
+                    suggestion="配置应有唯一权威来源，业务模块不要自行读取 YAML/JSON/TOML。",
+                )
+            ]
+        return [
             facts.make_finding(
                 node,
                 "QG100",
@@ -297,8 +373,7 @@ def check_environment_read(
                 severity="warning",
                 suggestion="仅在唯一配置模块读取、转换和校验，消费方接收正式配置对象。",
             )
-        )
-    return findings
+        ]
 
 
 def configuration_default_severity(key: str) -> str:
@@ -319,29 +394,16 @@ def configuration_default_severity(key: str) -> str:
     )
 
 
-def check_hardcoded_endpoint(facts: ModuleFacts, node: ast.Constant) -> list[Finding]:
-    """
-    检查硬编码服务地址或端口。
+def check_hardcoded_endpoint(facts, node):
+    """Detect a literal endpoint embedded in production source.
 
     Args:
-        facts: 当前模块静态事实。
-        node: 字符串常量节点。
+        facts: Module facts identifying the literal's source location.
+        node: Candidate string constant to be classified by HardcodedEndpointRule.
 
     Returns:
-        服务端点发现列表。
-    """
-    if not looks_like_service_endpoint(node.value):
-        return []
-    return [
-        facts.make_finding(
-            node,
-            "QG102",
-            f"源码中硬编码服务地址或端口：{node.value!r}。",
-            symbol=facts.module,
-            severity="warning",
-            suggestion="服务地址进入唯一配置对象。",
-        )
-    ]
+        Endpoint-policy findings; non-endpoint constants yield no findings."""
+    return HardcodedEndpointRule().evaluate(ModuleLiteralContext(facts, node))
 
 
 def constant_string(node: ast.expr) -> str:
@@ -510,126 +572,60 @@ def check_module_state_rules(
 
 
 def check_module_statement(facts: ModuleFacts, statement: ast.stmt) -> list[Finding]:
-    """
-    检查单条模块顶层语句。
+    """Run module-level state, declaration and wildcard-import rules in order.
 
     Args:
-        facts: 当前模块静态事实。
-        statement: 模块顶层语句。
+        facts: Facts for the module containing the top-level statement.
+        statement: One AST statement from the module body, not a nested body.
 
     Returns:
-        当前语句产生的模块结构发现列表。
-    """
+        Ordered findings from state mutation, definition naming and wildcard imports."""
     findings = check_module_mutable_state(facts, statement)
     findings.extend(check_module_definition(facts, statement))
-    if isinstance(statement, ast.ImportFrom) and any(
-        alias.name == "*" for alias in statement.names
-    ):
-        findings.append(
-            facts.make_finding(
-                statement,
-                "QG093",
-                "使用 `from ... import *`，符号来源和覆盖关系不透明。",
-                symbol=facts.module,
-                severity="warning",
-                suggestion="显式导入实际使用的名称。",
-            )
-        )
+    findings.extend(
+        WildcardImportRule().evaluate(ModuleStatementContext(facts, statement))
+    )
     return findings
 
 
-def check_module_mutable_state(
-    facts: ModuleFacts, statement: ast.stmt
-) -> list[Finding]:
-    """
-    检查模块顶层可变容器。
+def check_module_mutable_state(facts, statement):
+    """Check whether a module statement defines mutable shared state.
 
     Args:
-        facts: 当前模块静态事实。
-        statement: 模块顶层语句。
+        facts: Module facts used for source attribution and exceptions.
+        statement: Candidate top-level assignment or declaration.
 
     Returns:
-        隐式共享状态发现列表。
-    """
-    if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
-        return []
-    if not isinstance(statement.value, (ast.List, ast.Dict, ast.Set)):
-        return []
-    names = assignment_names(statement)
-    if not any(not name.isupper() and not name.startswith("__") for name in names):
-        return []
-    return [
-        facts.make_finding(
-            statement,
-            "QG092",
-            "模块级可变容器可能形成隐式共享状态。",
-            symbol=facts.module,
-            severity="info",
-            suggestion="常量使用不可变结构；运行时状态放入具有明确生命周期的对象。",
-        )
-    ]
+        Findings from MutableModuleStateRule; a harmless statement returns []."""
+    return MutableModuleStateRule().evaluate(ModuleStatementContext(facts, statement))
 
 
 def check_module_definition(facts: ModuleFacts, statement: ast.stmt) -> list[Finding]:
-    """
-    检查顶层定义名称、迁移入口和嵌套定义。
+    """Apply four distinct declaration policies to one top-level definition.
+
+    Only functions, async functions and classes are eligible. The nested
+    definitions are collected once and reused when checking legacy names,
+    migration wrappers, generic names and nested definition structure.
 
     Args:
-        facts: 当前模块静态事实。
-        statement: 模块顶层语句。
+        facts: Module facts for Finding paths and source positions.
+        statement: Candidate function/class AST declaration.
 
     Returns:
-        定义结构发现列表。
-    """
+        Definition-policy findings, or [] for a non-definition statement."""
     if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return []
-    lowered = statement.name.lower()
+    context = DefinitionRuleContext(
+        facts, statement, statement.name.lower(), nested_definitions(statement)
+    )
     findings: list[Finding] = []
-    if is_compatibility_name(lowered):
-        findings.append(
-            facts.make_finding(
-                statement,
-                "QG094",
-                f"定义名 `{statement.name}` 表明存在兼容、旧版或回退路径。",
-                symbol=statement.name,
-                severity="info",
-                suggestion="无真实兼容需求时删除旧入口和别名。",
-            )
-        )
-    if any(marker in lowered for marker in ("migrate", "migration", "backfill")):
-        findings.append(
-            facts.make_finding(
-                statement,
-                "QG095",
-                f"运行时模块包含迁移/回填入口 `{statement.name}`。",
-                symbol=statement.name,
-                severity="info",
-                suggestion="一次性迁移放入独立脚本。",
-            )
-        )
-    if lowered in GENERIC_FUNCTION_NAMES:
-        findings.append(
-            facts.make_finding(
-                statement,
-                "QG096",
-                f"定义名 `{statement.name}` 过于宽泛，无法表达具体职责。",
-                symbol=statement.name,
-                severity="info",
-                suggestion="使用说明输入、动作和产出的领域名称。",
-            )
-        )
-    nested = nested_definitions(statement)
-    if nested:
-        findings.append(
-            facts.make_finding(
-                nested[0],
-                "QG097",
-                f"`{statement.name}` 内部定义了 {len(nested)} 个嵌套函数或类。",
-                symbol=statement.name,
-                severity="info",
-                suggestion="确认闭包确有必要；可复用逻辑应提升到明确作用域。",
-            )
-        )
+    for detector in (
+        LegacyDefinitionNameRule(),
+        MigrationEntryNameRule(),
+        GenericDefinitionNameRule(),
+        NestedDefinitionStructureRule(),
+    ):
+        findings.extend(detector.evaluate(context))
     return findings
 
 
@@ -653,32 +649,384 @@ def nested_definitions(statement: ast.stmt) -> list[ast.AST]:
     ]
 
 
-def check_utility_module(facts: ModuleFacts, config: GuardConfig) -> list[Finding]:
-    """
-    检查无边界通用工具模块是否持续膨胀。
+def check_utility_module(facts, config):
+    """Check utility-module growth against project configuration.
 
     Args:
-        facts: 当前模块静态事实。
-        config: 当前仓库质量配置。
+        facts: Parsed module with structural and source facts.
+        config: Quality configuration defining the utility-module policy.
 
     Returns:
-        通用工具箱模块发现列表。
-    """
-    if facts.path.stem.lower() not in {"utils", "common", "helpers"}:
-        return []
-    if len(facts.definitions) < config.utility_module_definition_threshold:
-        return []
-    return [
-        Finding(
-            code="QG091",
-            severity="info",
-            confidence="medium",
-            path=str(facts.path),
-            line=1,
-            column=1,
-            message=f"通用模块 `{facts.path.name}` 包含 {len(facts.definitions)} 个定义。",
-            symbol=facts.module,
-            suggestion="按领域职责和依赖方向归位，避免无边界工具箱。",
-            evidence={"definitions": len(facts.definitions)},
+        Findings from UtilityModuleGrowthRule when the module crosses its boundary."""
+    return UtilityModuleGrowthRule().evaluate(UtilityModuleContext(facts, config))
+
+
+@dataclass(frozen=True)
+class ModuleLiteralContext:
+    """Carry typed rule inputs: facts, node.
+
+    Fields: facts, node."""
+
+    facts: ModuleFacts
+    node: ast.Constant
+
+
+@dataclass(frozen=True)
+class ModuleStatementContext:
+    """Carry typed rule inputs: facts, statement.
+
+    Fields: facts, statement."""
+
+    facts: ModuleFacts
+    statement: ast.stmt
+
+
+@dataclass(frozen=True)
+class UtilityModuleContext:
+    """Carry typed rule inputs: facts, config.
+
+    Fields: facts, config."""
+
+    facts: ModuleFacts
+    config: GuardConfig
+
+
+class HardcodedEndpointRule(CoreQualityRule[ModuleLiteralContext]):
+    """Own QG102 detection without another module parse.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG102"
+
+    def evaluate(self, context: ModuleLiteralContext) -> list[Finding]:
+        """Evaluate QG102 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, node = context.facts, context.node
+        if not looks_like_service_endpoint(node.value):
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG102",
+                f"源码中硬编码服务地址或端口：{node.value!r}。",
+                symbol=facts.module,
+                severity="warning",
+                suggestion="服务地址进入唯一配置对象。",
+            )
+        ]
+
+
+class MutableModuleStateRule(CoreQualityRule[ModuleStatementContext]):
+    """Own QG092 detection without another module parse.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG092"
+
+    def evaluate(self, context: ModuleStatementContext) -> list[Finding]:
+        """Evaluate QG092 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, statement = context.facts, context.statement
+        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            return []
+        if not isinstance(statement.value, (ast.List, ast.Dict, ast.Set)):
+            return []
+        names = assignment_names(statement)
+        if not any(not name.isupper() and not name.startswith("__") for name in names):
+            return []
+        return [
+            facts.make_finding(
+                statement,
+                "QG092",
+                "模块级可变容器可能形成隐式共享状态。",
+                symbol=facts.module,
+                severity="info",
+                suggestion="常量使用不可变结构；运行时状态放入具有明确生命周期的对象。",
+            )
+        ]
+
+
+class UtilityModuleGrowthRule(CoreQualityRule[UtilityModuleContext]):
+    """Own QG091 detection without another module parse.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG091"
+
+    def evaluate(self, context: UtilityModuleContext) -> list[Finding]:
+        """Evaluate QG091 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, config = context.facts, context.config
+        if facts.path.stem.lower() not in {"utils", "common", "helpers"}:
+            return []
+        if len(facts.definitions) < config.utility_module_definition_threshold:
+            return []
+        return [
+            Finding(
+                code="QG091",
+                severity="info",
+                confidence="medium",
+                path=str(facts.path),
+                line=1,
+                column=1,
+                message=f"通用模块 `{facts.path.name}` 包含 {len(facts.definitions)} 个定义。",
+                symbol=facts.module,
+                suggestion="按领域职责和依赖方向归位，避免无边界工具箱。",
+                evidence={"definitions": len(facts.definitions)},
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class DefinitionRuleContext:
+    """Carry typed rule inputs: facts, statement, lowered, nested.
+
+    Fields: facts, statement, lowered, nested."""
+
+    facts: ModuleFacts
+    statement: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+    lowered: str
+    nested: list[ast.AST]
+
+
+@dataclass(frozen=True)
+class ConfigNodeRuleContext:
+    """Carry typed rule inputs: facts, node, is_config_boundary, signals.
+
+    Fields: facts, node, is_config_boundary, signals."""
+
+    facts: ModuleFacts
+    node: ast.AST
+    is_config_boundary: bool
+    signals: RepositorySignals
+
+
+class LegacyDefinitionNameRule(CoreQualityRule[DefinitionRuleContext]):
+    """Own the production QG094 Finding decision over previously computed facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG094"
+
+    def evaluate(self, context: DefinitionRuleContext) -> list[Finding]:
+        """Evaluate QG094 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, statement, lowered, _nested = (
+            context.facts,
+            context.statement,
+            context.lowered,
+            context.nested,
         )
-    ]
+        findings: list[Finding] = []
+        if is_compatibility_name(lowered):
+            findings.append(
+                facts.make_finding(
+                    statement,
+                    "QG094",
+                    f"定义名 `{statement.name}` 表明存在兼容、旧版或回退路径。",
+                    symbol=statement.name,
+                    severity="info",
+                    suggestion="无真实兼容需求时删除旧入口和别名。",
+                )
+            )
+        return findings
+
+
+class MigrationEntryNameRule(CoreQualityRule[DefinitionRuleContext]):
+    """Own the production QG095 Finding decision over previously computed facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG095"
+
+    def evaluate(self, context: DefinitionRuleContext) -> list[Finding]:
+        """Evaluate QG095 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, statement, lowered, _nested = (
+            context.facts,
+            context.statement,
+            context.lowered,
+            context.nested,
+        )
+        findings: list[Finding] = []
+        if any(marker in lowered for marker in ("migrate", "migration", "backfill")):
+            findings.append(
+                facts.make_finding(
+                    statement,
+                    "QG095",
+                    f"运行时模块包含迁移/回填入口 `{statement.name}`。",
+                    symbol=statement.name,
+                    severity="info",
+                    suggestion="一次性迁移放入独立脚本。",
+                )
+            )
+        return findings
+
+
+class GenericDefinitionNameRule(CoreQualityRule[DefinitionRuleContext]):
+    """Own the production QG096 Finding decision over previously computed facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG096"
+
+    def evaluate(self, context: DefinitionRuleContext) -> list[Finding]:
+        """Evaluate QG096 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, statement, lowered, _nested = (
+            context.facts,
+            context.statement,
+            context.lowered,
+            context.nested,
+        )
+        findings: list[Finding] = []
+        if lowered in GENERIC_FUNCTION_NAMES:
+            findings.append(
+                facts.make_finding(
+                    statement,
+                    "QG096",
+                    f"定义名 `{statement.name}` 过于宽泛，无法表达具体职责。",
+                    symbol=statement.name,
+                    severity="info",
+                    suggestion="使用说明输入、动作和产出的领域名称。",
+                )
+            )
+        return findings
+
+
+class NestedDefinitionStructureRule(CoreQualityRule[DefinitionRuleContext]):
+    """Own the production QG097 Finding decision over previously computed facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG097"
+
+    def evaluate(self, context: DefinitionRuleContext) -> list[Finding]:
+        """Evaluate QG097 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, statement, _lowered, nested = (
+            context.facts,
+            context.statement,
+            context.lowered,
+            context.nested,
+        )
+        findings: list[Finding] = []
+        if nested:
+            findings.append(
+                facts.make_finding(
+                    nested[0],
+                    "QG097",
+                    f"`{statement.name}` 内部定义了 {len(nested)} 个嵌套函数或类。",
+                    symbol=statement.name,
+                    severity="info",
+                    suggestion="确认闭包确有必要；可复用逻辑应提升到明确作用域。",
+                )
+            )
+        return findings
+
+
+class WildcardImportRule(CoreQualityRule[ModuleStatementContext]):
+    """Own the production QG093 Finding decision over previously computed facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG093"
+
+    def evaluate(self, context: ModuleStatementContext) -> list[Finding]:
+        """Evaluate QG093 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, statement = context.facts, context.statement
+        findings: list[Finding] = []
+        if isinstance(statement, ast.ImportFrom) and any(
+            alias.name == "*" for alias in statement.names
+        ):
+            findings.append(
+                facts.make_finding(
+                    statement,
+                    "QG093",
+                    "使用 `from ... import *`，符号来源和覆盖关系不透明。",
+                    symbol=facts.module,
+                    severity="warning",
+                    suggestion="显式导入实际使用的名称。",
+                )
+            )
+        return findings
+
+
+class ConfigFallbackSourceRule(CoreQualityRule[ConfigNodeRuleContext]):
+    """Own the production QG106 Finding decision over previously computed facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG106"
+
+    def evaluate(self, context: ConfigNodeRuleContext) -> list[Finding]:
+        """Evaluate QG106 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, node, _is_config_boundary, _signals = (
+            context.facts,
+            context.node,
+            context.is_config_boundary,
+            context.signals,
+        )
+        findings: list[Finding] = []
+        if (
+            isinstance(node, ast.BoolOp)
+            and config_source_fallback_count(node) >= MIN_CONFIG_SOURCES_FOR_FALLBACK
+        ):
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG106",
+                    "同一表达式在多个配置来源之间回退。",
+                    symbol=facts.module,
+                    severity="warning",
+                    suggestion="明确唯一权威来源；迁移逻辑不要永久留在运行时。",
+                )
+            )
+        return findings

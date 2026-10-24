@@ -1,0 +1,1076 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "functional-qg123-name-get_items",
+      "source": "def get_items(queue):\n    queue.get()\n    queue.save()\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG123"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg123-name-save_items",
+      "source": "def save_items(queue):\n    queue.get()\n    queue.save()\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG123"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg070-unresolved-receiver",
+      "source": "def operation(candidate):\n    candidate.replace('old', 'new')\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG070"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg070-literal-result",
+      "source": "def operation():\n    'ABC'.lower()\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG070"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg039-no-name-guess-is_enabled",
+      "source": "def operation(is_enabled='false'):\n    return is_enabled\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG039"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg039-no-name-guess-credential",
+      "source": "def operation(credential='false'):\n    return credential\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG039"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg060-optional-union",
+      "source": "from typing import Optional\ndef operation(candidate: Optional[str]):\n    if not isinstance(candidate, str):\n        raise ValueError('required')\n    return candidate\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG060"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg089-class-suffix-Manager",
+      "source": "class DataManager:\n    pass\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG089"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg089-class-suffix-Adapter",
+      "source": "class DataAdapter:\n    pass\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG089"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg106-identifiers-config",
+      "source": "def operation(config, settings):\n    return config or settings\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG106"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg106-identifiers-anonymous",
+      "source": "def operation(first, second):\n    return first or second\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG106"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-swallow-name-safe_get",
+      "source": "def safe_get():\n    try:\n        raise RuntimeError('failed')\n    except Exception:\n        return None\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-swallow-name-probe_health",
+      "source": "def probe_health():\n    try:\n        raise RuntimeError('failed')\n    except Exception:\n        return None\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-swallow-name-operation",
+      "source": "def operation():\n    try:\n        raise RuntimeError('failed')\n    except Exception:\n        return None\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg004-012-025-mapping-metadata",
+      "source": "def operation():\n    metadata: dict[str, object] = {}\n    metadata.get('missing', 0)\n    metadata.setdefault('missing', 0)\n    metadata.pop('missing', 0)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG012",
+          "severity": "warning"
+        },
+        {
+          "code": "QG025",
+          "severity": "warning"
+        }
+      ],
+      "absent": [
+        {
+          "code": "QG004"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg004-012-025-mapping-by_id",
+      "source": "def operation():\n    by_id: dict[str, object] = {}\n    by_id.get('missing', 0)\n    by_id.setdefault('missing', 0)\n    by_id.pop('missing', 0)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG012",
+          "severity": "warning"
+        },
+        {
+          "code": "QG025",
+          "severity": "warning"
+        }
+      ],
+      "absent": [
+        {
+          "code": "QG004"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg004-012-025-mapping-object_cache",
+      "source": "def operation():\n    object_cache: dict[str, object] = {}\n    object_cache.get('missing', 0)\n    object_cache.setdefault('missing', 0)\n    object_cache.pop('missing', 0)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG012",
+          "severity": "warning"
+        },
+        {
+          "code": "QG025",
+          "severity": "warning"
+        }
+      ],
+      "absent": [
+        {
+          "code": "QG004"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg004-012-025-mapping-unusual_value",
+      "source": "def operation():\n    unusual_value: dict[str, object] = {}\n    unusual_value.get('missing', 0)\n    unusual_value.setdefault('missing', 0)\n    unusual_value.pop('missing', 0)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG012",
+          "severity": "warning"
+        },
+        {
+          "code": "QG025",
+          "severity": "warning"
+        }
+      ],
+      "absent": [
+        {
+          "code": "QG004"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg153-projection-metadata",
+      "source": "def operation(metadata):\n    return {'a': metadata.get('a'), 'b': metadata.get('b'), 'c': metadata.get('c')}\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG153",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg153-projection-registry",
+      "source": "def operation(registry):\n    return {'a': registry.get('a'), 'b': registry.get('b'), 'c': registry.get('c')}\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG153",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg153-projection-anything",
+      "source": "def operation(anything):\n    return {'a': anything.get('a'), 'b': anything.get('b'), 'c': anything.get('c')}\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG153",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg154-return-binding-decorator",
+      "source": "def decorator():\n    def wrapper():\n        return 1\n    return wrapper\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG154"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg154-return-binding-produce",
+      "source": "def produce():\n    def transform():\n        return 1\n    return transform\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG154"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg154-unused-nested",
+      "source": "def produce():\n    def compute():\n        return 1\n    return 42\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG154"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg001-private-once",
+      "source": "def _helper(value):\n    return value + 1\n\ndef public(value):\n    return _helper(value)\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [
+        {
+          "code": "QG001",
+          "symbol": "sample._helper",
+          "evidence": {
+            "ephemeral_helper_candidate": true,
+            "direct_callers": 1
+          }
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg001-reused-across-functions",
+      "source": "def _normalize(value):\n    return value.strip()\n\ndef first(value):\n    return _normalize(value)\n\ndef second(value):\n    return _normalize(value)\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG001",
+          "symbol": "sample._normalize"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg001-twice-one-owner",
+      "source": "def _format(value):\n    return value.strip()\n\ndef render(value):\n    return _format(value) + _format(value)\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG001",
+          "symbol": "sample._format"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg001-callback-reference",
+      "source": "def _callback(value):\n    return value + 1\n\ndef consume(fn):\n    return fn\n\ndef main():\n    return consume(_callback)\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG001",
+          "symbol": "sample._callback"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg001-nested-once",
+      "source": "def outer(value):\n    def transform(item):\n        return item + 1\n    return transform(value)\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [
+        {
+          "code": "QG001",
+          "symbol": "sample.outer.transform",
+          "evidence": {
+            "nested": true
+          }
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg001-nested-callback",
+      "source": "def consume(fn):\n    return fn\n\ndef outer(value):\n    def callback(item):\n        return item + 1\n    return consume(callback)\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG001",
+          "symbol": "sample.outer.callback"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg001-public-small",
+      "source": "def public(value):\n    return value + 1\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG001",
+          "symbol": "sample.public"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg013-five-one-shot",
+      "source": "class Worker:\n    def _a(self, value):\n        return value + 1\n\n    def _b(self, value):\n        return value + 1\n\n    def _c(self, value):\n        return value + 1\n\n    def _d(self, value):\n        return value + 1\n\n    def _e(self, value):\n        return value + 1\n\n    def run(self, value):\n        return (self._a(value) + self._b(value) + self._c(value) + self._d(value) + self._e(value))\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [
+        {
+          "code": "QG013",
+          "severity": "info",
+          "evidence": {
+            "ephemeral_helpers": 5,
+            "semantic_review_required": true
+          }
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg013-public-methods",
+      "source": "class Resource:\n    def value_0(self):\n        return 0\n\n    def value_1(self):\n        return 1\n\n    def value_2(self):\n        return 2\n\n    def value_3(self):\n        return 3\n\n    def value_4(self):\n        return 4\n\n    def value_5(self):\n        return 5\n\n    def value_6(self):\n        return 6\n\n    def value_7(self):\n        return 7\n\n    def value_8(self):\n        return 8\n\n    def value_9(self):\n        return 9\n\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG013"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg013-shared-primitives",
+      "source": "class Resource:\n    def _a(self, value):\n        return value + 1\n\n    def _b(self, value):\n        return value + 1\n\n    def _c(self, value):\n        return value + 1\n\n    def _d(self, value):\n        return value + 1\n\n    def _e(self, value):\n        return value + 1\n\n    def first(self, value):\n        return self._a(value)+self._b(value)+self._c(value)+self._d(value)+self._e(value)\n\n    def second(self, value):\n        return self._a(value)+self._b(value)+self._c(value)+self._d(value)+self._e(value)\n\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG013"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg017-branches-24",
+      "source": "def route(value):\n    if value == 0:\n        return 0\n    if value == 1:\n        return 1\n    if value == 2:\n        return 2\n    if value == 3:\n        return 3\n    if value == 4:\n        return 4\n    if value == 5:\n        return 5\n    if value == 6:\n        return 6\n    if value == 7:\n        return 7\n    if value == 8:\n        return 8\n    if value == 9:\n        return 9\n    if value == 10:\n        return 10\n    if value == 11:\n        return 11\n    if value == 12:\n        return 12\n    if value == 13:\n        return 13\n    if value == 14:\n        return 14\n    if value == 15:\n        return 15\n    if value == 16:\n        return 16\n    if value == 17:\n        return 17\n    if value == 18:\n        return 18\n    if value == 19:\n        return 19\n    if value == 20:\n        return 20\n    if value == 21:\n        return 21\n    if value == 22:\n        return 22\n    if value == 23:\n        return 23\n    return -1\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG017"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg017-branches-25",
+      "source": "def route(value):\n    if value == 0:\n        return 0\n    if value == 1:\n        return 1\n    if value == 2:\n        return 2\n    if value == 3:\n        return 3\n    if value == 4:\n        return 4\n    if value == 5:\n        return 5\n    if value == 6:\n        return 6\n    if value == 7:\n        return 7\n    if value == 8:\n        return 8\n    if value == 9:\n        return 9\n    if value == 10:\n        return 10\n    if value == 11:\n        return 11\n    if value == 12:\n        return 12\n    if value == 13:\n        return 13\n    if value == 14:\n        return 14\n    if value == 15:\n        return 15\n    if value == 16:\n        return 16\n    if value == 17:\n        return 17\n    if value == 18:\n        return 18\n    if value == 19:\n        return 19\n    if value == 20:\n        return 20\n    if value == 21:\n        return 21\n    if value == 22:\n        return 22\n    if value == 23:\n        return 23\n    if value == 24:\n        return 24\n    return -1\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG017",
+          "severity": "info"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg017-branches-26",
+      "source": "def route(value):\n    if value == 0:\n        return 0\n    if value == 1:\n        return 1\n    if value == 2:\n        return 2\n    if value == 3:\n        return 3\n    if value == 4:\n        return 4\n    if value == 5:\n        return 5\n    if value == 6:\n        return 6\n    if value == 7:\n        return 7\n    if value == 8:\n        return 8\n    if value == 9:\n        return 9\n    if value == 10:\n        return 10\n    if value == 11:\n        return 11\n    if value == 12:\n        return 12\n    if value == 13:\n        return 13\n    if value == 14:\n        return 14\n    if value == 15:\n        return 15\n    if value == 16:\n        return 16\n    if value == 17:\n        return 17\n    if value == 18:\n        return 18\n    if value == 19:\n        return 19\n    if value == 20:\n        return 20\n    if value == 21:\n        return 21\n    if value == 22:\n        return 22\n    if value == 23:\n        return 23\n    if value == 24:\n        return 24\n    if value == 25:\n        return 25\n    return -1\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG017",
+          "severity": "info"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg008-methods-20",
+      "source": "class Resource:\n    def method_0(self):\n        return 0\n    def method_1(self):\n        return 1\n    def method_2(self):\n        return 2\n    def method_3(self):\n        return 3\n    def method_4(self):\n        return 4\n    def method_5(self):\n        return 5\n    def method_6(self):\n        return 6\n    def method_7(self):\n        return 7\n    def method_8(self):\n        return 8\n    def method_9(self):\n        return 9\n    def method_10(self):\n        return 10\n    def method_11(self):\n        return 11\n    def method_12(self):\n        return 12\n    def method_13(self):\n        return 13\n    def method_14(self):\n        return 14\n    def method_15(self):\n        return 15\n    def method_16(self):\n        return 16\n    def method_17(self):\n        return 17\n    def method_18(self):\n        return 18\n    def method_19(self):\n        return 19\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG008"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg008-methods-21",
+      "source": "class Resource:\n    def method_0(self):\n        return 0\n    def method_1(self):\n        return 1\n    def method_2(self):\n        return 2\n    def method_3(self):\n        return 3\n    def method_4(self):\n        return 4\n    def method_5(self):\n        return 5\n    def method_6(self):\n        return 6\n    def method_7(self):\n        return 7\n    def method_8(self):\n        return 8\n    def method_9(self):\n        return 9\n    def method_10(self):\n        return 10\n    def method_11(self):\n        return 11\n    def method_12(self):\n        return 12\n    def method_13(self):\n        return 13\n    def method_14(self):\n        return 14\n    def method_15(self):\n        return 15\n    def method_16(self):\n        return 16\n    def method_17(self):\n        return 17\n    def method_18(self):\n        return 18\n    def method_19(self):\n        return 19\n    def method_20(self):\n        return 20\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [
+        {
+          "code": "QG008",
+          "severity": "info",
+          "evidence": {
+            "semantic_review_required": true
+          }
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg008-methods-50",
+      "source": "class Resource:\n    def method_0(self):\n        return 0\n    def method_1(self):\n        return 1\n    def method_2(self):\n        return 2\n    def method_3(self):\n        return 3\n    def method_4(self):\n        return 4\n    def method_5(self):\n        return 5\n    def method_6(self):\n        return 6\n    def method_7(self):\n        return 7\n    def method_8(self):\n        return 8\n    def method_9(self):\n        return 9\n    def method_10(self):\n        return 10\n    def method_11(self):\n        return 11\n    def method_12(self):\n        return 12\n    def method_13(self):\n        return 13\n    def method_14(self):\n        return 14\n    def method_15(self):\n        return 15\n    def method_16(self):\n        return 16\n    def method_17(self):\n        return 17\n    def method_18(self):\n        return 18\n    def method_19(self):\n        return 19\n    def method_20(self):\n        return 20\n    def method_21(self):\n        return 21\n    def method_22(self):\n        return 22\n    def method_23(self):\n        return 23\n    def method_24(self):\n        return 24\n    def method_25(self):\n        return 25\n    def method_26(self):\n        return 26\n    def method_27(self):\n        return 27\n    def method_28(self):\n        return 28\n    def method_29(self):\n        return 29\n    def method_30(self):\n        return 30\n    def method_31(self):\n        return 31\n    def method_32(self):\n        return 32\n    def method_33(self):\n        return 33\n    def method_34(self):\n        return 34\n    def method_35(self):\n        return 35\n    def method_36(self):\n        return 36\n    def method_37(self):\n        return 37\n    def method_38(self):\n        return 38\n    def method_39(self):\n        return 39\n    def method_40(self):\n        return 40\n    def method_41(self):\n        return 41\n    def method_42(self):\n        return 42\n    def method_43(self):\n        return 43\n    def method_44(self):\n        return 44\n    def method_45(self):\n        return 45\n    def method_46(self):\n        return 46\n    def method_47(self):\n        return 47\n    def method_48(self):\n        return 48\n    def method_49(self):\n        return 49\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [
+        {
+          "code": "QG008",
+          "severity": "info",
+          "evidence": {
+            "semantic_review_required": true
+          }
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg008-methods-51",
+      "source": "class Resource:\n    def method_0(self):\n        return 0\n    def method_1(self):\n        return 1\n    def method_2(self):\n        return 2\n    def method_3(self):\n        return 3\n    def method_4(self):\n        return 4\n    def method_5(self):\n        return 5\n    def method_6(self):\n        return 6\n    def method_7(self):\n        return 7\n    def method_8(self):\n        return 8\n    def method_9(self):\n        return 9\n    def method_10(self):\n        return 10\n    def method_11(self):\n        return 11\n    def method_12(self):\n        return 12\n    def method_13(self):\n        return 13\n    def method_14(self):\n        return 14\n    def method_15(self):\n        return 15\n    def method_16(self):\n        return 16\n    def method_17(self):\n        return 17\n    def method_18(self):\n        return 18\n    def method_19(self):\n        return 19\n    def method_20(self):\n        return 20\n    def method_21(self):\n        return 21\n    def method_22(self):\n        return 22\n    def method_23(self):\n        return 23\n    def method_24(self):\n        return 24\n    def method_25(self):\n        return 25\n    def method_26(self):\n        return 26\n    def method_27(self):\n        return 27\n    def method_28(self):\n        return 28\n    def method_29(self):\n        return 29\n    def method_30(self):\n        return 30\n    def method_31(self):\n        return 31\n    def method_32(self):\n        return 32\n    def method_33(self):\n        return 33\n    def method_34(self):\n        return 34\n    def method_35(self):\n        return 35\n    def method_36(self):\n        return 36\n    def method_37(self):\n        return 37\n    def method_38(self):\n        return 38\n    def method_39(self):\n        return 39\n    def method_40(self):\n        return 40\n    def method_41(self):\n        return 41\n    def method_42(self):\n        return 42\n    def method_43(self):\n        return 43\n    def method_44(self):\n        return 44\n    def method_45(self):\n        return 45\n    def method_46(self):\n        return 46\n    def method_47(self):\n        return 47\n    def method_48(self):\n        return 48\n    def method_49(self):\n        return 49\n    def method_50(self):\n        return 50\n",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "present": [
+        {
+          "code": "QG008",
+          "severity": "critical",
+          "evidence": {
+            "methods": 51
+          }
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg002-class-lines-9",
+      "source": "class Tiny:\n    def thing0(self): return 0\n    def thing1(self): return 1\n    def thing2(self): return 2\n    def thing3(self): return 3\n    def thing4(self): return 4\n    def thing5(self): return 5\n    def thing6(self): return 6\n    def thing7(self): return 7\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG002",
+          "severity": "info"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg002-class-lines-10",
+      "source": "class Tiny:\n    def thing0(self): return 0\n    def thing1(self): return 1\n    def thing2(self): return 2\n    def thing3(self): return 3\n    def thing4(self): return 4\n    def thing5(self): return 5\n    def thing6(self): return 6\n    def thing7(self): return 7\n    def thing8(self): return 8\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG002"
+        }
+      ]
+    },
+    {
+      "case_id": "ast-protocol-stdlib_ast_tagged_union_is_not_qg060",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "source": "import ast\ndef decode(stmt: ast.stmt):\n    if isinstance(stmt, (ast.Assign, ast.AnnAssign)):\n        return stmt.value\n    return None\n",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG060"
+        }
+      ]
+    },
+    {
+      "case_id": "ast-protocol-stdlib_ast_alias_is_not_qg060",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "source": "import ast as syntax\ndef decode(stmt: syntax.stmt):\n    return isinstance(stmt, syntax.Assign)\n",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG060"
+        }
+      ]
+    },
+    {
+      "case_id": "ast-protocol-internal_object_discriminator_still_qg060",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "source": "class Contract: pass\nclass Alternative: pass\ndef consume(value: Contract):\n    return isinstance(value, Alternative)\n",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG060"
+        }
+      ]
+    },
+    {
+      "case_id": "ast-protocol-shadowed_ast_is_not_trusted",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "source": "import ast\nclass Fake:\n    AST = object\n    Assign = str\nast = Fake()\ndef consume(value: ast.AST):\n    return isinstance(value, ast.Assign)\n",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG060"
+        }
+      ]
+    },
+    {
+      "case_id": "ast-protocol-declared_frozen_postinit_field_is_not_qg183",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "source": "from dataclasses import dataclass, field\n@dataclass(frozen=True, slots=True)\nclass Snapshot:\n    source: int\n    derived: int = field(init=False)\n    def __post_init__(self):\n        object.__setattr__(self, 'derived', self.source + 1)\n",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG183"
+        }
+      ]
+    },
+    {
+      "case_id": "ast-protocol-undeclared_frozen_postinit_attribute_is_qg183",
+      "file": "sample.py",
+      "config": "unrestricted",
+      "source": "from dataclasses import dataclass\n@dataclass(frozen=True, slots=True)\nclass Snapshot:\n    source: int\n    def __post_init__(self):\n        object.__setattr__(self, 'invented', self.source + 1)\n",
+      "present": [
+        {
+          "code": "QG183"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-unlogged-default",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        return 0\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-unlogged-pass",
+      "source": "def sample():\n    try:\n        work()\n    except Exception:\n        pass\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "error"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-bare-except-pass",
+      "source": "def sample():\n    try:\n        work()\n    except:\n        pass\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "error"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-typed-pass",
+      "source": "def sample():\n    try:\n        work()\n    except ValueError:\n        pass\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-other-print",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print(\"done\")\n        return 0\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-conditional-print",
+      "source": "def sample(quiet):\n    try:\n        work()\n    except Exception as caught:\n        if not quiet:\n            print(caught)\n        return 0\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-zero-exit",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        exit(0)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-zero-exit-after-print",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print(caught)\n        exit(0)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-return-error-container",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        return False, str(caught)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-generic-exception-rethrow",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        raise Exception(str(caught))\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-typed-raise",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        raise ValueError(\"broken\") from caught\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-bare-reraise",
+      "source": "def sample():\n    try:\n        work()\n    except Exception:\n        raise\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-caught-reraise",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        raise caught\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-explicit-print",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print(caught)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-explicit-print-class",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print(\"Unexpected:\", type(caught).__name__)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-nonzero-exit",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        exit(1)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-sys-nonzero-exit",
+      "source": "import sys\ndef sample():\n    try:\n        work()\n    except Exception as caught:\n        sys.exit(2)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-system-exit-failure",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        raise SystemExit(1)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-conditional-both-branches",
+      "source": "def sample(flag):\n    try:\n        work()\n    except Exception as caught:\n        if flag:\n            print(caught)\n        else:\n            raise RuntimeError(\"failed\") from caught\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-typed-raise-conditional",
+      "source": "def sample(flag):\n    try:\n        work()\n    except Exception as caught:\n        if flag:\n            raise RuntimeError(\"bad\") from caught\n        return 0\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-specific-handler-return",
+      "source": "def sample():\n    try:\n        work()\n    except KeyError:\n        return 0\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-specific-handler-raise",
+      "source": "def sample():\n    try:\n        work()\n    except ValueError as caught:\n        raise RuntimeError(\"invalid\") from caught\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-explicit-logging-exception",
+      "source": "import logging\ndef sample():\n    try:\n        work()\n    except Exception:\n        logging.exception(\"Failed\")\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-explicit-logging-error",
+      "source": "import logging\ndef sample():\n    try:\n        work()\n    except Exception as caught:\n        logging.error(\"failed: %s\", caught)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-unknown-logging-receiver",
+      "source": "def sample(logger):\n    try:\n        work()\n    except Exception as caught:\n        logger.error(\"failed %s\", caught)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-unimported-logging",
+      "source": "def sample(logging):\n    try:\n        work()\n    except Exception as caught:\n        logging.exception(\"failed\")\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-print-then-default",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print(caught)\n        return 0\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [],
+      "absent": [
+        {
+          "code": "QG007"
+        }
+      ]
+    },
+    {
+      "case_id": "functional-qg007-handler-shadowed-print",
+      "source": "def sample(print):\n    try:\n        work()\n    except Exception as caught:\n        print(caught)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-shadowed-exit",
+      "source": "def sample(exit):\n    try:\n        work()\n    except Exception:\n        exit(1)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-shadowed-sys",
+      "source": "def sample(sys):\n    try:\n        work()\n    except Exception:\n        sys.exit(1)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-shadowed-logging",
+      "source": "import logging\ndef sample(logging):\n    try:\n        work()\n    except Exception:\n        logging.exception(\"problem\")\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-lazy-printed-lambda",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print(lambda: caught)\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    },
+    {
+      "case_id": "functional-qg007-handler-empty-printed-comprehension",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        print([caught for _ in ()])\n",
+      "file": "sample.py",
+      "config": "default",
+      "present": [
+        {
+          "code": "QG007",
+          "severity": "warning"
+        }
+      ],
+      "absent": []
+    }
+  ]
+}

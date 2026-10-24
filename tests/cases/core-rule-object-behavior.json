@@ -1,0 +1,131 @@
+{
+  "schema": "rqg.core-rule-object-behavior.v1",
+  "cases": [
+    {
+      "case_id": "qg062-unprotected-zip",
+      "rule": "QG062",
+      "kind": "TP",
+      "source": "def combine(left, right):\n    return list(zip(left, right))\n",
+      "expected": [
+        [
+          "QG062",
+          "info",
+          2,
+          "combine"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg062-strict",
+      "rule": "QG062",
+      "kind": "TN",
+      "source": "def combine(left, right):\n    return list(zip(left, right, strict=True))\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg063-silent-length-repair",
+      "rule": "QG063",
+      "kind": "TP",
+      "source": "def combine(left, right):\n    return left[:min(len(left), len(right))]\n",
+      "expected": [
+        [
+          "QG063",
+          "warning",
+          2,
+          "combine"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg063-no-repair",
+      "rule": "QG063",
+      "kind": "TN",
+      "source": "def combine(left):\n    return left[:]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg069-assert-parameter",
+      "rule": "QG069",
+      "kind": "TP",
+      "source": "def submit(value):\n    assert value is not None\n    return value\n",
+      "expected": [
+        [
+          "QG069",
+          "warning",
+          2,
+          "submit"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg069-explicit-check",
+      "rule": "QG069",
+      "kind": "TN",
+      "source": "def submit(value):\n    if value is None:\n        raise ValueError('missing')\n    return value\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg070-unused-result",
+      "rule": "QG070",
+      "kind": "TP",
+      "source": "def process():\n    'value'.strip()\n",
+      "expected": [
+        [
+          "QG070",
+          "warning",
+          2,
+          "process"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg070-return-result",
+      "rule": "QG070",
+      "kind": "TN",
+      "source": "def process():\n    return 'value'.strip()\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg064-field-alias-fallback",
+      "rule": "QG064",
+      "kind": "TP",
+      "source": "def resolve(data: dict):\n    return data.get('new') or data.get('old')\n",
+      "expected": [
+        [
+          "QG064",
+          "warning",
+          2,
+          "resolve"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg064-single-field",
+      "rule": "QG064",
+      "kind": "TN",
+      "source": "def resolve(data: dict):\n    return data.get('new')\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg065-dict-and-attribute",
+      "rule": "QG065",
+      "kind": "TP",
+      "source": "def resolve(data: dict):\n    first = data['key']\n    second = data.value\n    return first, second\n",
+      "expected": [
+        [
+          "QG065",
+          "warning",
+          1,
+          "resolve"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg065-single-protocol",
+      "rule": "QG065",
+      "kind": "TN",
+      "source": "def resolve(data: dict):\n    return data['key']\n",
+      "expected": []
+    }
+  ]
+}

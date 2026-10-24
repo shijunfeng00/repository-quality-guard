@@ -1,0 +1,14 @@
+{
+  "cases": [
+    {
+      "case_id": "typescript-alias-reexport-method-identity",
+      "expected": {
+        "alias_reexport": true,
+        "first_receiver": true,
+        "second_receiver": true,
+        "shadow_unbound": true,
+        "no_false_static_direct": true
+      }
+    }
+  ]
+}

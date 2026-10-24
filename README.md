@@ -339,6 +339,12 @@ For example:
     },
     "disable": [
       "QG187"
+    ],
+    "scoped_disable": [
+      {"code": "QG060", "path": "src/processor.py"},
+      {"code": "QG060", "path": "src/models.py", "symbol": "Parser"},
+      {"code": "QG060", "path": "src/models.py", "symbol": "Parser.parse"},
+      {"code": "QG003", "path": "src/storage.py", "symbol": "Store.load"}
     ]
   },
   "nonblocking_paths": [
@@ -358,6 +364,7 @@ This configuration says:
 - `name`: the name of this project's rule set;
 - `rules.levels`: change the severity of selected QG rules for this repository, for example making a rule blocking or routing it to semantic review;
 - `rules.disable`: explicitly disable a rule that truly does not apply to this project;
+- `rules.scoped_disable`: match any configurable Core or custom QG by its own code, then disable that one rule for an exact repository-relative file, or add `symbol` to target a Python class, function, or method (e.g. `Parser.parse`) using its AST span; no glob, parent-path escape, or QG98x/QG99x integrity exceptions;
 - `nonblocking_paths`: these paths are still checked, but findings there do not directly block normal delivery;
 - `commit_policy`: optional QG984 commit-message policy for this repository. Without it, Core only requires a non-placeholder executable `git commit -m` command; the Profile may define its own subject regex, example, and body requirements.
 

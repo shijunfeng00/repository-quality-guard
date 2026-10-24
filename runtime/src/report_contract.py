@@ -825,7 +825,7 @@ def _semantic_heuristic_question_findings(
     fact: str,
     report: ScanReport,
 ) -> list[Finding]:
-    """验证 Agent 文本启发式只依赖静态豁免或 Git 基线授权账本。"""
+    """验证 QG178 候选仅依赖 Profile 精确指纹豁免。"""
     required_markers = ("候选=", "语义任务=", "规则机制=", "授权证据=")
     findings: list[Finding] = []
     if any(marker not in fact for marker in required_markers):
@@ -860,15 +860,10 @@ def _semantic_heuristic_question_findings(
             _report_finding(
                 "QG982",
                 "Q10 不得由模型自行声明确定性协议豁免、用户原文或授权文件；"
-                "静态例外只能来自 profile 精确指纹，授权只能来自 Git 基线中预先存在的授权账本。",
+                "静态例外只能由 Profile 精确指纹授权，不能由报告文本自行宣称。",
             )
         )
 
-    unauthorized = [
-        item
-        for item in candidates
-        if not bool(item.evidence.get("authorized_by_baseline", False))
-    ]
     if all((candidates, status == "NOT_APPLICABLE")):
         findings.append(
             _report_finding("QG982", "存在 QG178 候选时，Q10 不得标记 NOT_APPLICABLE。")
@@ -880,27 +875,12 @@ def _semantic_heuristic_question_findings(
                 "当前仍存在 QG178 候选时，Q10 不得标记 FIXED；必须删除对应代码后重新扫描。",
             )
         )
-    if all((unauthorized, status != "BLOCKING")):
-        locations = ", ".join(f"{item.path}:{item.line}" for item in unauthorized)
+    if candidates and status != "BLOCKING":
+        locations = ", ".join(f"{item.path}:{item.line}" for item in candidates)
         findings.append(
             _report_finding(
                 "QG982",
-                "以下 QG178 候选未获 Git 基线授权，只能 BLOCKING：" + locations,
-            )
-        )
-    if all(
-        (
-            candidates,
-            not unauthorized,
-            status == "JUSTIFIED",
-            "授权证据=BASELINE_LEDGER" not in fact,
-        )
-    ):
-        findings.append(
-            _report_finding(
-                "QG982",
-                "全部候选虽已由 Git 基线账本授权，但 Q10 标记 JUSTIFIED 时必须填写 "
-                "`授权证据=BASELINE_LEDGER`。",
+                "以下 QG178 候选未命中 Profile 精确豁免，只能 BLOCKING：" + locations,
             )
         )
     if all(

@@ -1,0 +1,78 @@
+{
+  "cases": [
+    {
+      "case_id": "reexport-alias-resolved",
+      "scenario": "alias",
+      "symbol": "pkg.Tiny",
+      "imports": {
+        "pkg": {
+          "Tiny": "pkg.api.Tiny"
+        },
+        "pkg.api": {
+          "Tiny": "pkg.impl.Tiny"
+        }
+      },
+      "known": [
+        "pkg.impl.Tiny"
+      ],
+      "expected": "pkg.impl.Tiny"
+    },
+    {
+      "case_id": "reexport-unbound-alias",
+      "scenario": "alias",
+      "symbol": "other.Tiny",
+      "imports": {
+        "pkg": {
+          "Tiny": "pkg.api.Tiny"
+        },
+        "pkg.api": {
+          "Tiny": "pkg.impl.Tiny"
+        }
+      },
+      "known": [
+        "pkg.impl.Tiny"
+      ],
+      "expected": null
+    },
+    {
+      "case_id": "reexport-cycle-open-world",
+      "scenario": "alias",
+      "symbol": "a.Thing",
+      "imports": {
+        "a": {
+          "Thing": "b.Thing"
+        },
+        "b": {
+          "Thing": "a.Thing"
+        }
+      },
+      "known": [],
+      "expected": null
+    },
+    {
+      "case_id": "reexport-scanner-no-false-owner",
+      "scenario": "scanner",
+      "files": {
+        "pkg/base.py": "class Tiny:\n    value: int = 1\n    label: str = \"tiny\"\n",
+        "pkg/__init__.py": "from .base import Tiny\n",
+        "first.py": "from pkg import Tiny\n\ndef make():\n    return Tiny()\n",
+        "second.py": "from pkg import Tiny\n\ndef make():\n    return Tiny()\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "reexport-direct-calls",
+      "scenario": "graph",
+      "files": {
+        "pkg/base.py": "class Tiny:\n    value: int = 1\n    label: str = \"tiny\"\n",
+        "pkg/__init__.py": "from .base import Tiny\n",
+        "first.py": "from pkg import Tiny\n\ndef make():\n    return Tiny()\n",
+        "second.py": "from pkg import Tiny\n\ndef make():\n    return Tiny()\n"
+      },
+      "expected": [
+        "first.make",
+        "second.make"
+      ]
+    }
+  ]
+}

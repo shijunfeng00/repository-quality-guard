@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "case_id": "b33-normalized-topology-source-bound-evidence",
+      "scenario": "normalized-topology",
+      "sources": {
+        "sample.py": "class Worker:\n    def _helper(self):\n        return 1\n\n    def run(self):\n        return self._helper()\n\ndef callback(value):\n    return value\n\ndef consume(fn):\n    return fn(1)\n\ndef main():\n    return consume(callback)\n"
+      },
+      "expected": {
+        "default_source_bound": true,
+        "no_topology_is_explicit": true,
+        "same_definition_count": true,
+        "same_documentation_count": true
+      }
+    },
+    {
+      "case_id": "b33-production-and-test-finding-equivalence-under-reuse",
+      "scenario": "scope-reuse-report-equivalence",
+      "sources": {
+        "app.py": "def process(operation):\n    try:\n        operation()\n    except Exception:\n        pass\n",
+        "tests/test_app.py": "def test_process(operation):\n    try:\n        operation()\n    except Exception:\n        pass\n"
+      },
+      "expected": [
+        {
+          "report_equal": true,
+          "finding_equal": true,
+          "fingerprint_order_equal": true
+        },
+        {
+          "report_equal": true,
+          "finding_equal": true,
+          "fingerprint_order_equal": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "cases": [
+    {
+      "case_id": "qg100-tp-batch8",
+      "rule": "QG100",
+      "kind": "TP",
+      "source": "import os\nos.getenv('KEY')\n",
+      "expected": [
+        [
+          "QG100",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg100-tn-batch8",
+      "rule": "QG100",
+      "kind": "TN",
+      "source": "import os\nos.getenv('KEY')\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg103-tp-batch8",
+      "rule": "QG103",
+      "kind": "TP",
+      "source": "import os\nos.getenv('DATABASE_HOST', 'localhost')\n",
+      "expected": [
+        [
+          "QG103",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg103-tn-batch8",
+      "rule": "QG103",
+      "kind": "TN",
+      "source": "import os\nos.getenv('DATABASE_HOST')\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg104-tp-batch8",
+      "rule": "QG104",
+      "kind": "TP",
+      "source": "import os\nos.getenv(key)\n",
+      "expected": [
+        [
+          "QG104",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg104-tn-batch8",
+      "rule": "QG104",
+      "kind": "TN",
+      "source": "import os\nos.getenv('KEY')\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg183-tp-batch8",
+      "rule": "QG183",
+      "kind": "TP",
+      "source": "getattr(obj, \"_hidden\")\n",
+      "flag": "private_member",
+      "enabled": true,
+      "expected": [
+        [
+          "QG183",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg183-tn-batch8",
+      "rule": "QG183",
+      "kind": "TN",
+      "source": "getattr(obj, \"_hidden\")\n",
+      "flag": "private_member",
+      "enabled": false,
+      "expected": []
+    },
+    {
+      "case_id": "qg184-tp-batch8",
+      "rule": "QG184",
+      "kind": "TP",
+      "source": "getattr(obj, \"_hidden\")\n",
+      "flag": "statically_typed",
+      "enabled": true,
+      "expected": [
+        [
+          "QG184",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg184-tn-batch8",
+      "rule": "QG184",
+      "kind": "TN",
+      "source": "getattr(obj, \"_hidden\")\n",
+      "flag": "statically_typed",
+      "enabled": false,
+      "expected": []
+    },
+    {
+      "case_id": "qg186-tp-batch8",
+      "rule": "QG186",
+      "kind": "TP",
+      "source": "getattr(obj, \"_hidden\")\n",
+      "flag": "patch_owner",
+      "enabled": true,
+      "expected": [
+        [
+          "QG186",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg186-tn-batch8",
+      "rule": "QG186",
+      "kind": "TN",
+      "source": "getattr(obj, \"_hidden\")\n",
+      "flag": "patch_owner",
+      "enabled": false,
+      "expected": []
+    }
+  ]
+}

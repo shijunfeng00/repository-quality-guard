@@ -1,0 +1,1237 @@
+{
+  "cases": [
+    {
+      "case_id": "r2_field_access-authored_method_reference_is_not_instance_state_field_read-0",
+      "origin": "test_r2_field_access.py::test_authored_method_reference_is_not_instance_state_field_read",
+      "engine": "test_r2_field_access",
+      "source": "class Handler:\n    def action(first):\n        return first.member\n    def member(second):\n        return 1\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r2_field_access-distinct_instance_receivers_and_true_operations-0",
+      "origin": "test_r2_field_access.py::test_distinct_instance_receivers_and_true_operations",
+      "engine": "test_r2_field_access",
+      "source": "class A:\n    def use(one):\n        one.item = 1\n        a = one.item\n        one.item += 2\n        del one.item\nclass B:\n    def use(two):\n        two.item = 9\n        return two.item\n",
+      "expected": {
+        "observed": [
+          [
+            "pkg.example.A",
+            "pkg.example.A.use",
+            "WRITE",
+            3
+          ],
+          [
+            "pkg.example.A",
+            "pkg.example.A.use",
+            "READ",
+            4
+          ],
+          [
+            "pkg.example.A",
+            "pkg.example.A.use",
+            "READ_WRITE",
+            5
+          ],
+          [
+            "pkg.example.A",
+            "pkg.example.A.use",
+            "DELETE",
+            6
+          ],
+          [
+            "pkg.example.B",
+            "pkg.example.B.use",
+            "WRITE",
+            9
+          ],
+          [
+            "pkg.example.B",
+            "pkg.example.B.use",
+            "READ",
+            10
+          ]
+        ],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r2_field_access-lexical_binding_respects_first_parameter_not_name-0",
+      "origin": "test_r2_field_access.py::test_lexical_binding_respects_first_parameter_not_name",
+      "engine": "test_r2_field_access",
+      "source": "class A:\n    def run(other, get):\n        get.member = 1\n        other.member = 2\n",
+      "expected": {
+        "observed": [
+          [
+            "pkg.example.A",
+            "pkg.example.A.run",
+            "WRITE",
+            4
+          ]
+        ],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r2_field_access-rebinding_decorator_and_nested_escape_are_conservative-0",
+      "origin": "test_r2_field_access.py::test_rebinding_decorator_and_nested_escape_are_conservative",
+      "engine": "test_r2_field_access",
+      "source": "class A:\n    def reassigned(receiver):\n        receiver.item = 1\n        receiver = object()\n        receiver.other = 2\n    @classmethod\n    def decorated(receiver):\n        receiver.member = 1\n    def nested(receiver):\n        def closure():\n            receiver.item = 2\n        return closure\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r2_field_access-spelling_changes_only_identity_not_effect_classification-0",
+      "origin": "test_r2_field_access.py::test_spelling_changes_only_identity_not_effect_classification",
+      "engine": "test_r2_field_access",
+      "source": "class A:\n    def use(receiver):\n        return receiver.get_item\n",
+      "expected": {
+        "observed": [
+          [
+            "pkg.example.A",
+            "pkg.example.A.use",
+            "READ",
+            3
+          ]
+        ],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r2_field_access-spelling_changes_only_identity_not_effect_classification-1",
+      "origin": "test_r2_field_access.py::test_spelling_changes_only_identity_not_effect_classification",
+      "engine": "test_r2_field_access",
+      "source": "class A:\n    def use(whatever):\n        return whatever.read_only\n",
+      "expected": {
+        "observed": [
+          [
+            "pkg.example.A",
+            "pkg.example.A.use",
+            "READ",
+            3
+          ]
+        ],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-ambiguous_duplicate_schema_field_rejected-0",
+      "origin": "test_r3_schema_provenance.py::test_ambiguous_duplicate_schema_field_rejected",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass Payload(TypedDict):\n    value: int\n    value: str\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-branch_rebinding_import_and_builtin_invalidation-0",
+      "origin": "test_r3_schema_provenance.py::test_branch_rebinding_import_and_builtin_invalidation",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nif condition:\n    TypedDict = external\nclass Result(TypedDict):\n    value: int\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-branch_rebinding_import_and_builtin_invalidation-1",
+      "origin": "test_r3_schema_provenance.py::test_branch_rebinding_import_and_builtin_invalidation",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nif condition:\n    int = external\nclass Result(TypedDict):\n    value: int\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "value",
+              true,
+              "int",
+              "OPEN_REFERENCE"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-branch_rebinding_import_and_builtin_invalidation-2",
+      "origin": "test_r3_schema_provenance.py::test_branch_rebinding_import_and_builtin_invalidation",
+      "engine": "test_r3_schema_provenance",
+      "source": "import typing as t\nimport mystery as t\nclass Result(t.TypedDict):\n    value: str\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-declared_container_method_producer_is_not_a_runtime_proof-0",
+      "origin": "test_r3_schema_provenance.py::test_declared_container_method_producer_is_not_a_runtime_proof",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass Result(TypedDict):\n    value: int\nclass Service:\n    async def load(self) -> list[Result]:\n        return [{'value': 3}]\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "value",
+              true,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": [
+            [
+              "DECLARED_CONTAINER_RETURN",
+              [],
+              "pkg.contracts.Service.load"
+            ]
+          ]
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true,
+          "open_container_capability": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound",
+        "open_container_capability"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-fake_typeddict_and_rebound_import_cannot_certify-0",
+      "origin": "test_r3_schema_provenance.py::test_fake_typeddict_and_rebound_import_cannot_certify",
+      "engine": "test_r3_schema_provenance",
+      "source": "class TypedDict: pass\nclass Contract(TypedDict):\n    key: str\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-fake_typeddict_and_rebound_import_cannot_certify-1",
+      "origin": "test_r3_schema_provenance.py::test_fake_typeddict_and_rebound_import_cannot_certify",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nTypedDict = factory\nclass Contract(TypedDict):\n    key: str\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-fake_typeddict_and_rebound_import_cannot_certify-2",
+      "origin": "test_r3_schema_provenance.py::test_fake_typeddict_and_rebound_import_cannot_certify",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass Contract(TypedDict, External):\n    key: str\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-fake_typeddict_and_rebound_import_cannot_certify-3",
+      "origin": "test_r3_schema_provenance.py::test_fake_typeddict_and_rebound_import_cannot_certify",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass Contract(TypedDict):\n    key: str = 'bad'\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 3,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-module_qualified_typing_extensions_and_required_default-0",
+      "origin": "test_r3_schema_provenance.py::test_module_qualified_typing_extensions_and_required_default",
+      "engine": "test_r3_schema_provenance",
+      "source": "import typing_extensions as lib\nclass Payload(lib.TypedDict):\n    required: str\n    optional: lib.NotRequired[int]\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "required",
+              true,
+              "str",
+              "BUILTIN"
+            ],
+            [
+              "optional",
+              false,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-open_annotation_preserves_source_but_never_claims_type_binding-0",
+      "origin": "test_r3_schema_provenance.py::test_open_annotation_preserves_source_but_never_claims_type_binding",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass Custom: pass\nclass X(TypedDict):\n    value: Custom\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "value",
+              true,
+              "Custom",
+              "OPEN_REFERENCE"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-rebound_optional_wrapper_is_not_silently_trusted-0",
+      "origin": "test_r3_schema_provenance.py::test_rebound_optional_wrapper_is_not_silently_trusted",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict, NotRequired\nNotRequired = external\nclass Payload(TypedDict):\n    optional: NotRequired[str]\n",
+      "expected": {
+        "observed": {
+          "schema": [],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-schema_member_spelling_does_not_change_contract_semantics-0",
+      "origin": "test_r3_schema_provenance.py::test_schema_member_spelling_does_not_change_contract_semantics",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass X(TypedDict):\n    get_item: int\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "get_item",
+              true,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-schema_member_spelling_does_not_change_contract_semantics-1",
+      "origin": "test_r3_schema_provenance.py::test_schema_member_spelling_does_not_change_contract_semantics",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass X(TypedDict):\n    mutable: int\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "mutable",
+              true,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-schema_member_spelling_does_not_change_contract_semantics-2",
+      "origin": "test_r3_schema_provenance.py::test_schema_member_spelling_does_not_change_contract_semantics",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass X(TypedDict):\n    set_value: int\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "set_value",
+              true,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-schema_member_spelling_does_not_change_contract_semantics-3",
+      "origin": "test_r3_schema_provenance.py::test_schema_member_spelling_does_not_change_contract_semantics",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass X(TypedDict):\n    queue: int\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "queue",
+              true,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 3,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-schema_member_spelling_does_not_change_contract_semantics-4",
+      "origin": "test_r3_schema_provenance.py::test_schema_member_spelling_does_not_change_contract_semantics",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict\nclass X(TypedDict):\n    safe_read: int\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "safe_read",
+              true,
+              "int",
+              "BUILTIN"
+            ]
+          ],
+          "producers": []
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 4,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-deferred_generator_module_rebinding_and_import_shadow_not_certified-0",
+      "origin": "test_r3_parameter_forwarding.py::test_deferred_generator_module_rebinding_and_import_shadow_not_certified",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "pkg/something.py": "def receive(value):\n    return value\ndef send(token):\n    return (receive(token) for _ in range(1))\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-deferred_generator_module_rebinding_and_import_shadow_not_certified-1",
+      "origin": "test_r3_parameter_forwarding.py::test_deferred_generator_module_rebinding_and_import_shadow_not_certified",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "pkg/something.py": "def receive(value):\n    return value\nfrom other import receive\ndef send(token):\n    return receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-deferred_generator_module_rebinding_and_import_shadow_not_certified-2",
+      "origin": "test_r3_parameter_forwarding.py::test_deferred_generator_module_rebinding_and_import_shadow_not_certified",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "pkg/callee.py": "def receive(value):\n    return value\n",
+        "pkg/caller.py": "import pkg.callee as helper\nhelper.receive = other\ndef send(token):\n    return helper.receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-exact_cross_module_import_identity_without_module_name_heuristics-0",
+      "origin": "test_r3_parameter_forwarding.py::test_exact_cross_module_import_identity_without_module_name_heuristics",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "pkg/producer.py": "def receive(value):\n    return value\n",
+        "pkg/consumer.py": "from pkg.producer import receive as transfer\ndef send(payload):\n    return transfer(payload)\n"
+      },
+      "expected": {
+        "observed": [
+          [
+            "pkg.consumer.send",
+            "pkg.producer.receive",
+            0,
+            0
+          ]
+        ],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true,
+          "cross_source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime",
+        "cross_source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-two_calls_same_line_cannot_inherit_one_ambiguous_legacy_edge-0",
+      "origin": "test_r3_parameter_forwarding.py::test_two_calls_same_line_cannot_inherit_one_ambiguous_legacy_edge",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "ambiguous.py": "def receive(value):\n    return value\ndef send(token):\n    return receive(token) if token else receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof-0",
+      "origin": "test_r3_parameter_forwarding.py::test_unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "module.py": "def receive(value):\n    return value\ndef send(token):\n    token = object()\n    return receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof-1",
+      "origin": "test_r3_parameter_forwarding.py::test_unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "module.py": "def receive(value):\n    return value\ndef send(token):\n    mutate(token)\n    return receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof-2",
+      "origin": "test_r3_parameter_forwarding.py::test_unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "module.py": "def receive(value):\n    return value\ndef send(receive, token):\n    return receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof-3",
+      "origin": "test_r3_parameter_forwarding.py::test_unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "module.py": "def receive(value):\n    return value\ndef send(token):\n    return receive(*token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 3,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof-4",
+      "origin": "test_r3_parameter_forwarding.py::test_unknown_calls_rebinding_shadowed_param_and_dynamic_splats_are_not_proof",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "module.py": "def receive(value):\n    return value\nreceive=object()\ndef send(token):\n    return receive(token)\n"
+      },
+      "expected": {
+        "observed": [],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 4,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r2_field_access-merged_topology_deduplicates_source_bound_fields-0",
+      "origin": "test_r2_field_access.py::test_merged_topology_deduplicates_source_bound_fields",
+      "engine": "test_r2_field_access",
+      "source": "class C:\n    def m(self):\n        self.field = 1\n",
+      "expected": {
+        "observed": [
+          [
+            "pkg.example.C",
+            "pkg.example.C.m",
+            "WRITE",
+            3
+          ]
+        ],
+        "checks": {
+          "source_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "source_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_schema_provenance-schema_total_required_notrequired_alias_and_builtins-0",
+      "origin": "test_r3_schema_provenance.py::test_schema_total_required_notrequired_alias_and_builtins",
+      "engine": "test_r3_schema_provenance",
+      "source": "from typing import TypedDict as S, Required as R, NotRequired as N\nclass Item(S, total=False):\n    x: R[int]\n    y: N[str]\n    z: float\n\ndef create() -> Item:\n    return {'x': 1}\nrecord: Item = {'x': 1}\n",
+      "expected": {
+        "observed": {
+          "schema": [
+            [
+              "x",
+              true,
+              "int",
+              "BUILTIN"
+            ],
+            [
+              "y",
+              false,
+              "str",
+              "BUILTIN"
+            ],
+            [
+              "z",
+              false,
+              "float",
+              "BUILTIN"
+            ]
+          ],
+          "producers": [
+            [
+              "DECLARED_RETURN",
+              [],
+              "pkg.contracts.create"
+            ],
+            [
+              "OBSERVED_RETURN_LITERAL",
+              [
+                "x"
+              ],
+              "pkg.contracts.create"
+            ],
+            [
+              "ANNOTATED_ASSIGNMENT",
+              [
+                "x"
+              ],
+              "pkg/contracts.py:9:record"
+            ]
+          ]
+        },
+        "checks": {
+          "schema_source_bound": true,
+          "producer_schema_bound": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "schema_source_bound",
+        "producer_schema_bound"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-34_hop_transitive_flow_and_runtime_oracle-0",
+      "origin": "test_r3_parameter_forwarding.py::test_34_hop_transitive_flow_and_runtime_oracle",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "chain.py": "def route_0(token):\n    return route_1(token)\n\ndef route_1(token):\n    return route_2(token)\n\ndef route_2(token):\n    return route_3(token)\n\ndef route_3(token):\n    return route_4(token)\n\ndef route_4(token):\n    return route_5(token)\n\ndef route_5(token):\n    return route_6(token)\n\ndef route_6(token):\n    return route_7(token)\n\ndef route_7(token):\n    return route_8(token)\n\ndef route_8(token):\n    return route_9(token)\n\ndef route_9(token):\n    return route_10(token)\n\ndef route_10(token):\n    return route_11(token)\n\ndef route_11(token):\n    return route_12(token)\n\ndef route_12(token):\n    return route_13(token)\n\ndef route_13(token):\n    return route_14(token)\n\ndef route_14(token):\n    return route_15(token)\n\ndef route_15(token):\n    return route_16(token)\n\ndef route_16(token):\n    return route_17(token)\n\ndef route_17(token):\n    return route_18(token)\n\ndef route_18(token):\n    return route_19(token)\n\ndef route_19(token):\n    return route_20(token)\n\ndef route_20(token):\n    return route_21(token)\n\ndef route_21(token):\n    return route_22(token)\n\ndef route_22(token):\n    return route_23(token)\n\ndef route_23(token):\n    return route_24(token)\n\ndef route_24(token):\n    return route_25(token)\n\ndef route_25(token):\n    return route_26(token)\n\ndef route_26(token):\n    return route_27(token)\n\ndef route_27(token):\n    return route_28(token)\n\ndef route_28(token):\n    return route_29(token)\n\ndef route_29(token):\n    return route_30(token)\n\ndef route_30(token):\n    return route_31(token)\n\ndef route_31(token):\n    return route_32(token)\n\ndef route_32(token):\n    return route_33(token)\n\ndef route_33(token):\n    return route_34(token)\n\ndef route_34(token):\n    return token\n"
+      },
+      "expected": {
+        "observed": [
+          [
+            "chain.route_0",
+            "chain.route_1",
+            0,
+            0
+          ],
+          [
+            "chain.route_1",
+            "chain.route_2",
+            0,
+            0
+          ],
+          [
+            "chain.route_2",
+            "chain.route_3",
+            0,
+            0
+          ],
+          [
+            "chain.route_3",
+            "chain.route_4",
+            0,
+            0
+          ],
+          [
+            "chain.route_4",
+            "chain.route_5",
+            0,
+            0
+          ],
+          [
+            "chain.route_5",
+            "chain.route_6",
+            0,
+            0
+          ],
+          [
+            "chain.route_6",
+            "chain.route_7",
+            0,
+            0
+          ],
+          [
+            "chain.route_7",
+            "chain.route_8",
+            0,
+            0
+          ],
+          [
+            "chain.route_8",
+            "chain.route_9",
+            0,
+            0
+          ],
+          [
+            "chain.route_9",
+            "chain.route_10",
+            0,
+            0
+          ],
+          [
+            "chain.route_10",
+            "chain.route_11",
+            0,
+            0
+          ],
+          [
+            "chain.route_11",
+            "chain.route_12",
+            0,
+            0
+          ],
+          [
+            "chain.route_12",
+            "chain.route_13",
+            0,
+            0
+          ],
+          [
+            "chain.route_13",
+            "chain.route_14",
+            0,
+            0
+          ],
+          [
+            "chain.route_14",
+            "chain.route_15",
+            0,
+            0
+          ],
+          [
+            "chain.route_15",
+            "chain.route_16",
+            0,
+            0
+          ],
+          [
+            "chain.route_16",
+            "chain.route_17",
+            0,
+            0
+          ],
+          [
+            "chain.route_17",
+            "chain.route_18",
+            0,
+            0
+          ],
+          [
+            "chain.route_18",
+            "chain.route_19",
+            0,
+            0
+          ],
+          [
+            "chain.route_19",
+            "chain.route_20",
+            0,
+            0
+          ],
+          [
+            "chain.route_20",
+            "chain.route_21",
+            0,
+            0
+          ],
+          [
+            "chain.route_21",
+            "chain.route_22",
+            0,
+            0
+          ],
+          [
+            "chain.route_22",
+            "chain.route_23",
+            0,
+            0
+          ],
+          [
+            "chain.route_23",
+            "chain.route_24",
+            0,
+            0
+          ],
+          [
+            "chain.route_24",
+            "chain.route_25",
+            0,
+            0
+          ],
+          [
+            "chain.route_25",
+            "chain.route_26",
+            0,
+            0
+          ],
+          [
+            "chain.route_26",
+            "chain.route_27",
+            0,
+            0
+          ],
+          [
+            "chain.route_27",
+            "chain.route_28",
+            0,
+            0
+          ],
+          [
+            "chain.route_28",
+            "chain.route_29",
+            0,
+            0
+          ],
+          [
+            "chain.route_29",
+            "chain.route_30",
+            0,
+            0
+          ],
+          [
+            "chain.route_30",
+            "chain.route_31",
+            0,
+            0
+          ],
+          [
+            "chain.route_31",
+            "chain.route_32",
+            0,
+            0
+          ],
+          [
+            "chain.route_32",
+            "chain.route_33",
+            0,
+            0
+          ],
+          [
+            "chain.route_33",
+            "chain.route_34",
+            0,
+            0
+          ]
+        ],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-alias_and_renaming_do_not_change_forwarding_semantics-0",
+      "origin": "test_r3_parameter_forwarding.py::test_alias_and_renaming_do_not_change_forwarding_semantics",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "pkg/entry.py": "def move(value):\n    return value\ndef send(token):\n    alias = token\n    return move(alias)\n"
+      },
+      "expected": {
+        "observed": [
+          [
+            "pkg.entry.send",
+            "pkg.entry.move",
+            0,
+            0
+          ]
+        ],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-alias_and_renaming_do_not_change_forwarding_semantics-1",
+      "origin": "test_r3_parameter_forwarding.py::test_alias_and_renaming_do_not_change_forwarding_semantics",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "pkg/entry.py": "def route(value):\n    return value\ndef send(random_field):\n    another_name = random_field\n    return route(another_name)\n"
+      },
+      "expected": {
+        "observed": [
+          [
+            "pkg.entry.send",
+            "pkg.entry.route",
+            0,
+            0
+          ]
+        ],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    },
+    {
+      "case_id": "r3_parameter_forwarding-cyclic_static_references_terminate_without_execution-0",
+      "origin": "test_r3_parameter_forwarding.py::test_cyclic_static_references_terminate_without_execution",
+      "engine": "test_r3_parameter_forwarding",
+      "source": {
+        "cycle.py": "def first(token):\n    return second(token)\ndef second(arg):\n    return first(arg)\n"
+      },
+      "expected": {
+        "observed": [
+          [
+            "cycle.first",
+            "cycle.second",
+            0,
+            0
+          ],
+          [
+            "cycle.second",
+            "cycle.first",
+            0,
+            0
+          ]
+        ],
+        "checks": {
+          "graph_source_bound": true,
+          "open_runtime": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "graph_source_bound",
+        "open_runtime"
+      ],
+      "category": "Graph/Topology"
+    }
+  ]
+}

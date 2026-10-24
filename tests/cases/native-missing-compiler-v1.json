@@ -1,0 +1,20 @@
+{
+  "cases": [
+    {
+      "case_id": "cpp-native-unavailable-topology-is-empty",
+      "kind": "topology",
+      "source": "static void helper() {}",
+      "expected": [
+        0,
+        0
+      ]
+    },
+    {
+      "case_id": "cpp-semantic-unavailable-no-synthetic-finding",
+      "kind": "semantic",
+      "base_source": "int run(){return 0;}\n",
+      "target_source": "int run(){return 1;}\n",
+      "expected": []
+    }
+  ]
+}

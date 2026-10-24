@@ -1,0 +1,2757 @@
+{
+  "cases": [
+    {
+      "case_id": "b26-wrapper-true-abstract",
+      "sources": {
+        "sample.py": "from abc import ABC, abstractmethod\ndef make_value(): return 1\nclass Base(ABC):\n @abstractmethod\n def get_value(self):\n  return make_value()\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG010",
+      "fields": []
+    },
+    {
+      "case_id": "b26-wrapper-lookalike-abstract",
+      "sources": {
+        "sample.py": "def not_abstractmethod(fn): return fn\ndef make_value(): return 1\nclass Base:\n @not_abstractmethod\n def get_value(self):\n  return make_value()\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG010",
+      "fields": [],
+      "oracle_revision": "RQG-HF-QG010-GRAPH-20261019: only source-level wrapper; no graph-certified internal replacement; no finding"
+    },
+    {
+      "case_id": "b26-wrapper-overridden-real-slot",
+      "sources": {
+        "sample.py": "def make_value(): return 1\nclass Base:\n def get_value(self):\n  return make_value()\nclass Child(Base):\n def get_value(self):\n  return self.value + 1\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG010",
+      "fields": []
+    },
+    {
+      "case_id": "b26-wrapper-overridden-wrapper",
+      "sources": {
+        "sample.py": "def make_value(): return 1\nclass Base:\n def get_value(self):\n  return make_value()\nclass Child(Base):\n def get_value(self):\n  return make_value()\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG010",
+      "fields": [],
+      "oracle_revision": "RQG-HF-QG010-GRAPH-20261019: only source-level wrapper; no graph-certified internal replacement; no finding"
+    },
+    {
+      "case_id": "b26-wrapper-middle-and-leaf",
+      "sources": {
+        "sample.py": "def make_value(): return 1\nclass Base:\n def get_value(self):\n  return make_value()\nclass Mid(Base):\n def get_value(self):\n  return make_value()\nclass Leaf(Mid):\n def get_value(self):\n  return make_value()\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG010",
+      "fields": [],
+      "oracle_revision": "RQG-HF-QG010-GRAPH-20261019: only source-level wrapper; no graph-certified internal replacement; no finding"
+    },
+    {
+      "case_id": "b26-dependency-abstract",
+      "sources": {
+        "sample.py": "from abc import abstractmethod\nclass State:\n value: int\n other: int\nclass Base:\n @abstractmethod\n def read(self, state: State):\n  return state.value\n"
+      },
+      "query": "finding",
+      "expected": [
+        {
+          "symbol": "Base.read",
+          "line": 7,
+          "severity": "info",
+          "evidence": {}
+        }
+      ],
+      "rule": "QG128",
+      "fields": [],
+      "state_types": [
+        "State"
+      ]
+    },
+    {
+      "case_id": "b26-dependency-lookalike",
+      "sources": {
+        "sample.py": "def not_abstractmethod(fn): return fn\nclass State:\n value: int\n other: int\nclass Base:\n @not_abstractmethod\n def read(self, state: State):\n  return state.value\n"
+      },
+      "query": "finding",
+      "expected": [
+        {
+          "symbol": "Base.read",
+          "line": 7,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ],
+      "rule": "QG128",
+      "fields": [],
+      "state_types": [
+        "State"
+      ]
+    },
+    {
+      "case_id": "b26-chain-positive",
+      "sources": {
+        "sample.py": "def public(value):\n    return _first(value)\n\ndef _first(value):\n    return _second(value)\n\ndef _second(value):\n    return _third(value)\n\ndef _third(value):\n    return value + 1\n"
+      },
+      "query": "finding",
+      "expected": [
+        {
+          "symbol": "sample._first",
+          "line": 4,
+          "severity": "critical",
+          "evidence": {
+            "helper_count": 3,
+            "edge_kind": "direct_call",
+            "topology_resolution": "normalized"
+          }
+        }
+      ],
+      "rule": "QG168",
+      "fields": [
+        "helper_count",
+        "edge_kind",
+        "topology_resolution"
+      ]
+    },
+    {
+      "case_id": "b26-chain-callback-reference",
+      "sources": {
+        "sample.py": "def consume(fn): return fn\ndef register(): return consume(_second)\ndef public(value):\n    return _first(value)\n\ndef _first(value):\n    return _second(value)\n\ndef _second(value):\n    return _third(value)\n\ndef _third(value):\n    return value + 1\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG168",
+      "fields": [
+        "helper_count",
+        "edge_kind",
+        "topology_resolution"
+      ]
+    },
+    {
+      "case_id": "b26-chain-shared-callee",
+      "sources": {
+        "sample.py": "def alternate(value): return _second(value)\ndef public(value):\n    return _first(value)\n\ndef _first(value):\n    return _second(value)\n\ndef _second(value):\n    return _third(value)\n\ndef _third(value):\n    return value + 1\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG168",
+      "fields": [
+        "helper_count",
+        "edge_kind",
+        "topology_resolution"
+      ]
+    },
+    {
+      "case_id": "b26-chain-framework-decorator",
+      "sources": {
+        "sample.py": "def callback(fn): return fn\ndef public(value): return _first(value)\ndef _first(value): return _second(value)\n@callback\ndef _second(value): return _third(value)\ndef _third(value): return value + 1\n"
+      },
+      "query": "finding",
+      "expected": [],
+      "rule": "QG168",
+      "fields": [
+        "helper_count",
+        "edge_kind",
+        "topology_resolution"
+      ]
+    },
+    {
+      "case_id": "hf-qg010-tp-internal-redundant-layer",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def target(value):\n    return value + 1\n\ndef _forward(value):\n    return target(value)\n\ndef use():\n    return _forward(10)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample._forward",
+          "line": 4,
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "hf-qg010-tn-owner-bound-scope",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "class View:\n    def __init__(self, manager, name):\n        self.manager = manager\n        self.name = name\n    def update(self, identifier):\n        return self.manager.update(identifier, tool_name=self.name)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg010-tn-expression-transform",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def transform(x):\n    return x + 1\ndef target(x):\n    return x * 2\ndef _forward(x):\n    return target(transform(x))\ndef use():\n    return _forward(7)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg010-tn-public-facade",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "class Owner:\n    def _private(self, x):\n        return x + 1\n    def read(self, x):\n        return self._private(x)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-tp-consumer-unguarded-read",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "hf-qg121-tn-discriminated-consumer",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    if result[\"ok\"]:\n        return result[\"rows\"]\n    return result[\"error_code\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-tn-unconsumed-tool",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-unknown-dynamic-consumer",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(fn, flag):\n    result = fn(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg003-tp-common-discriminator-get",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    if result.get(\"ok\"):\n        return result[\"rows\"]\n    return result[\"error_code\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 10,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "hf-qg003-tn-variant-optional-error-get",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"error_code\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-tn-agent0028-sql-tool-registration",
+      "issue": "RQG-FP-01",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_registration_methods": [
+        "add"
+      ],
+      "tool_base_classes": [
+        "Tools"
+      ],
+      "sources": {
+        "sample.py": "class Tools:\n    def add(self, fn):\n        pass\nclass SQLQuery(Tools):\n    def __init__(self):\n        self.add(self.sql_db_query)\n    def sql_db_query(self, query):\n        if not query:\n            return {\"ok\": False, \"error_code\": \"INVALID_SQL\", \"evidence_eligible\": False, \"query_classification\": \"invalid\"}\n        return {\"ok\": True, \"evidence_eligible\": True, \"query_classification\": \"business_query\", \"columns\": [], \"preview_rows\": []}\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg010-tn-agent0028-scope-wrapper",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "class Manager:\n    def update_title_filtered(self, session_id, title, *, tool_name):\n        return title\nclass View:\n    def __init__(self, manager, agent_name):\n        self._root = manager\n        self.agent_name = agent_name\n    def update_title(self, session_id, title):\n        return self._root.update_title_filtered(session_id, title, tool_name=self.agent_name)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-tn-constant-bound-unreachable-failure",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"BAD\"}\ndef consume():\n    result = query(True)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-tp-early-return-join",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"BAD\"}\ndef consume(flag):\n    result = query(flag)\n    if result[\"ok\"]:\n        return result[\"rows\"]\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "hf-qg121-unknown-nonexhaustive-production-flow",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    if not flag:\n        return {\"ok\": False, \"error_code\": \"BAD\"}\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg121-tp-cross-module-resolved-import",
+      "issue": "RQG-HF-QG121-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "tool_pkg.py": "def tool(fn):\n return fn\n@tool\ndef query(flag):\n if flag:\n  return {\"ok\":True,\"rows\":[]}\n return {\"ok\":False,\"error_code\":\"BAD\"}\n",
+        "client.py": "from tool_pkg import query\ndef consumer(flag):\n result=query(flag)\n return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "client.consumer",
+          "line": 2,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "hf-qg185-tp-pure-public-private-nesting",
+      "issue": "RQG-20261019-HY-RECURSION-FACADE-BOUNDARY",
+      "polarity": "TP",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "HY_Algorithm.git.zip HEAD 21f4d430 algorithm/src/backend/alerts/alert_person_gathering.cpp:28-179; algorithm/modules/backend/alerts/alert_person_gathering.hpp:48-61",
+      "sources": {
+        "sample.py": "class Owner:\n    def _private(self, x):\n        return x + 1\n    def read(self, x):\n        return self._private(x)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.Owner.read",
+          "line": 4,
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "hf-qg185-tn-hidden-recursion-state",
+      "issue": "RQG-20261019-HY-RECURSION-FACADE-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "HY_Algorithm.git.zip HEAD 21f4d430 algorithm/src/backend/alerts/alert_person_gathering.cpp:28-179; algorithm/modules/backend/alerts/alert_person_gathering.hpp:48-61",
+      "sources": {
+        "sample.py": "class Gather:\n    def search(self, boxes):\n        return self._search(boxes, set(), [])\n    def _search(self, boxes, visit, gathering):\n        if len(gathering) == len(boxes):\n            return gathering\n        index = len(gathering)\n        if index not in visit:\n            visit.add(index)\n            gathering.append(boxes[index])\n            return self._search(boxes, visit, gathering)\n        return gathering\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg010-tn-hidden-recursion-state",
+      "issue": "RQG-20261019-HY-RECURSION-FACADE-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "source_provenance": "HY_Algorithm.git.zip HEAD 21f4d430 algorithm/src/backend/alerts/alert_person_gathering.cpp:28-179; algorithm/modules/backend/alerts/alert_person_gathering.hpp:48-61",
+      "sources": {
+        "sample.py": "class Gather:\n    def search(self, boxes):\n        return self._search(boxes, set(), [])\n    def _search(self, boxes, visit, gathering):\n        if len(gathering) == len(boxes):\n            return gathering\n        index = len(gathering)\n        if index not in visit:\n            visit.add(index)\n            gathering.append(boxes[index])\n            return self._search(boxes, visit, gathering)\n        return gathering\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg185-tn-readonly-private-field-property",
+      "issue": "RQG-20261019-HY-RECURSION-FACADE-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "HY_Algorithm.git.zip HEAD 21f4d430 algorithm/src/backend/alerts/alert_person_gathering.cpp:28-179; algorithm/modules/backend/alerts/alert_person_gathering.hpp:48-61",
+      "sources": {
+        "sample.py": "class Owner:\n    def __init__(self):\n        self._value = 233\n    @property\n    def value(self):\n        return self._value\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "hf-qg185-tp-recursion-without-entrance-contract",
+      "issue": "RQG-20261019-HY-RECURSION-FACADE-BOUNDARY",
+      "polarity": "TP",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "HY_Algorithm.git.zip HEAD 21f4d430 algorithm/src/backend/alerts/alert_person_gathering.cpp:28-179; algorithm/modules/backend/alerts/alert_person_gathering.hpp:48-61",
+      "sources": {
+        "sample.py": "class Gather:\n    def search(self, x):\n        return self._search(x)\n    def _search(self, x):\n        if x <= 0:\n            return 0\n        return 1 + self._search(x - 1)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.Gather.search",
+          "line": 2,
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b64-qg010-dfs-hidden-recursion-bookkeeping",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class Partition:\n    def __init__(self, pieces, total):\n        self.pieces = pieces\n        self.total = total\n        self.used = [False] * len(pieces)\n\n    def dfs(self, target):\n        return self._dfs(1, 0, target, 0, self.total // target)\n\n    def _dfs(self, step, total, target, last, need):\n        if need == 0:\n            return total == 0\n        for index in range(last, len(self.pieces)):\n            if self.used[index] or total + self.pieces[index] > target:\n                continue\n            self.used[index] = True\n            next_total = total + self.pieces[index]\n            if next_total == target:\n                found = self._dfs(step + 1, 0, target, 0, need - 1)\n            else:\n                found = self._dfs(step + 1, next_total, target, index + 1, need)\n            self.used[index] = False\n            if found:\n                return True\n        return False\n\ndef consume(partition):\n    return partition.dfs(10)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b64-qg010-fhq-public-operation-private-recursion",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class PersistentFHQ:\n    def __init__(self):\n        self.nodes = {0: (0, 0)}\n\n    def _split(self, root, value):\n        if not root:\n            return (0, 0)\n        left, right = self.nodes[root]\n        if root <= value:\n            first, second = self._split(right, value)\n            return (root, second)\n        first, second = self._split(left, value)\n        return (first, root)\n\n    def _merge(self, left, right):\n        if not left or not right:\n            return left or right\n        return self._merge(left, 0) or right\n\n    def insert(self, root, value):\n        left, right = self._split(root, value)\n        return self._merge(self._merge(left, value), right)\n\n    def erase(self, root, value):\n        before, after = self._split(root, value)\n        left, equal = self._split(before, value - 1)\n        if equal:\n            equal = self._merge(*self.nodes[equal])\n        return self._merge(self._merge(left, equal), after)\n\n    def rank(self, root, value):\n        answer = 1\n        while root:\n            left, right = self.nodes[root]\n            if root < value:\n                answer += 1\n                root = right\n            else:\n                root = left\n        return answer\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b64-qg010-dfs-raw-recursive-hop",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class Recursor:\n    def search(self, item):\n        return self._search(item)\n    def _search(self, item):\n        if item <= 0:\n            return 0\n        return self._search(item - 1) + 1\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b64-qg010-dfs-ephemeral-state-init",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class Search:\n    def search(self, root):\n        return self._search(root, set(), 0)\n    def _search(self, root, visited, depth):\n        if root in visited:\n            return depth\n        visited.add(root)\n        return self._search(root, visited, depth + 1)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b64-qg185-dfs-hidden-recursion-bookkeeping",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class Partition:\n    def __init__(self, pieces, total):\n        self.pieces = pieces\n        self.total = total\n        self.used = [False] * len(pieces)\n\n    def dfs(self, target):\n        return self._dfs(1, 0, target, 0, self.total // target)\n\n    def _dfs(self, step, total, target, last, need):\n        if need == 0:\n            return total == 0\n        for index in range(last, len(self.pieces)):\n            if self.used[index] or total + self.pieces[index] > target:\n                continue\n            self.used[index] = True\n            next_total = total + self.pieces[index]\n            if next_total == target:\n                found = self._dfs(step + 1, 0, target, 0, need - 1)\n            else:\n                found = self._dfs(step + 1, next_total, target, index + 1, need)\n            self.used[index] = False\n            if found:\n                return True\n        return False\n\ndef consume(partition):\n    return partition.dfs(10)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b64-qg185-fhq-public-operation-private-recursion",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class PersistentFHQ:\n    def __init__(self):\n        self.nodes = {0: (0, 0)}\n\n    def _split(self, root, value):\n        if not root:\n            return (0, 0)\n        left, right = self.nodes[root]\n        if root <= value:\n            first, second = self._split(right, value)\n            return (root, second)\n        first, second = self._split(left, value)\n        return (first, root)\n\n    def _merge(self, left, right):\n        if not left or not right:\n            return left or right\n        return self._merge(left, 0) or right\n\n    def insert(self, root, value):\n        left, right = self._split(root, value)\n        return self._merge(self._merge(left, value), right)\n\n    def erase(self, root, value):\n        before, after = self._split(root, value)\n        left, equal = self._split(before, value - 1)\n        if equal:\n            equal = self._merge(*self.nodes[equal])\n        return self._merge(self._merge(left, equal), after)\n\n    def rank(self, root, value):\n        answer = 1\n        while root:\n            left, right = self.nodes[root]\n            if root < value:\n                answer += 1\n                root = right\n            else:\n                root = left\n        return answer\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b64-qg185-dfs-raw-recursive-hop",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TP",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class Recursor:\n    def search(self, item):\n        return self._search(item)\n    def _search(self, item):\n        if item <= 0:\n            return 0\n        return self._search(item - 1) + 1\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.Recursor.search",
+          "line": 2,
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b64-qg185-dfs-ephemeral-state-init",
+      "issue": "RQG-20261019-RECURSION-PARAMETER-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG185",
+      "query": "finding",
+      "source_provenance": "USER-provided 2026-10-19 subset partition DFS and PersistentFHQ C++ examples; Python structural adaptation",
+      "sources": {
+        "sample.py": "class Search:\n    def search(self, root):\n        return self._search(root, set(), 0)\n    def _search(self, root, visited, depth):\n        if root in visited:\n            return depth\n        visited.add(root)\n        return self._search(root, visited, depth + 1)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b87-qg003-unknown-external-mapping",
+      "issue": "CORE-02-UNKNOWN-SCHEMA-PROOF",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "boundary": "The supplied source has no producer, required-key schema, or closed-world binding; external.get remains legitimate optional lookup, not provable missing-key laundering.",
+      "sources": {
+        "sample.py": "def read_external(source):\n    return source.get(\"required\", [])\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b87-qg185-unknown-external-override",
+      "issue": "CORE-02-UNKNOWN-CALLER-CLOSURE",
+      "polarity": "UNKNOWN",
+      "rule": "QG185",
+      "query": "finding",
+      "boundary": "The external BaseHandler contract and actual plugin callers are not available in the source snapshot; no closed-world ownership or redundancy conclusion can be made.",
+      "sources": {
+        "sample.py": "from external_api import BaseHandler\nclass Plugin(BaseHandler):\n    def run(self, value):\n        return super().run(value)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b87-qg121-unknown-indirect-tool-result",
+      "issue": "CORE-02-UNKNOWN-PRODUCER-BINDING",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "boundary": "An actual registered Tool and registry-selected callback share a module, but no source-certified registry binding connects the Tool producer to this consumer.",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef acquire(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consumer(registry, name, flag):\n    selected = registry[name]\n    observed = selected(flag)\n    return observed[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-qg003-tn-rebound-result",
+      "issue": "CORE02-QG003-PRODUCER-CONTRACT",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"BAD\"}\nclass Other:\n    def get(self, key):\n        return key\ndef consume(flag):\n    result = query(flag)\n    result = Other()\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-qg003-tn-mutated-result",
+      "issue": "CORE02-QG003-PRODUCER-CONTRACT",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"BAD\"}\ndef consume(flag):\n    result = query(flag)\n    result[\"ok\"] = False\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-qg003-unknown-branch-write",
+      "issue": "CORE02-QG003-PRODUCER-CONTRACT",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"BAD\"}\ndef consume(flag):\n    result = query(flag)\n    if flag:\n        result[\"ok\"] = False\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-qg003-tp-stable-bound-result",
+      "issue": "CORE02-QG003-PRODUCER-CONTRACT",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"BAD\"}\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 10,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg003-tp-chained-alias",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    first = result\n    second = first\n    return second.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 12,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg121-tp-chained-alias",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    first = result\n    second = first\n    return second[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg121-tn-guarded-alias",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    if alias[\"ok\"]:\n        return result[\"rows\"]\n    return alias[\"error_code\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg003-tp-guarded-variant-key",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    if alias[\"ok\"]:\n        return alias.get(\"rows\")\n    return None\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 12,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg003-tn-sparse-variant-key",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"rows\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg003-unknown-alias-mutation",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    alias[\"ok\"] = False\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg121-unknown-alias-mutation",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    alias[\"rows\"] = []\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg003-unknown-call-escape",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    mutate(alias)\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg121-unknown-call-escape",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    mutate(alias)\n    return alias[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg003-tn-alias-rebind",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\nclass Other:\n    def get(self, key):\n        return key\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    alias = Other()\n    return alias.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg003-tp-original-after-alias-rebind",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    alias = {}\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 12,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg003-tp-surviving-alias-after-origin-rebind",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    result = {}\n    return alias.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 12,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg121-tp-failed-branch-return",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    if not alias[\"ok\"]:\n        return None\n    return alias[\"error_code\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-qg121-unknown-dynamic-local-loop",
+      "issue": "CORE02-BOUND-ALIAS-SHARED-PRODUCER-CONSUMER",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    for item in []:\n        alias[\"rows\"] = []\n    return alias[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg010-private-helper-retains-callback-edge",
+      "issue": "CORE02-SOURCE-BOUND-THIN-WRAPPER-SEMANTIC-BOUNDARY",
+      "polarity": "UNKNOWN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def _inner(value):\n    return value + 1\n\ndef _relay(value):\n    return _inner(value)\n\ndef register(callback):\n    return callback\n\nregistered = register(_relay)\n\ndef invoke():\n    return _relay(3)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg010-explicit-semantic-keyword",
+      "issue": "CORE02-SOURCE-BOUND-THIN-WRAPPER-SEMANTIC-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def _target(value, tool_name):\n    return value + len(tool_name)\n\ndef _relay(value):\n    return _target(value, tool_name=\"fixed\")\n\ndef invoke():\n    return _relay(1)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg010-public-facade-owner-private",
+      "issue": "CORE02-SOURCE-BOUND-THIN-WRAPPER-SEMANTIC-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "class Engine:\n    def _calculate(self, value):\n        return value * 2\n\n    def calculate(self, value):\n        return self._calculate(value)\n\n    def use(self):\n        return self.calculate(2)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg010-property-facade",
+      "issue": "CORE02-SOURCE-BOUND-THIN-WRAPPER-SEMANTIC-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "class Engine:\n    def _calculate(self):\n        return 4\n\n    @property\n    def result(self):\n        return self._calculate()\n\n    def use(self):\n        return self.result\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg010-dynamic-function-parameter",
+      "issue": "CORE02-SOURCE-BOUND-THIN-WRAPPER-SEMANTIC-BOUNDARY",
+      "polarity": "UNKNOWN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def _relay(function, value):\n    return function(value)\n\ndef use(target):\n    return _relay(target, 4)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-qg010-precall-argument-validation",
+      "issue": "CORE02-SOURCE-BOUND-THIN-WRAPPER-SEMANTIC-BOUNDARY",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def _target(value):\n    return value * 2\n\ndef _relay(value):\n    if value < 0:\n        raise ValueError(\"negative\")\n    return _target(value)\n\ndef invoke():\n    return _relay(2)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-deferred-qg121-lambda",
+      "issue": "CORE02-DEFERRED-CALLBACK-NOT-REACHABLE-READ",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return lambda: result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-deferred-qg003-lambda",
+      "issue": "CORE02-DEFERRED-CALLBACK-NOT-REACHABLE-READ",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return lambda: result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-deferred-qg121-generator",
+      "issue": "CORE02-DEFERRED-CALLBACK-NOT-REACHABLE-READ",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return (result[\"rows\"] for _ in ())\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-deferred-qg003-generator",
+      "issue": "CORE02-DEFERRED-CALLBACK-NOT-REACHABLE-READ",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return (result.get(\"ok\") for _ in ())\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b93-cross-module-alias-qg121",
+      "issue": "CORE02-CROSS-FILE-SOURCE-BOUND-ALIAS",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "tools.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\n",
+        "app.py": "from tools import query\n\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    return alias[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "app.consume",
+          "line": 3,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b93-cross-module-alias-qg003",
+      "issue": "CORE02-CROSS-FILE-SOURCE-BOUND-ALIAS",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "tools.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\n",
+        "app.py": "from tools import query\n\ndef consume(flag):\n    result = query(flag)\n    alias = result\n    return alias.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "app.consume",
+          "line": 6,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-nested-function-no-call",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    def deferred():\n        return result[\"rows\"]\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 12,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-nested-async-no-call",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    async def deferred():\n        return result[\"rows\"]\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 12,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-lambda-unknown-call-no-invocation",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: mutate(result)\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-lambda-mutator-no-invocation",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: result.update({\"ok\": False})\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-generator-deferred-call",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    deferred = (mutate(result) for _ in range(2))\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-tuple-deferred-closure",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    deferred = (lambda: mutate(result), 42)\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-direct-invoked-lambda",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return (lambda: result[\"rows\"])()\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-lambda-default-immediate",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda x=result.get(\"ok\"): x\n    return 1\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 10,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-generator-first-iter-call",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    deferred = (x for x in mutate(result))\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b94-eager-comprehension-mutator",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "UNKNOWN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    eager = [mutate(result) for _ in range(1)]\n    return result.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b94-eager-comprehension-pure",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    eager = [result.get(\"ok\") for _ in range(0)]\n    return result.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b94-lambda-def-uninvoked-missing",
+      "issue": "RQG-CORE02-DEFERRED-REACHABILITY-20261020",
+      "polarity": "UNKNOWN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):\n    return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: result[\"rows\"]\n    return None\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-nested-call",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        return result[\"rows\"]\n    return reader()\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 6,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-nested-uncalled",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        return result[\"rows\"]\n    return 10\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-lambda-invoked",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: result[\"rows\"]\n    return reader()\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 6,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-lambda-returned",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: result[\"rows\"]\n    return reader\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-lambda-alias",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: result[\"rows\"]\n    other = reader\n    return other()\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 6,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-lambda-rebound",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    reader = lambda: result[\"rows\"]\n    reader = lambda: 1\n    return reader()\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-crossmodule-arg",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "from helper import helper\ndef tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return helper(result)\n",
+        "helper.py": "def helper(value):\n    return value[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 7,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-crossmodule-value-not-passed",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "from helper import helper\ndef tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return helper(7)\n",
+        "helper.py": "def helper(value):\n    return value[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-module-call-safe",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "from helper import helper\ndef tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return helper(result)\n",
+        "helper.py": "def helper(value):\n    return value.get(\"ok\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-crossmodule-required-get",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "from helper import helper\ndef tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return helper(result)\n",
+        "helper.py": "def helper(value):\n    return value.get(\"ok\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "helper.helper",
+          "line": 2,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-crossmodule-optional-key-get",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "from helper import helper\ndef tool(fn): return fn\n@tool\ndef query(flag):\n    if flag: return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error_code\": \"FAILED\"}\ndef consume(flag):\n    result = query(flag)\n    return helper(result)\n",
+        "helper.py": "def helper(value):\n    return value.get(\"rows\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-unknown-return-shape",
+      "issue": "CODEGRAPH-1.6.2-SOURCE-BOUND-CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn):return fn\n@tool\ndef query(flag):\n    return {\"rows\": []} if flag else unknown_source()\ndef consume(flag):\n    result=query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-named-function-alias",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def tool(fn):return fn\n@tool\ndef query(flag):\n if flag:return {\"ok\":True,\"rows\":[]}\n return {\"ok\":False,\"error\":\"bad\"}\ndef consume(flag):\n result=query(flag)\n def reader():\n  return result[\"rows\"]\n forwarded=reader\n return forwarded()\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 6,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-wrong-arity-not-executed",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "sources": {
+        "helper.py": "def helper(value,required):\n return value[\"rows\"]\n",
+        "sample.py": "from helper import helper\ndef tool(fn):return fn\n@tool\ndef query(flag):\n if flag:return {\"ok\":True,\"rows\":[]}\n return {\"ok\":False,\"error\":\"bad\"}\ndef consume(flag):\n result=query(flag)\n return helper(result)\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-async-created-not-executed",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def tool(fn):return fn\n@tool\ndef query(flag):\n if flag:return {\"ok\":True,\"rows\":[]}\n return {\"ok\":False,\"error\":\"bad\"}\ndef consume(flag):\n result=query(flag)\n async def reader():\n  return result[\"rows\"]\n return reader()\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-async-awaited",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "sources": {
+        "sample.py": "def tool(fn):return fn\n@tool\ndef query(flag):\n if flag:return {\"ok\":True,\"rows\":[]}\n return {\"ok\":False,\"error\":\"bad\"}\nasync def consume(flag):\n result=query(flag)\n async def reader():\n  return result[\"rows\"]\n return await reader()\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 6,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-typed-required-crossmodule-get-default",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TP",
+      "rule": "QG004",
+      "query": "finding",
+      "sources": {
+        "schema.py": "from typing import TypedDict, NotRequired\nclass Payload(TypedDict):\n id:str\n",
+        "consumer.py": "from schema import Payload\ndef consume(data:Payload):\n return data.get(\"id\",None)\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": [
+        {
+          "symbol": "consumer.consume",
+          "line": 3,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-typed-required-crossmodule-get-no-default",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "sources": {
+        "schema.py": "from typing import TypedDict, NotRequired\nclass Payload(TypedDict):\n id:str\n",
+        "consumer.py": "from schema import Payload\ndef consume(data:Payload):\n return data.get(\"id\")\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": [
+        {
+          "symbol": "consumer.consume",
+          "line": 3,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b95-typed-optional-crossmodule-get-default",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TN",
+      "rule": "QG004",
+      "query": "finding",
+      "sources": {
+        "schema.py": "from typing import TypedDict, NotRequired\nclass Payload(TypedDict):\n id:NotRequired[str]\n",
+        "consumer.py": "from schema import Payload\ndef consume(data:Payload):\n return data.get(\"id\",None)\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": []
+    },
+    {
+      "case_id": "core02-b95-typed-unknown-dict-not-a-required-key",
+      "issue": "CODEGRAPH-1.6.2-CROSSMODULE-RESOLUTION",
+      "polarity": "TN",
+      "rule": "QG004",
+      "query": "finding",
+      "sources": {
+        "schema.py": "Payload=dict[str,str]\n",
+        "consumer.py": "from schema import Payload\ndef consume(data:Payload):\n return data.get(\"id\",None)\n"
+      },
+      "tool_decorators": [
+        "tool"
+      ],
+      "expected": []
+    },
+    {
+      "case_id": "core02-b96-assigned-literals-missing-qg121",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        return payload\n    other = {\"ok\": False, \"error_code\": \"FAILED\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 9,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b96-assigned-literals-get-not-required",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        return payload\n    other = {\"ok\": False, \"error_code\": \"FAILED\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"rows\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b96-alias-return-missing",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        alias = payload\n        return alias\n    other = {\"ok\": False, \"error_code\": \"FAILED\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 10,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b96-present-in-all-variants",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        return payload\n    other = {\"ok\": False, \"rows\": []}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b96-required-field-get-proven",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        return payload\n    other = {\"ok\": False, \"rows\": []}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"rows\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b96-mutated-producer-not-guessed",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        payload.pop(\"rows\")\n        return payload\n    other = {\"ok\": False, \"error_code\": \"FAILED\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b96-dynamic-source-not-guessed",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = build_payload()\n        return payload\n    other = {\"ok\": False, \"error_code\": \"FAILED\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b96-present-none-value-not-key-absence",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"license_plate\": None}\n        return payload\n    other = {\"ok\": False, \"license_plate\": \"ABC123\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"license_plate\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b96-rebound-producer-not-guessed",
+      "issue": "SOURCE_BOUND_PRODUCER_ASSIGNMENT",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        payload = {}\n        return payload\n    other = {\"ok\": False, \"error_code\": \"FAILED\"}\n    return other\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-direct-return",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    else:\n        return {\"ok\": False, \"error\": \"bad\"}\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-ifelse-join-return",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 9,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-ifelse-alias-join",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n        alias = payload\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n        alias = payload\n    return alias\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-ifelse-all-present",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"rows\": []}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-value-none-present",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"license_plate\": None}\n    else:\n        payload = {\"ok\": False, \"license_plate\": \"ABC\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"license_plate\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-get-required",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"rows\": []}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"rows\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-ifelse_notrequired_overridden",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "from typing import TypedDict, NotRequired\nclass Payload(TypedDict):\n    rows: NotRequired[list]\ndef tool(fn): return fn\n@tool\ndef query(flag) -> Payload:\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"rows\": []}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"rows\")\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 14,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-ifelse-get-optional",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result.get(\"rows\")\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-dynamic-mutate",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n        payload.pop(\"error\")\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-dynamic-assignment",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = external()\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-partial-assignment",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        other = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-ifelse-extra-reassign",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    payload = external()\n    return payload\ndef consume(flag):\n    result = query(flag)\n    return result[\"rows\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-positional",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload[\"rows\"]\n    return reader(result)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 9,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-lambda-alias-positional",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload[\"rows\"]\n    other = reader\n    return other(result)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 9,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-lambda-capture-positional",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda ignored: result[\"rows\"]\n    return reader(7)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 9,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b97-lambda-shadow-same-name",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda result: result[\"rows\"]\n    return reader(7)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-no-bound-result",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload[\"rows\"]\n    return reader(7)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-not-invoked",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload[\"rows\"]\n    return reader\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-star-arg",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload[\"rows\"]\n    return reader(*[result])\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-keyword-arg",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload[\"rows\"]\n    return reader(payload=result)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-default-argument",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"error\": \"bad\"}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload=result: payload[\"rows\"]\n    return reader()\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b97-lambda-gets-proven",
+      "issue": "SOURCE_BOUND_EXACT_ASSIGNMENT_AND_CALLABLE",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        payload = {\"ok\": True, \"rows\": []}\n    else:\n        payload = {\"ok\": False, \"rows\": []}\n    return payload\ndef consume(flag):\n    result = query(flag)\n    reader = lambda payload: payload.get(\"rows\")\n    return reader(result)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 11,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-def-unconsumed",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    return 4\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-call-unconsumed",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    reader()\n    return 4\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-call-return",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    return reader()\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-next-direct",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    return next(reader())\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-next-bound",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    iterator = reader()\n    return next(iterator)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-next-alias",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    alias = reader\n    return next(alias())\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-next-bound-reassigned",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    iterator = reader()\n    iterator = iter([42])\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-first-yield-safe",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield 1\n        yield result[\"rows\"]\n    return next(reader())\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-exp-not-consumed",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    return iterator\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-exp-next",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    return next(iterator)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-exp-empty",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [])\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-exp-inline-next",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    return next((result[\"rows\"] for _ in [1]))\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-exp-shadow",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for result in [{\"rows\": []}])\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-exp-rebind-object",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    result = {\"rows\": []}\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-exp-dynamic-source",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in dynamic_iterable())\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-get-required-next",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"rows\": []}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result.get(\"rows\") for _ in [1])\n    return next(iterator)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 10,
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-get-required-unused",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG003",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"rows\": []}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result.get(\"rows\") for _ in [1])\n    return iterator\n"
+      },
+      "expected": []
+    },
+    {
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "case_id": "core02-b98-gen-shadow-next-function",
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def next(iterator):\n        return 4\n    iterator = (result[\"rows\"] for _ in [1])\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "case_id": "core02-b98-gen-shadow-next-lambda",
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    next = lambda _: 4\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-for-expression",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    items = (result[\"rows\"] for _ in [1])\n    for field in items:\n        pass\n    return 42\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-for-inline",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    for field in (result[\"rows\"] for _ in [1]):\n        break\n    return 42\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-for-empty",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    items = (result[\"rows\"] for _ in [])\n    for field in items:\n        pass\n    return 42\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-for-function",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    def reader():\n        yield result[\"rows\"]\n    for field in reader():\n        break\n    return 42\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-for-dynamic",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    items = (result[\"rows\"] for _ in dynamically_supplied())\n    for field in items:\n        pass\n    return 42\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-next-param",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag, next):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-next-module",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\nnext = lambda item: None\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-alias-consumed",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    second = iterator\n    return next(second)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-closed-before-next",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    iterator.close()\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-escaped-before-next",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    foreign(iterator)\n    return next(iterator)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-next-twice",
+      "issue": "DEFERRED_GENERATOR_CONSUMPTION",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    first = next(iterator)\n    return next(iterator)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-alias-closed",
+      "issue": "DEFERRED_GENERATOR_ALIAS_IDENTITY",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    second = iterator\n    iterator.close()\n    return next(second)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-alias-escaped",
+      "issue": "DEFERRED_GENERATOR_ALIAS_IDENTITY",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    second = iterator\n    foreign(iterator)\n    return next(second)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "core02-b98-gen-alias-advanced",
+      "issue": "DEFERRED_GENERATOR_ALIAS_IDENTITY",
+      "polarity": "TP",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    second = iterator\n    _ = next(iterator)\n    return next(second)\n"
+      },
+      "expected": [
+        {
+          "symbol": "sample.consume",
+          "line": 8,
+          "severity": "error",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "core02-b98-gen-alias-chain-escaped",
+      "issue": "DEFERRED_GENERATOR_ALIAS_IDENTITY",
+      "polarity": "TN",
+      "rule": "QG121",
+      "query": "finding",
+      "tool_decorators": [
+        "tool"
+      ],
+      "sources": {
+        "sample.py": "def tool(fn): return fn\n@tool\ndef query(flag):\n    if flag:\n        return {\"ok\": True, \"rows\": []}\n    return {\"ok\": False, \"error\": \"bad\"}\n\ndef consume(flag):\n    result = query(flag)\n    iterator = (result[\"rows\"] for _ in [1])\n    second = iterator\n    third = second\n    foreign(second)\n    return next(third)\n"
+      },
+      "expected": []
+    }
+  ]
+}

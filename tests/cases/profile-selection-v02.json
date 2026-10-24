@@ -1,0 +1,123 @@
+{
+  "schema": "profile-selection-v02",
+  "cases": [
+    {
+      "case_id": "profile-portable-explicit",
+      "select": "alpha",
+      "expected": {
+        "name": "alpha",
+        "source": "explicit-cli"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-portable-explicit"
+    },
+    {
+      "case_id": "profile-portable-directory",
+      "repo_name": "alpha",
+      "expected": {
+        "name": "alpha",
+        "source": "auto-directory-name"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-portable-directory"
+    },
+    {
+      "case_id": "profile-never-guess-marker",
+      "repo_name": "ordinary-repo",
+      "marker": true,
+      "expected": {
+        "name": "",
+        "source": "generic"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-never-guess-marker"
+    },
+    {
+      "case_id": "profile-installed-sealed",
+      "installed": true,
+      "load": true,
+      "expected": {
+        "name": "alpha",
+        "source": "sealed-installed",
+        "loaded": [
+          "alpha",
+          "alpha"
+        ]
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-installed-sealed"
+    },
+    {
+      "case_id": "profile-installed-explicit",
+      "installed": true,
+      "select": "alpha",
+      "expected": {
+        "name": "alpha",
+        "source": "sealed-installed-explicit"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-installed-explicit"
+    },
+    {
+      "case_id": "profile-installed-reject-other",
+      "installed": true,
+      "select": "other",
+      "expected": {
+        "error": "ValueError"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-installed-reject-other"
+    },
+    {
+      "case_id": "profile-generic-installed-locked",
+      "installed": true,
+      "installed_name": "",
+      "expected": {
+        "name": "",
+        "source": "sealed-installed-generic"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-generic-installed-locked"
+    },
+    {
+      "case_id": "profile-generic-explicit-not-allowed",
+      "installed": true,
+      "installed_name": "",
+      "select": "alpha",
+      "expected": {
+        "error": "ValueError"
+      },
+      "mode": "resolve",
+      "fixture_id": "profile-generic-explicit-not-allowed"
+    },
+    {
+      "case_id": "profile-sealed-lookup-cannot-escape",
+      "installed": true,
+      "load_unknown": true,
+      "expected": {
+        "error": "ValueError"
+      },
+      "mode": "lookup",
+      "fixture_id": "profile-sealed-lookup-cannot-escape",
+      "lookup": "other"
+    },
+    {
+      "case_id": "profile-sealed-load-by-name",
+      "fixture_id": "profile-installed-sealed",
+      "mode": "lookup",
+      "lookup": "name",
+      "expected": {
+        "name": "alpha"
+      }
+    },
+    {
+      "case_id": "profile-sealed-load-by-path",
+      "fixture_id": "profile-installed-sealed",
+      "mode": "lookup",
+      "lookup": "path",
+      "expected": {
+        "name": "alpha"
+      }
+    }
+  ]
+}

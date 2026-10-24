@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import ast
 
+from dataclasses import dataclass
+
+from .core_rule_contract import CoreQualityRule
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
@@ -12,207 +15,245 @@ from .policy_common import (
 )
 
 
+@dataclass(slots=True, frozen=True)
+class ReturnRuleContext:
+    """Bundle return statements, inferred shapes and annotation evidence for one function.
+
+    Fields:
+        module: Module facts containing the inspected function.
+        function: Original function AST, including optional return annotation.
+        qualname: Qualified identity used for finding attribution.
+        returns: Lexical return statements gathered once by function_returns.
+        shapes: All inferred return shapes, including none/dynamic sentinels.
+        concrete_shapes: Shapes excluding the none/dynamic sentinels.
+        annotation_names_set: Symbol names occurring in the return annotation."""
+
+    module: ModuleFacts
+    function: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    returns: list[ast.Return]
+    shapes: set[str]
+    concrete_shapes: set[str]
+    annotation_names_set: set[str]
+
+
+class IncompatibleReturnTypeRule(CoreQualityRule[ReturnRuleContext]):
+    """QG045: flag incompatible concrete top-level return types in one callable.
+
+    Explicitly flexible annotations such as Any or Union prevent this rule
+    from classifying legitimate multi-shape returns as incompatible."""
+
+    code = "QG045"
+
+    def evaluate(self, context: ReturnRuleContext) -> list[Finding]:
+        """Report QG045 when distinct concrete top-level return types lack a flexible annotation.
+
+        Args:
+            context: Function, its return expressions and resolved annotation names.
+
+        Returns:
+            One error with the conflicting shapes, or [] for compatible or flexible returns."""
+        facts = context.module
+        node = context.function
+        qualname = context.qualname
+        returns = context.returns
+        shapes = context.shapes
+        concrete_shapes = context.concrete_shapes
+        annotation_names_set = context.annotation_names_set
+        top_level_shapes = {top_level_return_shape(shape) for shape in concrete_shapes}
+        flexible_annotation = bool(
+            annotation_names_set & {"Any", "Json", "JSON", "object", "Union"}
+        )
+        if len(top_level_shapes) <= 1 or flexible_annotation:
+            return []
+        return [
+            facts.make_finding(
+                returns[0] if returns else node,
+                "QG045",
+                f"`{qualname}` 存在不兼容返回类型：{sorted(top_level_shapes)}。",
+                symbol=qualname,
+                severity="error",
+                suggestion="同一内部接口固定顶层返回类型；合法多形态返回应使用明确联合类型。",
+                evidence={"shapes": sorted(shapes)},
+            )
+        ]
+
+
+class DictionaryShapeDriftRule(CoreQualityRule[ReturnRuleContext]):
+    """QG144: surface differing dictionary key sets returned by one callable.
+
+    Multiple dictionary shapes produce an informational review, not proof of a
+    bug, because a discriminated union can intentionally vary its fields."""
+
+    code = "QG144"
+
+    def evaluate(self, context: ReturnRuleContext) -> list[Finding]:
+        """Compare dictionary return-shape signatures without altering their fields.
+
+        Args:
+            context: Function source and inferred concrete return-shape set.
+
+        Returns:
+            One QG144 informational review if dictionary key sets differ, else []."""
+        facts = context.module
+        node = context.function
+        qualname = context.qualname
+        returns = context.returns
+        concrete_shapes = context.concrete_shapes
+        dictionary_shapes = {
+            shape for shape in concrete_shapes if shape.startswith("dict:")
+        }
+        if len(dictionary_shapes) <= 1:
+            return []
+        return [
+            facts.make_finding(
+                returns[0] if returns else node,
+                "QG144",
+                f"`{qualname}` 的字典返回字段集合存在 {len(dictionary_shapes)} 种形态。",
+                symbol=qualname,
+                severity="info",
+                confidence="medium",
+                suggestion=(
+                    "确认这是带判别字段的合法联合，还是同一接口在不同路径遗漏字段；"
+                    "不要仅因字段集合不同就机械补空值。"
+                ),
+                evidence={"shapes": sorted(dictionary_shapes)},
+            )
+        ]
+
+
+class ImplicitNonePathRule(CoreQualityRule[ReturnRuleContext]):
+    """QG046: detect valued return contracts that can fall through to implicit None.
+
+    Generators, nullable return annotations and definitely terminating bodies
+    do not qualify for this path-consistency finding."""
+
+    code = "QG046"
+
+    def evaluate(self, context: ReturnRuleContext) -> list[Finding]:
+        """Check fall-through risk for an annotated non-null returning function.
+
+        Args:
+            context: Function body, returned shape facts and annotation names.
+
+        Returns:
+            A QG046 error only when a valued-return function can reach its end."""
+        facts = context.module
+        node = context.function
+        qualname = context.qualname
+        shapes = context.shapes
+        concrete_shapes = context.concrete_shapes
+        annotation_names_set = context.annotation_names_set
+        returns_value = bool(concrete_shapes or "dynamic" in shapes)
+        nullable_annotation = bool(
+            annotation_names_set & {"None", "NoneType", "Optional"}
+        )
+        valid_contract = (
+            node.returns is not None and returns_value and not nullable_annotation
+        )
+        if (
+            not valid_contract
+            or is_generator_function(node)
+            or block_terminates(node.body)
+        ):
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG046",
+                f"`{qualname}` 部分路径返回值，其他路径可能隐式返回 None。",
+                symbol=qualname,
+                severity="error",
+                suggestion="补齐全部可正常落到函数末尾的控制流路径，或把可空性写入类型契约。",
+                evidence={"shapes": sorted(shapes)},
+            )
+        ]
+
+
+class ProtocolDisplayTextRule(CoreQualityRule[ReturnRuleContext]):
+    """QG047: detect str()/repr() used as a protocol serialization result.
+
+    A string presentation can lose stable protocol structure; this heuristic
+    only applies to interface-like function names and non-str return contracts."""
+
+    code = "QG047"
+
+    def evaluate(self, context: ReturnRuleContext) -> list[Finding]:
+        """Inspect protocol-oriented return statements for display-string conversion.
+
+        Args:
+            context: Return statements, declaration name and annotation evidence.
+
+        Returns:
+            Warning findings at offending str/repr returns, or [] when inapplicable."""
+        facts = context.module
+        node = context.function
+        qualname = context.qualname
+        returns = context.returns
+        annotation_names_set = context.annotation_names_set
+        protocol_name = node.name.lower()
+        markers = ("serializ", "history", "openai", "payload", "response", "record")
+        if (
+            not any(marker in protocol_name for marker in markers)
+            or "str" in annotation_names_set
+        ):
+            return []
+        return [
+            facts.make_finding(
+                return_node,
+                "QG047",
+                f"`{qualname}` 直接返回 str()/repr()，可能以展示文本替代正式协议。",
+                symbol=qualname,
+                severity="warning",
+                suggestion="跨模块、HTTP 或持久化数据使用显式序列化方法和固定结构。",
+            )
+            for return_node in returns
+            if isinstance(return_node.value, ast.Call)
+            and call_name(return_node.value) in {"str", "repr"}
+        ]
+
+
+_RETURN_RULES: tuple[CoreQualityRule[ReturnRuleContext], ...] = (
+    IncompatibleReturnTypeRule(),
+    DictionaryShapeDriftRule(),
+    ImplicitNonePathRule(),
+    ProtocolDisplayTextRule(),
+)
+
+
 def check_return_rules(
     facts: ModuleFacts,
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     qualname: str,
 ) -> list[Finding]:
-    """
-    检查明确不兼容的返回类型、可疑字典形态和隐式 None 路径。
+    """Evaluate return-shape compatibility, implicit None and protocol-text rules.
+
+    Compute lexical returns and concrete shapes once, then share the same
+    immutable source identity across QG045, QG144, QG046 and QG047 owners.
 
     Args:
-        facts: 当前模块静态事实。
-        node: 待检查的函数定义。
-        qualname: 函数限定名称。
+        facts: Module source facts that construct findings.
+        node: Function whose return statements and annotations are inspected.
+        qualname: Qualified function identity in emitted findings.
 
     Returns:
-        返回值相关发现列表。
-    """
+        All return-rule findings in registered rule order."""
     returns = function_returns(node)
     shapes = {return_shape(item.value) for item in returns}
     concrete_shapes = {shape for shape in shapes if shape not in {"none", "dynamic"}}
-    annotation_names_set = annotation_names(node.returns)
-    findings = [
-        incompatible_return_finding(
-            facts,
-            node,
-            qualname,
-            returns,
-            shapes,
-            concrete_shapes,
-            annotation_names_set,
-        ),
-        dictionary_shape_finding(facts, node, qualname, returns, concrete_shapes),
-        implicit_none_finding(
-            facts, node, qualname, shapes, concrete_shapes, annotation_names_set
-        ),
-    ]
-    return [item for item in findings if item is not None] + protocol_text_findings(
-        facts, node, qualname, returns, annotation_names_set
-    )
-
-
-def incompatible_return_finding(
-    facts: ModuleFacts,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    qualname: str,
-    returns: list[ast.Return],
-    shapes: set[str],
-    concrete_shapes: set[str],
-    annotation_names_set: set[str],
-) -> Finding | None:
-    """
-    检查同一函数是否返回互不兼容的顶层类型。
-
-    Args:
-        facts: 当前模块静态事实。
-        node: 待检查函数。
-        qualname: 函数限定名称。
-        returns: 函数直接拥有的 return 节点。
-        shapes: 全部返回结构签名。
-        concrete_shapes: 排除 None 和动态值后的结构签名。
-        annotation_names_set: 返回注解涉及的类型名称。
-
-    Returns:
-        顶层返回类型不兼容时返回发现，否则返回 None。
-    """
-    top_level_shapes = {top_level_return_shape(shape) for shape in concrete_shapes}
-    flexible_annotation = bool(
-        annotation_names_set & {"Any", "Json", "JSON", "object", "Union"}
-    )
-    if len(top_level_shapes) <= 1 or flexible_annotation:
-        return None
-    return facts.make_finding(
-        returns[0] if returns else node,
-        "QG045",
-        f"`{qualname}` 存在不兼容返回类型：{sorted(top_level_shapes)}。",
-        symbol=qualname,
-        severity="error",
-        suggestion="同一内部接口固定顶层返回类型；合法多形态返回应使用明确联合类型。",
-        evidence={"shapes": sorted(shapes)},
-    )
-
-
-def dictionary_shape_finding(
-    facts: ModuleFacts,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    qualname: str,
-    returns: list[ast.Return],
-    concrete_shapes: set[str],
-) -> Finding | None:
-    """
-    检查字典返回值是否存在多组字段集合。
-
-    Args:
-        facts: 当前模块静态事实。
-        node: 待检查函数。
-        qualname: 函数限定名称。
-        returns: 函数直接拥有的 return 节点。
-        concrete_shapes: 已确认的返回结构签名。
-
-    Returns:
-        字典字段集合存在多种形态时返回候选发现，否则返回 None。
-    """
-    dictionary_shapes = {
-        shape for shape in concrete_shapes if shape.startswith("dict:")
-    }
-    if len(dictionary_shapes) <= 1:
-        return None
-    return facts.make_finding(
-        returns[0] if returns else node,
-        "QG144",
-        f"`{qualname}` 的字典返回字段集合存在 {len(dictionary_shapes)} 种形态。",
-        symbol=qualname,
-        severity="info",
-        confidence="medium",
-        suggestion=(
-            "确认这是带判别字段的合法联合，还是同一接口在不同路径遗漏字段；"
-            "不要仅因字段集合不同就机械补空值。"
-        ),
-        evidence={"shapes": sorted(dictionary_shapes)},
-    )
-
-
-def implicit_none_finding(
-    facts: ModuleFacts,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    qualname: str,
-    shapes: set[str],
-    concrete_shapes: set[str],
-    annotation_names_set: set[str],
-) -> Finding | None:
-    """
-    检查非空返回契约是否存在落到函数末尾的路径。
-
-    Args:
-        facts: 当前模块静态事实。
-        node: 待检查函数。
-        qualname: 函数限定名称。
-        shapes: 全部返回结构签名。
-        concrete_shapes: 已确认的返回结构签名。
-        annotation_names_set: 返回注解涉及的类型名称。
-
-    Returns:
-        存在隐式 None 路径时返回发现，否则返回 None。
-    """
-    returns_value = bool(concrete_shapes or "dynamic" in shapes)
-    nullable_annotation = bool(annotation_names_set & {"None", "NoneType", "Optional"})
-    valid_contract = (
-        node.returns is not None and returns_value and not nullable_annotation
-    )
-    if not valid_contract or is_generator_function(node) or block_terminates(node.body):
-        return None
-    return facts.make_finding(
+    context = ReturnRuleContext(
+        facts,
         node,
-        "QG046",
-        f"`{qualname}` 部分路径返回值，其他路径可能隐式返回 None。",
-        symbol=qualname,
-        severity="error",
-        suggestion="补齐全部可正常落到函数末尾的控制流路径，或把可空性写入类型契约。",
-        evidence={"shapes": sorted(shapes)},
+        qualname,
+        returns,
+        shapes,
+        concrete_shapes,
+        annotation_names(node.returns),
     )
-
-
-def protocol_text_findings(
-    facts: ModuleFacts,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    qualname: str,
-    returns: list[ast.Return],
-    annotation_names_set: set[str],
-) -> list[Finding]:
-    """
-    检查协议语义函数是否直接返回 str 或 repr 展示文本。
-
-    Args:
-        facts: 当前模块静态事实。
-        node: 待检查函数。
-        qualname: 函数限定名称。
-        returns: 函数直接拥有的 return 节点。
-        annotation_names_set: 返回注解涉及的类型名称。
-
-    Returns:
-        展示文本替代正式协议的候选发现列表。
-    """
-    protocol_name = node.name.lower()
-    markers = ("serializ", "history", "openai", "payload", "response", "record")
-    if (
-        not any(marker in protocol_name for marker in markers)
-        or "str" in annotation_names_set
-    ):
-        return []
-    return [
-        facts.make_finding(
-            return_node,
-            "QG047",
-            f"`{qualname}` 直接返回 str()/repr()，可能以展示文本替代正式协议。",
-            symbol=qualname,
-            severity="warning",
-            suggestion="跨模块、HTTP 或持久化数据使用显式序列化方法和固定结构。",
-        )
-        for return_node in returns
-        if isinstance(return_node.value, ast.Call)
-        and call_name(return_node.value) in {"str", "repr"}
-    ]
+    findings: list[Finding] = []
+    for rule in _RETURN_RULES:
+        findings.extend(rule.evaluate(context))
+    return findings
 
 
 def top_level_return_shape(shape: str) -> str:

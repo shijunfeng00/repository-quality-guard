@@ -1,0 +1,98 @@
+{
+  "schema": "rqg.qg066-functional/v1",
+  "cases": [
+    {
+      "case_id": "qg066-b28-required-dict-dict-constructor",
+      "kind": "TP",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload: dict):\n    return dict(payload or {})\n"
+      },
+      "expected": [
+        {
+          "path": "input.py",
+          "severity": "warning",
+          "classification": "PROVEN_REQUIRED_CONTRACT"
+        }
+      ]
+    },
+    {
+      "case_id": "qg066-b28-required-generic-mapping",
+      "kind": "TP",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(value: dict[str, object]):\n    return {**(value or {})}\n"
+      },
+      "expected": [
+        {
+          "path": "input.py",
+          "severity": "warning",
+          "classification": "PROVEN_REQUIRED_CONTRACT"
+        }
+      ]
+    },
+    {
+      "case_id": "qg066-b28-optional-union",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload: dict | None):\n    return dict(payload or {})\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg066-b28-default-none",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload: dict = None):\n    return dict(payload or {})\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg066-b28-untyped-unknown",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload):\n    return dict(payload or {})\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg066-b28-required-no-fallback",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload: dict):\n    return dict(payload)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg066-b28-nonempty-fallback",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload: dict):\n    return dict(payload or {\"key\": 1})\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg066-b28-shadowed-dict",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "class dict: pass\ndef submit(payload: dict):\n    return payload or {}\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg066-b28-reassigned-mapping",
+      "kind": "TN",
+      "rule": "QG066",
+      "files": {
+        "input.py": "def submit(payload: dict):\n    payload = {\"x\": 1}\n    return dict(payload or {})\n"
+      },
+      "expected": []
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "case_id": "qg167-reference-name",
+      "expression": "source",
+      "polarity": "TP"
+    },
+    {
+      "case_id": "qg167-reference-attribute",
+      "expression": "source.value",
+      "polarity": "TP"
+    },
+    {
+      "case_id": "qg167-reference-index",
+      "expression": "source[0]",
+      "polarity": "TP"
+    },
+    {
+      "case_id": "qg167-computed-expression-not-reference",
+      "expression": "source + 1",
+      "polarity": "TN"
+    },
+    {
+      "case_id": "qg167-call-not-reference",
+      "expression": "str(source)",
+      "polarity": "TN"
+    }
+  ]
+}

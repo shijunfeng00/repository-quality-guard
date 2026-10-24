@@ -1,0 +1,232 @@
+{
+  "cases": [
+    {
+      "case_id": "boundary-qg149-private-member-tp",
+      "rule": "QG149",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def _hidden(self):\n        return 1\na = Adapter()\na._hidden()\n",
+      "expected": {
+        "QG149": [
+          [
+            "critical",
+            "subject.py",
+            5
+          ]
+        ],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg149-public-member-tn",
+      "rule": "QG149",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.public()\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg149-private-import-tp",
+      "rule": "QG149",
+      "polarity": "TP",
+      "source": "from pkg._internal import _Profiler\n",
+      "expected": {
+        "QG149": [
+          [
+            "critical",
+            "subject.py",
+            1
+          ]
+        ],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg149-public-import-tn",
+      "rule": "QG149",
+      "polarity": "TN",
+      "source": "from pkg.public import Adapter\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg183-private-reflection-tp",
+      "rule": "QG183",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def _hidden(self):\n        return 1\na = Adapter()\ngetattr(a, '_hidden')\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [
+          [
+            "critical",
+            "subject.py",
+            5
+          ]
+        ],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg183-dunder-reflection-tp",
+      "rule": "QG183",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.__dict__\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [
+          [
+            "critical",
+            "subject.py",
+            5
+          ]
+        ],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg183-public-static-member-tn",
+      "rule": "QG183",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.public()\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg183-private-unknown-source-tp",
+      "rule": "QG183",
+      "polarity": "TP",
+      "source": "def run(a):\n    return getattr(a, '_hidden')\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [
+          [
+            "critical",
+            "subject.py",
+            2
+          ]
+        ],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg184-typed-reflection-tp",
+      "rule": "QG184",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def public(self):\n        return 1\ndef run(a: Adapter):\n    return getattr(a, 'public')\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [
+          [
+            "error",
+            "subject.py",
+            5
+          ]
+        ],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg184-typed-probe-tp",
+      "rule": "QG184",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def public(self):\n        return 1\ndef run(a: Adapter):\n    return hasattr(a, 'public')\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [
+          [
+            "error",
+            "subject.py",
+            5
+          ]
+        ],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg184-unknown-probe-tn",
+      "rule": "QG184",
+      "polarity": "TN",
+      "source": "def run(a):\n    return hasattr(a, 'public')\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg184-public-direct-tn",
+      "rule": "QG184",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.public()\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg186-class-mutation-tp",
+      "rule": "QG186",
+      "polarity": "TP",
+      "source": "class Adapter:\n    def public(self):\n        return 1\nsetattr(Adapter, 'public', lambda self: 3)\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": [
+          [
+            "critical",
+            "subject.py",
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "case_id": "boundary-qg186-untyped-instance-tn",
+      "rule": "QG186",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\nsetattr(a, 'public', lambda: 3)\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    },
+    {
+      "case_id": "boundary-qg186-public-call-tn",
+      "rule": "QG186",
+      "polarity": "TN",
+      "source": "class Adapter:\n    def public(self):\n        return 1\na = Adapter()\na.public()\n",
+      "expected": {
+        "QG149": [],
+        "QG183": [],
+        "QG184": [],
+        "QG186": []
+      }
+    }
+  ]
+}

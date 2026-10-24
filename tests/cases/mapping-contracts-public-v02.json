@@ -1,0 +1,121 @@
+{
+  "schema": "mapping-contracts-public/v02",
+  "cases": [
+    {
+      "case_id": "b15-qg146-tp-frozen-added",
+      "rule": "QG146",
+      "kind": "TP",
+      "mode": "frozen",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return {'id': 1, 'extra': 2}\n",
+      "expected": [
+        [
+          "QG146",
+          "error",
+          "api.py",
+          "get"
+        ]
+      ]
+    },
+    {
+      "case_id": "b15-qg146-tp-frozen-unproved",
+      "rule": "QG146",
+      "kind": "TP",
+      "mode": "frozen",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return unknown\n",
+      "expected": [
+        [
+          "QG146",
+          "warning",
+          "api.py",
+          "get"
+        ]
+      ]
+    },
+    {
+      "case_id": "b15-qg146-tn-frozen-stable",
+      "rule": "QG146",
+      "kind": "TN",
+      "mode": "frozen",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return {'id': 2}\n",
+      "expected": []
+    },
+    {
+      "case_id": "b15-qg146-tn-relative-stable",
+      "rule": "QG146",
+      "kind": "TN",
+      "mode": "relative",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return {'id': 2}\n",
+      "expected": []
+    },
+    {
+      "case_id": "b15-qg146-tp-relative-added",
+      "rule": "QG146",
+      "kind": "TP",
+      "mode": "relative",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return {'id': 1, 'new': 2}\n",
+      "expected": [
+        [
+          "QG146",
+          "warning",
+          "api.py",
+          "get"
+        ]
+      ]
+    },
+    {
+      "case_id": "b15-qg182-tp-added",
+      "rule": "QG182",
+      "kind": "TP",
+      "mode": "relative",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return {'id': 1, 'new': 2}\n",
+      "expected": [
+        [
+          "QG182",
+          "warning",
+          "api.py",
+          "get"
+        ]
+      ]
+    },
+    {
+      "case_id": "b15-qg182-tp-removed",
+      "rule": "QG182",
+      "kind": "TP",
+      "mode": "relative",
+      "base": "def get():\n return {'id': 1, 'old': 2}\n",
+      "target": "def get():\n return {'id': 1}\n",
+      "expected": [
+        [
+          "QG182",
+          "warning",
+          "api.py",
+          "get"
+        ]
+      ]
+    },
+    {
+      "case_id": "b15-qg182-tn-stable",
+      "rule": "QG182",
+      "kind": "TN",
+      "mode": "relative",
+      "base": "def get():\n return {'id': 1}\n",
+      "target": "def get():\n return {'id': 2}\n",
+      "expected": []
+    },
+    {
+      "case_id": "b15-qg182-tn-unknown-no-delta",
+      "rule": "QG182",
+      "kind": "TN",
+      "mode": "relative",
+      "base": "def get():\n return unknown\n",
+      "target": "def get():\n return unknown\n",
+      "expected": []
+    }
+  ]
+}

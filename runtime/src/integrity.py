@@ -35,13 +35,15 @@ _PROTECTED_ROOT_FILES = frozenset(
 )
 _PROTECTED_PREFIXES = (
     "runtime/src/",
+    "tests/",
+    "runtime/contracts/",
     "templates/",
     "installed/",
     "profiles/qg-example-profile/",
 )
 _IGNORED_SUFFIXES = (".pyc", ".pyo")
 _IGNORED_CACHE_PARTS = frozenset(
-    {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"}
+    {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".cache"}
 )
 _MANIFEST_PARTS = 2
 _SHA256_HEX_LENGTH = 64
@@ -180,7 +182,6 @@ def _legacy_payload_issues(root: Path) -> list[str]:
     if not (root / "SKILL.md").is_file():
         issues.append("Skill 发布缺少 SKILL.md。")
     forbidden = (
-        "tests",
         "node_modules",
         "runtime/vendor",
         "runtime/wheels",

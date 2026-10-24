@@ -462,7 +462,7 @@ def _write_api_catalog(
             path.unlink()
     expected_group_files = {_group_filename(group) for group in groups}
     for filename in existing_group_files - expected_group_files:
-        (output / filename).unlink()
+        (output / filename).unlink(missing_ok=True)
 
     digest = _catalog_digest(states)
     index_lines = [

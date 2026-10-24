@@ -1,0 +1,206 @@
+{
+  "cases": [
+    {
+      "case_id": "b32-cpp-missing-three",
+      "sources": {
+        "src/one.cpp": "int operation() { return 1; }\n",
+        "src/two.cc": "int operation() { return 1; }\n",
+        "src/three.cxx": "int operation() { return 1; }\n",
+        "inc/api.hpp": "int foo();\n"
+      },
+      "expected": {
+        "missing_count": 1,
+        "missing_paths": [
+          [
+            "src/one.cpp",
+            "src/three.cxx",
+            "src/two.cc"
+          ]
+        ],
+        "missing_severity": [
+          "info"
+        ],
+        "translation_units": 3,
+        "missing_native": 3,
+        "coverage": "NOT_MEASURED",
+        "unavailable": 0,
+        "build_contracts": 0,
+        "status": "ACCEPT",
+        "native_section": {
+          "has_coverage_gap": true,
+          "not_measured": true,
+          "named_first": false,
+          "two_units": false
+        }
+      }
+    },
+    {
+      "case_id": "b32-cpp-missing-report",
+      "sources": {
+        "src/first.cpp": "int operation() { return 1; }\n",
+        "src/second.cpp": "int operation() { return 1; }\n"
+      },
+      "expected": {
+        "missing_count": 1,
+        "missing_paths": [
+          [
+            "src/first.cpp",
+            "src/second.cpp"
+          ]
+        ],
+        "missing_severity": [
+          "info"
+        ],
+        "translation_units": 2,
+        "missing_native": 2,
+        "coverage": "NOT_MEASURED",
+        "unavailable": 0,
+        "build_contracts": 0,
+        "status": "ACCEPT",
+        "native_section": {
+          "has_coverage_gap": true,
+          "not_measured": true,
+          "named_first": true,
+          "two_units": true
+        }
+      }
+    },
+    {
+      "case_id": "b32-cpp-vendor-header-only",
+      "sources": {
+        "vendor/dependency.cpp": "int operation() { return 1; }\n",
+        "inc/api.hpp": "int foo();\n"
+      },
+      "expected": {
+        "missing_count": 0,
+        "missing_paths": [],
+        "missing_severity": [],
+        "translation_units": 0,
+        "missing_native": 0,
+        "coverage": "NOT_MEASURED",
+        "unavailable": 0,
+        "build_contracts": 0,
+        "status": "ACCEPT",
+        "native_section": {
+          "has_coverage_gap": false,
+          "not_measured": false,
+          "named_first": false,
+          "two_units": false
+        }
+      }
+    },
+    {
+      "case_id": "b32-cpp-partial-compdb",
+      "sources": {
+        "src/real.cpp": "int operation() { return 1; }\n",
+        "src/not_in_database.cpp": "int operation() { return 1; }\n"
+      },
+      "compdb": [
+        {
+          "file": "src/real.cpp",
+          "arguments": [
+            "g++",
+            "-std=c++20",
+            "-c",
+            "@src/real.cpp"
+          ]
+        }
+      ],
+      "expected": {
+        "missing_count": 1,
+        "missing_paths": [
+          [
+            "src/not_in_database.cpp"
+          ]
+        ],
+        "missing_severity": [
+          "info"
+        ],
+        "translation_units": 2,
+        "missing_native": 1,
+        "coverage": "NOT_MEASURED",
+        "unavailable": 0,
+        "build_contracts": 1,
+        "status": "ACCEPT",
+        "native_section": {
+          "has_coverage_gap": true,
+          "not_measured": true,
+          "named_first": false,
+          "two_units": false
+        }
+      }
+    },
+    {
+      "case_id": "b32-cpp-complete-compdb",
+      "sources": {
+        "one.cpp": "int operation() { return 1; }\n"
+      },
+      "compdb": [
+        {
+          "file": "one.cpp",
+          "arguments": [
+            "g++",
+            "-std=c++20",
+            "-c",
+            "@one.cpp"
+          ]
+        }
+      ],
+      "expected": {
+        "missing_count": 0,
+        "missing_paths": [],
+        "missing_severity": [],
+        "translation_units": 1,
+        "missing_native": 0,
+        "coverage": "NOT_MEASURED",
+        "unavailable": 0,
+        "build_contracts": 1,
+        "status": "ACCEPT",
+        "native_section": {
+          "has_coverage_gap": false,
+          "not_measured": false,
+          "named_first": false,
+          "two_units": false
+        }
+      }
+    },
+    {
+      "case_id": "b32-cpp-unavailable-compiler",
+      "sources": {
+        "src/ordinary.cpp": "int operation() { return 1; }\n"
+      },
+      "compdb": [
+        {
+          "file": "src/ordinary.cpp",
+          "arguments": [
+            "g++-compiler-not-installed",
+            "-std=c++11",
+            "-c",
+            "@src/ordinary.cpp"
+          ]
+        }
+      ],
+      "expected": {
+        "missing_count": 1,
+        "missing_paths": [
+          []
+        ],
+        "missing_severity": [
+          "info"
+        ],
+        "translation_units": 1,
+        "missing_native": 0,
+        "coverage": "NOT_MEASURED",
+        "unavailable": 1,
+        "build_contracts": 1,
+        "status": "ACCEPT",
+        "native_section": {
+          "has_coverage_gap": true,
+          "not_measured": true,
+          "named_first": false,
+          "two_units": false
+        }
+      }
+    }
+  ]
+}

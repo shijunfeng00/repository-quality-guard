@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import tomllib
 from dataclasses import dataclass, fields, replace
 from fnmatch import fnmatch
@@ -7,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .commit_policy import DEFAULT_COMMIT_POLICY
+from .scoped_rule_policy import ScopedRuleDisable
 
 
 _PROFILE_NONBLOCKING_PATHS: dict[str, tuple[str, ...]] = {}
@@ -26,31 +28,91 @@ def is_tool_generated_path(path: str | Path) -> bool:
     return any(fnmatch(normalized, pattern) for pattern in _GENERATED_TOOL_PATTERNS)
 
 
-def is_test_path(path: str | Path, project_name: str = "") -> bool:
-    """判断路径是否属于测试或当前 Profile 声明的非阻断源码域。
+# Conventional unit-test directory names (not filename guesses).  Java Maven
+# ``src/test`` and CMake/gtest test directories both satisfy this predicate.
+_TEST_DIR_PARTS = frozenset(
+    {
+        "test",
+        "tests",
+        "dev-test",
+        "dev-tests",
+        "dev_test",
+        "dev_tests",
+        "unit-test",
+        "unit-tests",
+        "unit_test",
+        "unit_tests",
+        "__tests__",
+        "test-deprecated",
+        "tests-deprecated",
+        "test_deprecated",
+        "tests_deprecated",
+    }
+)
 
-    通用规则识别 ``test/tests`` 目录；Profile 可额外声明精确 glob，
-    但这些路径仍完整扫描，只是不进入生产硬门槛。Core 不包含项目名特判。
+
+def _within_test_root(path: Path, declared: str) -> bool:
+    """Compare full path components so sibling prefix matches are impossible."""
+    raw = Path(declared)
+    if raw.is_absolute() or ".." in raw.parts:
+        raise ValueError(f"test_roots 必须是仓库内的相对目录: {declared!r}")
+    prefix = tuple(part.lower() for part in raw.parts if part not in {"", "."})
+    return (
+        len(path.parts) > len(prefix)
+        and tuple(part.lower() for part in path.parts[: len(prefix)]) == prefix
+    )
+
+
+def is_test_source_path(path: str | Path, test_roots: tuple[str, ...] = ()) -> bool:
+    """Prove test provenance from a directory boundary, independent of basename.
+
+    Conventional unit-test roots are language-independent: ``src/test/java``
+    (JUnit), ``tests`` (pytest/unittest), and ``test`` (GTest/CTest) are all
+    recognized. Less conventional build layouts must declare ``test_roots``.
 
     Args:
-        path: 待分类的仓库相对路径。
-        project_name: 当前进程已加载的 Profile 名称；为空时只应用通用规则。
+        path: Repository-relative path to classify by test directory provenance.
+        test_roots: Additional project-declared test directories.
 
     Returns:
-        路径属于测试或当前 Profile 非阻断源码域时返回 True。
+        Whether the path belongs to a test source directory.
     """
     candidate = Path(path)
-    normalized = candidate.as_posix().lstrip("./")
-    for pattern in _PROFILE_NONBLOCKING_PATHS.get(project_name, ()):
-        if fnmatch(normalized, pattern):
-            return True
-    lowered_parts = tuple(part.lower() for part in candidate.parts)
-    if any(part in {"test", "tests"} for part in lowered_parts[:-1]):
+    if ".." in candidate.parts:
+        raise ValueError(f"测试路径不能包含上级目录跳转: {str(path)!r}")
+    lowered = tuple(part.lower() for part in candidate.parts)
+    if any(part in _TEST_DIR_PARTS for part in lowered[:-1]):
         return True
-    name = candidate.name.lower()
-    if any(part in {"src", "lib"} for part in lowered_parts[:-1]):
-        return False
-    return name.startswith("test_") or name.endswith("_test.py")
+    return not candidate.is_absolute() and any(
+        _within_test_root(candidate, root) for root in test_roots
+    )
+
+
+def is_test_path(
+    path: str | Path,
+    project_name: str = "",
+    test_roots: tuple[str, ...] = (),
+) -> bool:
+    """Return test-directory or Profile-defined nonblocking scope membership.
+
+    QG240 uses ``is_test_source_path`` instead: nonblocking Profile globs
+    never certify that ordinary application files are TestUnit source files.
+
+    Args:
+        path: Repository-relative path of the file being classified.
+        project_name: Project Profile name used for nonblocking overrides.
+        test_roots: Explicitly configured extra test directories.
+
+    Returns:
+        Whether the path is a test source or a Profile nonblocking path.
+    """
+    normalized = Path(path).as_posix().lstrip("./")
+    if any(
+        fnmatch(normalized, pattern)
+        for pattern in _PROFILE_NONBLOCKING_PATHS.get(project_name, ())
+    ):
+        return True
+    return is_test_source_path(path, test_roots)
 
 
 def is_profile_nonblocking_path(path: str | Path, project_name: str = "") -> bool:
@@ -70,6 +132,36 @@ def is_profile_nonblocking_path(path: str | Path, project_name: str = "") -> boo
     )
 
 
+def _pytest_config_roots(root: Path, raw: dict[str, Any]) -> tuple[str, ...]:
+    """Read pytest's explicitly declared testpaths, not arbitrary test_ basenames."""
+    roots: list[str] = []
+    tool = raw.get("tool", {})
+    pytest_data = tool.get("pytest", {}) if isinstance(tool, dict) else {}
+    if isinstance(pytest_data, dict):
+        options = pytest_data.get("ini_options", {})
+        if isinstance(options, dict) and "testpaths" in options:
+            value = options["testpaths"]
+            if isinstance(value, str):
+                roots.extend(value.split())
+            elif isinstance(value, list) and all(isinstance(v, str) for v in value):
+                roots.extend(value)
+            else:
+                raise ValueError("pytest testpaths 必须为字符串或字符串数组")
+    for filename, section in (
+        ("pytest.ini", "pytest"),
+        ("setup.cfg", "tool:pytest"),
+        ("tox.ini", "pytest"),
+    ):
+        path = root / filename
+        if not path.is_file():
+            continue
+        config = configparser.ConfigParser(interpolation=None)
+        config.read(path, encoding="utf-8")
+        if config.has_option(section, "testpaths"):
+            roots.extend(config.get(section, "testpaths").split())
+    return tuple(dict.fromkeys(roots))
+
+
 @dataclass(slots=True, frozen=True)
 class GuardConfig:
     """
@@ -84,7 +176,9 @@ class GuardConfig:
     profile_capabilities: tuple[str, ...] = ()
     profile_nonblocking_paths: tuple[str, ...] = ()
     profile_test_baseline_passthrough_paths: tuple[str, ...] = ()
+    test_roots: tuple[str, ...] = ()
     disabled_rules: tuple[str, ...] = ()
+    profile_scoped_rule_disables: tuple[ScopedRuleDisable, ...] = ()
     profile_rule_levels: tuple[tuple[str, str], ...] = ()
     profile_settings: tuple[tuple[str, Any], ...] = ()
     profile_commit_policy: tuple[tuple[str, Any], ...] = tuple(
@@ -182,10 +276,10 @@ class GuardConfig:
             已完成类型归一化的不可变配置对象。
         """
         config_path = explicit_path or root / "pyproject.toml"
-        if not config_path.is_file():
-            return cls()
-        with config_path.open("rb") as handle:
-            raw = tomllib.load(handle)
+        raw: dict[str, Any] = {}
+        if config_path.is_file():
+            with config_path.open("rb") as handle:
+                raw = tomllib.load(handle)
         tool = raw.get("tool")
         if tool is None:
             tool = {}
@@ -201,6 +295,7 @@ class GuardConfig:
             "profile_nonblocking_paths",
             "profile_test_baseline_passthrough_paths",
             "disabled_rules",
+            "profile_scoped_rule_disables",
             "profile_rule_levels",
             "profile_settings",
             "profile_commit_policy",
@@ -226,6 +321,7 @@ class GuardConfig:
             "tool_decorators",
             "tool_registration_methods",
             "trace_markers",
+            "test_roots",
             "wrapper_class_suffixes",
         }
         normalized: dict[str, Any] = {}
@@ -242,7 +338,17 @@ class GuardConfig:
                 )
             else:
                 normalized[key] = value
-        return cls(**normalized)
+        normalized["test_roots"] = tuple(
+            dict.fromkeys(
+                (*normalized.get("test_roots", ()), *_pytest_config_roots(root, raw))
+            )
+        )
+        config = cls(**normalized)
+        for root_path in config.test_roots:
+            relative = Path(root_path)
+            if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+                raise ValueError(f"test_roots 必须为仓库内相对目录: {root_path!r}")
+        return config
 
     def with_project_profile(self, profile: Any) -> GuardConfig:
         """
@@ -285,6 +391,7 @@ class GuardConfig:
                 profile.test_baseline_passthrough_paths
             ),
             disabled_rules=tuple(profile.disabled_rules),
+            profile_scoped_rule_disables=tuple(profile.scoped_rule_disables),
             profile_rule_levels=tuple(sorted(dict(profile.rule_levels).items())),
             profile_settings=settings,
             profile_commit_policy=commit_policy,

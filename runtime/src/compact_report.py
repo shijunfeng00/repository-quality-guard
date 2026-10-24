@@ -11,11 +11,13 @@ from dataclasses import dataclass
 
 from .behavior_families import family_rows
 from .commit_policy import validate_commit_command
-from .gate_status import absolute_blocker_codes, code_status
+from .config import is_test_path
+from .gate_status import code_status, is_absolute_blocker_finding
 from .model import Finding, ScanReport
 from .report_contract import ReportFacts, build_report_facts
 from .report_schema import escape, front_matter
 from .semantic_review import semantic_review_candidates, semantic_review_key
+from .test_case_purpose_review import changed_case_purposes
 
 REPORT_SCHEMA = "repository-quality-guard/audit-v18.0"
 REPORT_FILENAME = "修改说明.md"
@@ -71,6 +73,18 @@ QUESTION_TITLES = (
     "Q10. 是否存在未经授权的正则、关键词、词表、阈值或硬编码启发式替代协议、领域算法或语义模型判断？",
     "Q11. 公开接口的输入、输出、异常、状态及副作用是否由独立预期的正反行为 Cases 检查，并保留已确认的 Bug 防回归责任？是否避免测试锁定内部实现形状？",
 )
+
+_CASE_PURPOSE_ROW = re.compile(
+    r"^\| (?P<id>CASE-PURPOSE-[0-9a-f]{12}) \| (?P<answer>YES|NO|PENDING) \|$",
+    re.MULTILINE,
+)
+_CASE_CHANGE_ROW = re.compile(
+    r"^\| (?P<id>CASE-PURPOSE-[0-9a-f]{12}) \| "
+    r"(?P<change>[^|]*?) \| (?P<reason>[^|]*?) \| (?P<evidence>[^|]*?) \|$",
+    re.MULTILINE,
+)
+_CHANGE_REFERENCE = re.compile(r"^CHANGE-[A-Za-z0-9][A-Za-z0-9._/-]{3,}$")
+
 
 VALID_QUESTION_STATUS = frozenset({"PASS", "BLOCKING", "NOT_APPLICABLE"})
 VALID_ADD_STATUS = frozenset({"JUSTIFIED", "BLOCKING"})
@@ -201,13 +215,19 @@ def _semantic_items(report: ScanReport, facts: ReportFacts) -> tuple[SemanticIte
         historical = remaining[key] > 0
         if historical:
             remaining[key] -= 1
+        # Normal review is change-scoped: a stable untouched historical
+        # candidate remains in the baseline inventory, not the edit ledger.
+        # Compare baseline occurrences *before* filtering to preserve stable IDs.
+        touched = historical and finding.path in changed_paths
+        if baseline is not None and historical and not touched:
+            continue
         items.append(
             SemanticItem(
                 item_id="SEM-"
                 + hashlib.sha256(f"{key}:{occurrences[key]}".encode()).hexdigest()[:10],
                 finding=finding,
                 delta=baseline is not None and not historical,
-                touched_historical=historical and finding.path in changed_paths,
+                touched_historical=touched,
             )
         )
     return tuple(sorted(items, key=lambda item: item.item_id))
@@ -385,7 +405,7 @@ def _append_metadata_and_changes(
         change_rows.extend(
             f"| `{change.change}` | `{change.kind}` | `{escape(change.symbol)}` | `{escape(change.path)}` |"
             for change in report.interface_diff.changes
-            if not change.path.startswith("tests/") and "/tests/" not in change.path
+            if not is_test_path(change.path, report.project_name)
         )
     if len(change_rows) == _TABLE_HEADER_ROWS:
         change_rows.append("| unchanged | — | — | — |")
@@ -399,24 +419,29 @@ def _append_metadata_and_changes(
         ]
     )
     test_rows = [
-        "| Test file | + / - | Cases + / ~ / - | Assertions | Risks |",
-        "|---|---:|---:|---:|---|",
+        "| Test file | Git status | Lines + / - | Current test findings |",
+        "|---|---|---:|---|",
     ]
-    for audit in facts.test_audits:
-        risk_codes = sorted({finding.code for finding in audit.findings})
+    for change in facts.test_changed_files:
+        risks = sorted(
+            {
+                finding.code
+                for finding in report.test_findings
+                if finding.path == change.path
+            }
+        )
         test_rows.append(
-            f"| `{escape(audit.path)}` | +{audit.added}/-{audit.removed} | "
-            f"+{len(audit.added_cases)} / ~{len(audit.modified_cases)} / -{len(audit.removed_cases)} | "
-            f"{audit.before.assertions} → {audit.after.assertions} | "
-            f"{', '.join(risk_codes) if risk_codes else '—'} |"
+            f"| `{escape(change.path)}` | `{escape(change.status)}` | "
+            f"+{change.added} / -{change.removed} | "
+            f"{', '.join(risks) if risks else '—'} |"
         )
     if len(test_rows) == _TABLE_HEADER_ROWS:
-        test_rows.append("| — | 0 | 0 | 0 | 无测试文件变化 |")
+        test_rows.append("| — | — | 0 | 无测试文件变化 |")
     test_summary = [
-        f"- 变更测试文件：{len(facts.test_audits)}",
-        f"- 新增测试用例：{sum(len(item.added_cases) for item in facts.test_audits)}",
-        f"- 修改既有测试用例：{sum(len(item.modified_cases) for item in facts.test_audits)}",
-        f"- 删除既有测试用例：{sum(len(item.removed_cases) for item in facts.test_audits)}",
+        f"- 变更测试文件：{len(facts.test_changed_files)}",
+        f"- 测试接口声明变化：{len(facts.test_interface_changes)}",
+        f"- 需要逐项回答目的审计的标准 TestCase：{sum(p.kind != 'REMOVED' for p in _test_case_purposes(report, revision))}",
+        "- 尚未迁移的旧测试行为覆盖：未验证，不以接口声明数量推断 Case 数量。",
     ]
     lines.extend(
         [
@@ -433,17 +458,16 @@ def _append_metadata_and_changes(
 def _absolute_blocker_rows(report: ScanReport) -> list[str]:
     """渲染当前树绝对阻断，避免 compact report 只显示 Delta 而隐藏 REJECT 原因。"""
     rows = ["| Rule | Path | Symbol | Evidence path |", "|---|---|---|---|"]
-    blockers = absolute_blocker_codes()
+    blocker_findings = [
+        item for item in report.findings if is_absolute_blocker_finding(item, report)
+    ]
+    blocker_findings.extend(
+        item
+        for item in report.test_findings
+        if is_absolute_blocker_finding(item, report, test_finding=True)
+    )
     for finding in sorted(
-        (
-            item
-            for item in report.findings
-            if item.code in blockers
-            or (
-                "absolute_blocker" in item.evidence
-                and item.evidence["absolute_blocker"] is True
-            )
-        ),
+        blocker_findings,
         key=lambda item: (item.code, item.path, item.line, item.symbol),
     ):
         relation_path = (
@@ -606,7 +630,7 @@ def _append_static_and_additions(
     if len(delta_rows) == _TABLE_HEADER_ROWS:
         delta_rows.append("| — | — | — | 无普通 C/E/W 增量 | — |")
     native_rows = [
-        "| Rule | Source | Native command | Provider evidence |",
+        "| Kind | Source | Native command | Provider evidence |",
         "|---|---|---|---|",
     ]
     for finding in report.findings:
@@ -623,18 +647,16 @@ def _append_static_and_additions(
                 f"sample={escape(', '.join(str(path) for path in unavailable[:3]))} |"
             )
             continue
-        if finding.code != "QG212":
-            continue
-        command = finding.evidence["command"]
-        detail = finding.evidence["stderr"]
+    for failure in report.multilang_summary.get("cpp_native_failures", ()):
+        command = failure["command"]
         native_rows.append(
-            f"| `QG212` | `{escape(finding.path)}:{finding.line}` | "
+            f"| Compiler FAIL (not a QG Finding) | `{escape(str(failure['path']))}` | "
             f"`{escape(' '.join(str(arg) for arg in command)[:500])}` | "
-            f"exit={finding.evidence['returncode']}; "
-            f"`{escape(str(detail)[:600])}` |"
+            f"exit={failure['returncode']}; "
+            f"`{escape(str(failure['stderr'])[:600])}` |"
         )
     if len(native_rows) == _TABLE_HEADER_ROWS:
-        native_rows.append("| — | — | — | 没有原生编译错误或覆盖缺口记录 |")
+        native_rows.append("| — | — | — | 没有原生编译失败或覆盖缺口记录 |")
     lines.extend(
         [
             "## 3. 静态质量门禁",
@@ -810,21 +832,141 @@ def _append_debt_accountability(
         )
 
 
+def _test_case_purposes(report: ScanReport, revision: str):
+    """No obligations without a Git comparison; staged reads the Git index."""
+    if report.baseline is None:
+        return ()
+    staged = "staged" in report.comparison_mode.lower()
+    return changed_case_purposes(report.root, revision, staged=staged)
+
+
+def _case_purpose_issues(text: str, purposes) -> list[str]:
+    """Missing/YES/foreign answers reject; NO is an accountable declaration."""
+    active = [item for item in purposes if item.kind != "REMOVED"]
+    expected = {item.item_id for item in active}
+    matches = list(_CASE_PURPOSE_ROW.finditer(text))
+    rows = {match.group("id"): match.group("answer") for match in matches}
+    issues = []
+    if len(matches) != len(rows) or set(rows) != expected:
+        issues.append(
+            "TestCase 目的审计条目缺失、重复或指纹已失效，须重新 audit 并逐项回答。"
+        )
+    for item in active:
+        response = rows.get(item.item_id)
+        if response == "YES":
+            issues.append(
+                f"{item.item_id} 确认维护已删除功能的不存在状态：删除该 Case 后重新审计。"
+            )
+        elif response != "NO":
+            issues.append(f"{item.item_id} 缺少明确 NO 回答：verify REJECT。")
+    return issues
+
+
+def _case_change_issues(text: str, purposes) -> list[str]:
+    """Require independently authored change references for old Case mutations."""
+    required = {item.item_id for item in purposes if item.kind != "ADDED"}
+    rows = list(_CASE_CHANGE_ROW.finditer(text))
+    observed = {row.group("id") for row in rows}
+    issues = []
+    if observed != required or len(rows) != len(observed):
+        issues.append("旧 TestCase 修改/删除合同登记缺失、重复或过期，须重新 audit。")
+    for row in rows:
+        item_id = row.group("id")
+        reference = row.group("change").strip()
+        reason = row.group("reason").strip()
+        evidence = row.group("evidence").strip()
+        if not _CHANGE_REFERENCE.fullmatch(reference):
+            issues.append(f"{item_id} 必须引用独立 CHANGE-* 合同变更 ID。")
+        if (
+            _has_placeholder(reason)
+            or _has_placeholder(evidence)
+            or not reason
+            or not evidence
+        ):
+            issues.append(f"{item_id} 缺少独立合同变更的理由或可核查证据。")
+    return issues
+
+
+def _append_case_purpose(
+    lines: list[str], report: ScanReport, revision: str, existing: str | None
+) -> None:
+    """Generate one independently bound YES/NO declaration per changed Case."""
+    purposes = _test_case_purposes(report, revision)
+    if not purposes:
+        return
+    active = [item for item in purposes if item.kind != "REMOVED"]
+    changed = [item for item in purposes if item.kind != "ADDED"]
+    lines.extend(
+        [
+            "### 新增、修改及删除 TestCase 的独立合同审查",
+            "",
+            "该 Case 是否为了确保某个已经删除的功能、规则或内部实现继续保持不存在而编写或保留？YES 必须删除；NO 仅表示本项通过。",
+            "",
+            *_auto(
+                "changed_case_purpose_scope",
+                [
+                    "| Case | File | Concrete type | Change | AST SHA256 |",
+                    "|---|---|---|---|---|",
+                    *(
+                        f"| {item.item_id} | `{escape(item.path)}` | `{escape(item.case_name)}` | {item.kind} | `{item.source_sha256}` |"
+                        for item in purposes
+                    ),
+                ],
+            ),
+            "",
+            "| Case | Answer (YES/NO) |",
+            "|---|---|",
+        ]
+    )
+    previous = {
+        m.group("id"): m.group("answer")
+        for m in _CASE_PURPOSE_ROW.finditer(existing or "")
+    }
+    for item in active:
+        lines.append(f"| {item.item_id} | {previous.get(item.item_id, 'PENDING')} |")
+    lines.append("")
+    if changed:
+        lines.extend(
+            [
+                "已存在的 Case 被修改或删除，必须引用独立、可审查的合同变更登记。CHANGE-* 不能以 Case 指纹替代；同一需求变更可关联多个 Case。",
+                "",
+                "| Case | Independent change ID | Reason | Evidence |",
+                "|---|---|---|---|",
+            ]
+        )
+        previous_changes = {
+            match.group("id"): (
+                match.group("change"),
+                match.group("reason"),
+                match.group("evidence"),
+            )
+            for match in _CASE_CHANGE_ROW.finditer(existing or "")
+        }
+        for item in changed:
+            reference, reason, evidence = previous_changes.get(
+                item.item_id, ("PENDING", "PENDING", "PENDING")
+            )
+            lines.append(f"| {item.item_id} | {reference} | {reason} | {evidence} |")
+        lines.append("")
+
+
 def _append_semantic_and_questions(
     lines: list[str],
     report: ScanReport,
+    revision: str,
     existing: str | None,
     manual: dict[str, str],
     facts: ReportFacts,
     items: tuple[SemanticItem, ...],
 ) -> None:
     """Append semantic deltas, debt responsibility, test changes and architecture questions."""
-    delta_items = [item for item in items if item.delta]
+    due_items = [item for item in items if item.delta or item.touched_historical]
+    delta_items = [item for item in due_items if item.delta]
     delta_rows = [
         "| SEM | Rule | Severity | Kind | Question | Location | Relation | Message |",
         "|---|---|---|---|---|---|---|---|",
     ]
-    for item in delta_items:
+    for item in due_items:
         finding = item.finding
         relation = (
             ", ".join(
@@ -844,11 +986,12 @@ def _append_semantic_and_questions(
             f"{escape(relation)} | {escape(finding.message)} |"
         )
     if len(delta_rows) == _TABLE_HEADER_ROWS:
-        delta_rows.append("| — | — | — | — | — | — | — | 无本轮语义 Delta |")
+        delta_rows.append("| — | — | — | — | — | — | — | 无本轮相关语义候选 |")
     summary = [
-        f"- 当前语义候选：{len(items)}",
+        f"- 本轮语义责任项：{len(due_items)}",
         f"- 本轮 Delta：{len(delta_items) if report.baseline is not None else 'N/A'}",
-        "- 历史语义候选不要求抽样解释；普通 C/E/W 存量责任由 DEBT 账本单独管理。",
+        f"- 触及文件的历史语义项：{sum(item.touched_historical for item in due_items)}",
+        "- 未触及的历史语义项不在本轮审计账本中展示，也不要求填写；普通 C/E/W 存量责任由 DEBT 账本单独管理。",
     ]
     lines.extend(
         [
@@ -863,7 +1006,6 @@ def _append_semantic_and_questions(
         ]
     )
 
-
     _append_debt_accountability(lines, existing, facts)
 
     lines.extend(
@@ -873,15 +1015,16 @@ def _append_semantic_and_questions(
         ]
     )
     previous_sem = _existing_sem_rows(existing)
-    for item in delta_items:
+    for item in due_items:
         row = previous_sem.get(
             item.item_id, ("PENDING", "PENDING", "PENDING", "PENDING")
         )
         lines.append(f"| {item.item_id} | {row[0]} | {row[1]} | {row[2]} | {row[3]} |")
-    if not delta_items:
+    if not due_items:
         lines.append(
             "| — | JUSTIFIED | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE |"
         )
+    _append_case_purpose(lines, report, revision, existing)
     lines.extend(["", "## 6. 十一项架构拷问", ""])
     previous_questions = _existing_questions(existing)
     for index, title in enumerate(QUESTION_TITLES, 1):
@@ -1012,7 +1155,9 @@ def _render_compact_report(
     ]
     _append_metadata_and_changes(lines, report, revision, manual, facts)
     _append_static_and_additions(lines, report, existing, facts)
-    _append_semantic_and_questions(lines, report, existing, manual, facts, items)
+    _append_semantic_and_questions(
+        lines, report, revision, existing, manual, facts, items
+    )
     _append_reduction_and_final(lines, report, manual, facts, items)
     _append_commit(lines, report, revision, existing, facts, items)
     return "\n".join(lines)
@@ -1075,11 +1220,8 @@ def _semantic_verdict_issues(item: SemanticItem, verdict: str) -> list[str]:
     finding = item.finding
     if verdict not in VALID_SEMANTIC_VERDICTS:
         return [f"{item.item_id} verdict 非法：{verdict}"]
-    unauthorized_heuristic = finding.code == "QG178" and not bool(
-        finding.evidence["authorized_by_baseline"]
-    )
-    if unauthorized_heuristic and verdict != "BLOCKING":
-        return [f"{item.item_id} 是未获 Git 基线授权的 QG178，只能 BLOCKING。"]
+    if finding.code == "QG178" and verdict != "BLOCKING":
+        return [f"{item.item_id} 是未命中 Profile 精确豁免的 QG178，只能 BLOCKING。"]
     allowed = {
         "QG020": {"JUSTIFIED_NARROW_SUPPRESSION", "BLOCKING"},
         "QG128": {"JUSTIFIED_DEPENDENCY_CONTRACT", "JUSTIFIED_PROTOCOL", "BLOCKING"},
@@ -1162,11 +1304,15 @@ def _addition_issues(text: str, facts: ReportFacts) -> list[str]:
 def _semantic_issues(
     text: str, items: tuple[SemanticItem, ...]
 ) -> tuple[list[str], bool]:
-    """Validate only semantic deltas; historical ordinary debt has its own ledger."""
+    """Require decisions for new and touched historical semantic candidates only."""
     issues: list[str] = []
     rows = _existing_sem_rows(text)
+    due = tuple(item for item in items if item.delta or item.touched_historical)
+    expected = {item.item_id for item in due}
+    if set(rows) != expected:
+        issues.append("SEM 裁决表必须恰好覆盖本轮新增与触及文件的历史语义项。")
     blocking = False
-    for item in (candidate for candidate in items if candidate.delta):
+    for item in due:
         if item.item_id not in rows:
             issues.append(f"缺少 {item.item_id} 语义裁决。")
             continue
@@ -1252,11 +1398,11 @@ def _question_issues(
         blocking = blocking or status == "BLOCKING"
         if _has_placeholder(evidence) or _has_placeholder(conclusion):
             issues.append(f"{key} 证据或结论未完成。")
-    delta_items = [item for item in items if item.delta]
-    rules = {item.finding.code for item in delta_items}
+    due_items = [item for item in items if item.delta or item.touched_historical]
+    rules = {item.finding.code for item in due_items}
     q6_required = any(
         "Q6" in str(item.finding.evidence["semantic_review_question"])
-        for item in delta_items
+        for item in due_items
     )
     has_production_interface_changes = any(
         (
@@ -1344,6 +1490,9 @@ def validate_compact_report(
     semantic_issues, semantic_blocking = _semantic_issues(text, items)
     issues.extend(semantic_issues)
     issues.extend(_debt_issues(text, facts))
+    purposes = _test_case_purposes(report, revision)
+    issues.extend(_case_purpose_issues(text, purposes))
+    issues.extend(_case_change_issues(text, purposes))
     question_issues, question_blocking = _question_issues(text, facts, items)
     issues.extend(question_issues)
     manual = _manual_values(text)
@@ -1353,7 +1502,5 @@ def validate_compact_report(
     if not manual["Reduction结论"].startswith("COMPLETE"):
         issues.append("Reduction Pass 结论必须以 COMPLETE 开头；报告填写不是流程终点。")
     issues.extend(_commit_issues(text, report))
-    status = (
-        "REJECT" if semantic_blocking or question_blocking else "PASS"
-    )
+    status = "REJECT" if semantic_blocking or question_blocking else "PASS"
     return ReportValidation(tuple(issues), status)

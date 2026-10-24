@@ -162,7 +162,13 @@ def bound_external_api(
     else:
         # A member on a custom object needs compiler-confirmed receiver type.
         return None
-    if root in _local_bindings(function):
+    # Calls within the same source function share one lexical scope.  Cache
+    # its bindings on the module's own analysis facts, not process-global ASTs.
+    bindings = facts.external_api_lexical_bindings.get(function)
+    if bindings is None:
+        bindings = frozenset(_local_bindings(function))
+        facts.external_api_lexical_bindings[function] = bindings
+    if root in bindings:
         return None
     target = _cached_bindings(facts.tree).get(root)
     if target is None:
@@ -171,9 +177,15 @@ def bound_external_api(
     # An authored module can shadow a third-party/stdlib import. Without the
     # resolver's dependency identity, that binding is not a certified API.
     repository_root = facts.repository_root
-    if (repository_root / f"{dependency_root}.py").exists() or (
-        repository_root / dependency_root / "__init__.py"
-    ).exists():
+    # The source snapshot and repository root are fixed for this ModuleFacts
+    # lifetime. Reuse the certified local-module check for every call in the
+    # same module rather than issuing filesystem stats for each call site.
+    local_modules = facts.external_api_local_module_cache
+    if dependency_root not in local_modules:
+        local_modules[dependency_root] = (
+            repository_root / f"{dependency_root}.py"
+        ).exists() or (repository_root / dependency_root / "__init__.py").exists()
+    if local_modules[dependency_root]:
         return None
     qualified = f"{target}{suffix}"
     return qualified if qualified in KNOWN_APIS else None

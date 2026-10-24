@@ -1,0 +1,129 @@
+{
+  "schema": "rqg.core-uncertainty.v1",
+  "cases": [
+    {
+      "case_id": "unknown-qg001-normalized-high",
+      "rule": "QG001",
+      "resolution": "normalized",
+      "count": 1,
+      "callable_consumers": 0,
+      "expected": [
+        [
+          "QG001",
+          "warning",
+          "high"
+        ]
+      ]
+    },
+    {
+      "case_id": "unknown-qg001-dynamic-medium",
+      "rule": "QG001",
+      "resolution": "dynamic",
+      "count": 1,
+      "callable_consumers": 0,
+      "expected": [
+        [
+          "QG001",
+          "warning",
+          "medium"
+        ]
+      ]
+    },
+    {
+      "case_id": "unknown-qg001-legacy-medium",
+      "rule": "QG001",
+      "resolution": "legacy",
+      "count": 1,
+      "callable_consumers": 0,
+      "expected": [
+        [
+          "QG001",
+          "warning",
+          "medium"
+        ]
+      ]
+    },
+    {
+      "case_id": "unknown-qg001-callback-protected",
+      "rule": "QG001",
+      "resolution": "dynamic",
+      "count": 1,
+      "callable_consumers": 1,
+      "expected": []
+    },
+    {
+      "case_id": "unknown-qg013-normalized-helper-owner",
+      "rule": "QG013",
+      "resolution": "normalized",
+      "count": 6,
+      "callable_consumers": 0,
+      "expected": [
+        [
+          "QG013",
+          "info",
+          "medium"
+        ]
+      ]
+    },
+    {
+      "case_id": "unknown-qg013-dynamic-helper-owner",
+      "rule": "QG013",
+      "resolution": "dynamic",
+      "count": 6,
+      "callable_consumers": 0,
+      "expected": [
+        [
+          "QG013",
+          "info",
+          "medium"
+        ]
+      ]
+    },
+    {
+      "case_id": "unknown-qg013-callback-protected-owner",
+      "rule": "QG013",
+      "resolution": "dynamic",
+      "count": 6,
+      "callable_consumers": 1,
+      "expected": []
+    },
+    {
+      "case_id": "unknown-qg156-normalized-unused",
+      "rule": "QG156",
+      "resolution": "normalized",
+      "count": 1,
+      "callable_consumers": 0,
+      "expected": [
+        [
+          "QG156",
+          "error",
+          "medium"
+        ]
+      ]
+    },
+    {
+      "case_id": "unknown-qg156-dynamic-unproved",
+      "rule": "QG156",
+      "resolution": "dynamic",
+      "count": 1,
+      "callable_consumers": 0,
+      "expected": []
+    },
+    {
+      "case_id": "unknown-qg156-legacy-unproved",
+      "rule": "QG156",
+      "resolution": "legacy",
+      "count": 1,
+      "callable_consumers": 0,
+      "expected": []
+    },
+    {
+      "case_id": "unknown-qg156-callback-consumer",
+      "rule": "QG156",
+      "resolution": "normalized",
+      "count": 1,
+      "callable_consumers": 1,
+      "expected": []
+    }
+  ]
+}

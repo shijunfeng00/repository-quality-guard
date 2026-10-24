@@ -341,6 +341,12 @@ profiles/my-project/
     },
     "disable": [
       "QG187"
+    ],
+    "scoped_disable": [
+      {"code": "QG060", "path": "src/processor.py"},
+      {"code": "QG060", "path": "src/models.py", "symbol": "Parser"},
+      {"code": "QG060", "path": "src/models.py", "symbol": "Parser.parse"},
+      {"code": "QG003", "path": "src/storage.py", "symbol": "Store.load"}
     ]
   },
   "nonblocking_paths": [
@@ -360,6 +366,7 @@ profiles/my-project/
 - `name`：这个项目规则集叫什么；
 - `rules.levels`：调整某些 QG 规则在本项目里的严重程度，例如直接阻断或进入语义审计；
 - `rules.disable`：明确关闭确实不适合本项目的规则；
+- `rules.scoped_disable`：适用于任意可配置 Core QG 或自定义 QG，不是 QG060 特判；只对指定仓库相对文件关闭某个规则；可选 `symbol` 精确指定 Python 类、函数或类方法的限定名称（如 `Parser.parse`），由 AST 源码范围定位，不影响相邻类和同名方法。路径是**精确文件名**而不是 glob，禁止 `..`、绝对路径和通配符；`QG98x/QG99x` 完整性规则不可关闭；
 - `nonblocking_paths`：这些路径仍然会被检查，但问题不会直接阻断正常交付；
 - `commit_policy`：可选的 QG984 提交信息策略。未配置时 Core 只要求存在非占位、可执行的 `git commit -m`；各项目可在 Profile 中自行定义主题正则、示例和正文要求。
 

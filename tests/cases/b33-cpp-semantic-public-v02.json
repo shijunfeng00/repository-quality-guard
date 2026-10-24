@@ -1,0 +1,17 @@
+{
+  "schema": "b33-cpp-semantic-public/v02",
+  "cases": [
+    {
+      "case_id": "b33-cpp-failed-baseline-does-not-fabricate-quality-delta",
+      "base": "#error compiler-only old source unavailable\nint run() { return 0; }\n",
+      "target": "int run() {\n    if (1) { return 1; }\n    return 0;\n}\n",
+      "expected_codes": []
+    },
+    {
+      "case_id": "b33-cpp-unavailable-target-cannot-prove-regression",
+      "base": "int run() {\n    if (1) { return 1; }\n    return 0;\n}\n",
+      "target": "#error clang unable to compile target translation unit\nint run() { return 0; }\n",
+      "expected_codes": []
+    }
+  ]
+}

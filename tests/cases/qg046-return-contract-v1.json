@@ -1,0 +1,15 @@
+{
+  "schema": "rqg.qg046.return-contract-v1",
+  "cases": [
+    {
+      "case_id": "nullable-return-implicit-none",
+      "source": "def resolve(value: str) -> str | None:\n    if value:\n        return value\n",
+      "expected": false
+    },
+    {
+      "case_id": "required-return-implicit-none",
+      "source": "def resolve(value: str) -> str:\n    if value:\n        return value\n",
+      "expected": true
+    }
+  ]
+}

@@ -1,0 +1,287 @@
+{
+  "schema": "rqg.mapping-get-public-cases.v1",
+  "cases": [
+    {
+      "case_id": "mapping_grandparent_and_self_dict_remain_detected",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "class Storage(dict):\n    pass\nclass Middle(Storage):\n    pass\nclass Repository(Middle):\n    def __init__(self):\n        self._data = {}\n    def read(self, key):\n        return self._data.get(key, 'UNKNOWN')\n    def lookup(self, key):\n        return self.get(key, 'UNKNOWN')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG004",
+          9
+        ],
+        [
+          "QG004",
+          11
+        ]
+      ],
+      "contract_rationale": "A mapping subtype proves the receiver, not that an arbitrary key is mandatory; sentinel cannot alone prove a defect."
+    },
+    {
+      "case_id": "wrapper_get_does_not_hide_inner_mapping_fallback",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "class Repository:\n    def __init__(self):\n        self._data: dict[str,str] = {}\n    def get(self, key):\n        return self._data.get(key, 'UNKNOWN')\ndef read(value: Repository):\n    return value.get('required')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG004",
+          5
+        ]
+      ],
+      "contract_rationale": "The underlying dict has arbitrary keys; wrapper has no required field schema."
+    },
+    {
+      "case_id": "optional_return_must_not_hide_required_schema_key",
+      "rule": "QG004",
+      "kind": "TP",
+      "source": "from typing import Optional, TypedDict\nclass Payload(TypedDict):\n    id: str\ndef consume(record: Payload) -> Optional[str]:\n    return record.get('id', None)\n",
+      "must_contain": [
+        [
+          "QG004",
+          5
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "unknown_sentinel_still_detected_even_for_optional_result",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "from typing import Optional\ndef consume(record: dict[str,str], key: str) -> Optional[str]:\n    return record.get(key, 'UNKNOWN')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG004",
+          3
+        ]
+      ],
+      "contract_rationale": "General dict[str,str] has no mandatory individual key; the optional return contract is consistent."
+    },
+    {
+      "case_id": "empty_without_a_sparse_producer_remains_a_review_candidate",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "def read(payload: dict[str,str], key: str) -> str:\n    return payload.get(key, '')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG004",
+          2
+        ]
+      ],
+      "contract_rationale": "An arbitrary Mapping[str,str] does not prove a key is mandatory; default is not defective on syntax alone."
+    },
+    {
+      "case_id": "optional_return_does_not_hide_required_self_typed_dict_field",
+      "rule": "QG004",
+      "kind": "TP",
+      "source": "from typing import Optional, TypedDict\nclass Payload(TypedDict):\n    id: str\nclass Repository:\n    def __init__(self):\n        self._data: Payload = {'id': 'A'}\n    def read(self) -> Optional[str]:\n        return self._data.get('id', None)\n",
+      "must_contain": [
+        [
+          "QG004",
+          8
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "multiple_inheritance_with_ambiguous_get_is_not_proven_mapping",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "class MethodMixin:\n    def get(self, key):\n        return key\nclass MappingBase(dict):\n    pass\nclass Combination(MethodMixin, MappingBase):\n    pass\ndef execute(value: Combination):\n    return value.get('id')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          9
+        ]
+      ]
+    },
+    {
+      "case_id": "builtin_mapping_get_without_required_key_is_not_accepted",
+      "rule": "QG003",
+      "kind": "TP",
+      "source": "def read(value: dict[str, int]):\n    return value.get()\n",
+      "must_contain": [
+        [
+          "QG003",
+          2
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "qg004-optional-absent-is-legitimate",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "def read(value: dict[str, int], key: str) -> int | None:\n    return value.get(key, None)\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG004",
+          2
+        ]
+      ]
+    },
+    {
+      "case_id": "qg003-typed-required-alias",
+      "rule": "QG003",
+      "kind": "TP",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token):\n alias=data\n return alias.get('value')\n",
+      "must_contain": [
+        [
+          "QG003",
+          6
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "qg003-typed-required-chain",
+      "rule": "QG003",
+      "kind": "TP",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token):\n a=data\n b=a\n return b.get('value')\n",
+      "must_contain": [
+        [
+          "QG003",
+          7
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "qg003-typed-optional",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "from typing import TypedDict,NotRequired\nclass Token(TypedDict):\n value:NotRequired[str]\ndef lookup(data:Token):\n return data.get('value')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "qg003-typed-nontotal",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "from typing import TypedDict\nclass Token(TypedDict,total=False):\n value:str\ndef lookup(data:Token):\n return data.get('value')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "qg003-typed-invalidated-alias",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token, other):\n alias=data\n alias=other\n return alias.get('value')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          7
+        ]
+      ]
+    },
+    {
+      "case_id": "qg003-required-guarded",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token):\n if 'value' not in data: raise KeyError('value')\n return data.get('value')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          6
+        ]
+      ]
+    },
+    {
+      "case_id": "qg003-not-guarded",
+      "rule": "QG003",
+      "kind": "TP",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token):\n if 'value' not in data: print('oops')\n return data.get('value')\n",
+      "must_contain": [
+        [
+          "QG003",
+          6
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "qg003-typed-source-reassigned",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token,other):\n data=other\n return data.get('value')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          6
+        ]
+      ]
+    },
+    {
+      "case_id": "qg003-no-dominating-guard",
+      "rule": "QG003",
+      "kind": "TP",
+      "source": "from typing import TypedDict\nclass Token(TypedDict):\n value:str\ndef lookup(data:Token):\n if 'value' not in data: raise KeyError('value')\n data.pop('value',None)\n return data.get('value')\n",
+      "must_contain": [
+        [
+          "QG003",
+          7
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "qg004-optional-default",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "from typing import TypedDict, NotRequired\nclass Token(TypedDict):\n value:NotRequired[str]\ndef lookup(data:Token):\n return data.get('value','missing')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG004",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "qg004-nontotal-required",
+      "rule": "QG004",
+      "kind": "TP",
+      "source": "from typing import TypedDict, Required\nclass Token(TypedDict,total=False):\n value:Required[str]\ndef lookup(data:Token):\n return data.get('value',None)\n",
+      "must_contain": [
+        [
+          "QG004",
+          5
+        ]
+      ],
+      "must_omit": []
+    },
+    {
+      "case_id": "qg003-notrequired-not-authenticated",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "from typing import TypedDict\nclass NotRequired:\n def __class_getitem__(cls,item): return item\nclass Token(TypedDict):\n value:NotRequired[str]\ndef lookup(data:Token):\n return data.get('value')\n",
+      "must_contain": [],
+      "must_omit": [
+        [
+          "QG003",
+          7
+        ]
+      ],
+      "contract_rationale": "Locally shadowed NotRequired cannot be trusted as typing.NotRequired or as a proven required field; retain UNKNOWN."
+    }
+  ]
+}

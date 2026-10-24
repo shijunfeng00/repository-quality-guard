@@ -19,17 +19,28 @@ from .topology_facts import UsageEdge, UsageKind
 
 
 def _executor_aliases(tree: ast.Module) -> set[str]:
+    """Return locally imported names of ``concurrent.futures.ThreadPoolExecutor``.
+
+    Only explicit module-level ``from concurrent.futures import`` bindings
+    qualify; unrelated classes called ThreadPoolExecutor are not certified.
+    """
     aliases = set()
     for item in tree.body:
         if isinstance(item, ast.ImportFrom) and item.module == "concurrent.futures":
             aliases.update(
                 (part.asname or part.name)
-                for part in item.names if part.name == "ThreadPoolExecutor"
+                for part in item.names
+                if part.name == "ThreadPoolExecutor"
             )
     return aliases
 
 
 def _is_executor(value: ast.AST, aliases: set[str]) -> bool:
+    """Recognize calls to an import-certified executor constructor alias.
+
+    Qualified expressions and unbound names do not satisfy this narrow
+    lexical witness, even when their runtime object could be an executor.
+    """
     return (
         isinstance(value, ast.Call)
         and isinstance(value.func, ast.Name)
@@ -38,6 +49,11 @@ def _is_executor(value: ast.AST, aliases: set[str]) -> bool:
 
 
 def _writes(node: ast.AST):
+    """Yield AST assignment targets, assigned expressions and source lines.
+
+    Ordinary, annotated and walrus assignments retain their values; augmented
+    assignments supply ``None`` because they are not constructor bindings.
+    """
     for item in ast.walk(node):
         if isinstance(item, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
             targets = item.targets if isinstance(item, ast.Assign) else (item.target,)
@@ -48,7 +64,14 @@ def _writes(node: ast.AST):
             yield item.target, None, item.lineno
 
 
-def _field_is_unique_executor(klass: ast.ClassDef, field: str, aliases: set[str]) -> bool:
+def _field_is_unique_executor(
+    klass: ast.ClassDef, field: str, aliases: set[str]
+) -> bool:
+    """Certify a ``self`` field initialized once to a known executor in ``__init__``.
+
+    Other assignments to that field, including writes in additional methods,
+    invalidate the unique ownership evidence.
+    """
     writes = [
         (method.name, value)
         for method in klass.body
@@ -59,10 +82,22 @@ def _field_is_unique_executor(klass: ast.ClassDef, field: str, aliases: set[str]
         and target.value.id == "self"
         and target.attr == field
     ]
-    return len(writes) == 1 and writes[0][0] == "__init__" and _is_executor(writes[0][1], aliases)
+    return (
+        len(writes) == 1
+        and writes[0][0] == "__init__"
+        and _is_executor(writes[0][1], aliases)
+    )
 
 
-def _local_is_executor(method: ast.AST, name: str, call_line: int, aliases: set[str]) -> bool:
+def _local_is_executor(
+    method: ast.AST, name: str, call_line: int, aliases: set[str]
+) -> bool:
+    """Prove an executor local is bound before the callback submission line.
+
+    Accept a sole preceding constructor assignment or a matching ``with``
+    binding whose lexical range includes the submission. Earlier writes to a
+    context-managed name prevent this proof.
+    """
     writes = [
         (value, lineno)
         for target, value, lineno in _writes(method)
@@ -89,7 +124,20 @@ def _local_is_executor(method: ast.AST, name: str, call_line: int, aliases: set[
 def executor_dispatch_edges(
     graph: RepositoryRelationGraph, edges: set[UsageEdge]
 ) -> set[UsageEdge]:
-    """Link callbacks to a confirmed standard executor's ``submit`` call site."""
+    """Add callback execution edges only for certified executor submissions.
+
+    Args:
+        graph: Frozen repository topology, parsed source units and symbol
+            ownership used to validate callback registration evidence.
+        edges: Existing registration and call edges whose source and target
+            identify candidate callback submissions.
+
+    Returns:
+        Existing edges plus ``MAY_CALLBACK`` edges where a ``submit`` call
+        targets the registered function and its receiver is provably a local
+        or uniquely initialized ``ThreadPoolExecutor``. Ambiguous aliases
+        do not yield new edges.
+    """
     result: set[UsageEdge] = set()
     snapshot = graph.snapshot
     captures = {
@@ -115,8 +163,7 @@ def executor_dispatch_edges(
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         class_nodes = {
-            item.name: item for item in unit.tree.body
-            if isinstance(item, ast.ClassDef)
+            item.name: item for item in unit.tree.body if isinstance(item, ast.ClassDef)
         }
         for edge in references:
             if edge.source_id == edge.target_id:
@@ -133,18 +180,24 @@ def executor_dispatch_edges(
             klass = None
             if target.kind == "method" and target.owner in class_nodes:
                 candidate = class_nodes[target.owner]
-                class_id = f"{target.module}.{target.owner}" if target.module else target.owner
+                class_id = (
+                    f"{target.module}.{target.owner}" if target.module else target.owner
+                )
                 if edge.source_id.startswith(class_id + ".") and (
-                    source.owner == target.owner
-                    or (edge.source_id, "self") in captures
+                    source.owner == target.owner or (edge.source_id, "self") in captures
                 ):
                     klass = candidate
             for call in ast.walk(method):
                 if not isinstance(call, ast.Call) or call.lineno != edge.line:
                     continue
-                if not isinstance(call.func, ast.Attribute) or call.func.attr != "submit":
+                if (
+                    not isinstance(call.func, ast.Attribute)
+                    or call.func.attr != "submit"
+                ):
                     continue
-                if not call.args or not isinstance(call.args[0], (ast.Name, ast.Attribute)):
+                if not call.args or not isinstance(
+                    call.args[0], (ast.Name, ast.Attribute)
+                ):
                     continue
                 callback = call.args[0]
                 if isinstance(callback, ast.Name):
@@ -157,14 +210,21 @@ def executor_dispatch_edges(
                         and callback.attr == target.name
                         and klass is not None
                         and target.node_id.startswith(
-                            (f"{source.module}.{klass.name}" if source.module else klass.name) + "."
+                            (
+                                f"{source.module}.{klass.name}"
+                                if source.module
+                                else klass.name
+                            )
+                            + "."
                         )
                     ):
                         continue
                 receiver = call.func.value
                 certified = False
                 if isinstance(receiver, ast.Name):
-                    certified = _local_is_executor(method, receiver.id, call.lineno, aliases)
+                    certified = _local_is_executor(
+                        method, receiver.id, call.lineno, aliases
+                    )
                 elif (
                     klass is not None
                     and isinstance(receiver, ast.Attribute)
@@ -173,5 +233,14 @@ def executor_dispatch_edges(
                 ):
                     certified = _field_is_unique_executor(klass, receiver.attr, aliases)
                 if certified:
-                    result.add(UsageEdge(edge.source_id, edge.target_id, UsageKind.MAY_CALLBACK, Path(path), call.lineno, "medium"))
+                    result.add(
+                        UsageEdge(
+                            edge.source_id,
+                            edge.target_id,
+                            UsageKind.MAY_CALLBACK,
+                            Path(path),
+                            call.lineno,
+                            "medium",
+                        )
+                    )
     return result

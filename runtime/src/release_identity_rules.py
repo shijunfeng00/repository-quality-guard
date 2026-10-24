@@ -21,6 +21,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 from .config import GuardConfig
+from .core_rule_contract import CoreQualityRule
 from .model import Finding
 
 _SOURCE = "quality-guard-release-identity"
@@ -129,8 +130,17 @@ class _IdentityMatch:
     column: int
 
 
-def _git_tags(root: Path) -> tuple[str, ...]:
-    """Return release-like Git tags; non-Git directories simply have none."""
+def git_release_tags(root: Path) -> tuple[str, ...]:
+    """Read reproducible Git release labels from the scanned repository.
+
+    Only tags matching the canonical release-token policy are retained;
+    absence of a usable Git repository yields an empty tuple, not fake tags.
+
+    Args:
+        root: Git worktree whose refs are authoritative for this check.
+
+    Returns:
+        Sorted unique release-like tag names, or () when Git cannot list refs."""
     result = subprocess.run(
         ["git", "tag", "--list"],
         cwd=root,
@@ -277,6 +287,110 @@ def _line_identity_matches(
     return matches
 
 
+@dataclass(frozen=True)
+class ReleaseIdentityContext:
+    """Bind a single path and independently discovered version evidence.
+
+    Both release-identity rules consume this shared context without rescanning files.
+    """
+
+    relative: str
+    path_token: str = ""
+    matches: tuple[_IdentityMatch, ...] = ()
+    git_tags: tuple[str, ...] = ()
+
+
+class ReleasePathIdentityRule(CoreQualityRule[ReleaseIdentityContext]):
+    """Report release-like identity embedded in repository paths.
+
+    QG203 emits high-confidence structural evidence using the matched path token.
+    """
+
+    code = "QG203"
+
+    def evaluate(self, context: ReleaseIdentityContext) -> list[Finding]:
+        """Report QG203 when a path embeds an actual release-identity token.
+
+        Args:
+            context: Repository-relative path and its already-resolved structural token.
+
+        Returns:
+            One critical path-identity finding at line 1, or [] if no token was found."""
+        if not context.path_token:
+            return []
+        return [
+            Finding(
+                code=self.code,
+                severity="critical",
+                confidence="high",
+                path=context.relative,
+                line=1,
+                column=1,
+                message=f"仓库路径/文件名绑定 release-like identity `{context.path_token}`。",
+                suggestion=(
+                    "将当前代码、测试、fixture、artifact 或文档路径改成稳定职责/能力/领域名称；"
+                    "发布身份应由 Git/release evidence 承载。"
+                ),
+                evidence={
+                    "mechanism": "path-release-identity",
+                    "token": context.path_token,
+                },
+                source=_SOURCE,
+            )
+        ]
+
+
+class ReleaseContentIdentityRule(CoreQualityRule[ReleaseIdentityContext]):
+    """Report semantic review candidates from version-like source content.
+
+    QG205 preserves canonical matches and the Git tag evidence used for classification.
+    """
+
+    code = "QG205"
+
+    def evaluate(self, context: ReleaseIdentityContext) -> list[Finding]:
+        """Report version-identity evidence discovered in source content and Git refs.
+
+        The first verified source match supplies the location; all checked Git
+        tags remain attached as provenance rather than generated from the message.
+
+        Args:
+            context: Source match list, relative path and inspected Git refs.
+
+        Returns:
+            One QG205 informational review finding, or [] when no match exists."""
+        if not context.matches:
+            return []
+        first = context.matches[0]
+        return [
+            Finding(
+                code=self.code,
+                severity="info",
+                confidence="medium",
+                path=context.relative,
+                line=first.line,
+                column=first.column,
+                message=(
+                    "文件内容包含版本、release label、Git tag、commit/SHA 或固定 digest，"
+                    "需要语义判断其是否属于稳定契约。"
+                ),
+                suggestion=(
+                    "合法 API/协议/依赖/schema/迁移/完整性契约可以保留；若它只是项目自身"
+                    "发布 lineage 并驱动当前实现、测试或文档契约，则改用稳定能力/领域标识。"
+                ),
+                evidence={
+                    "mechanism": "release-identity-semantic-review",
+                    "matches": [
+                        {"kind": item.kind, "token": item.token, "line": item.line}
+                        for item in context.matches[:16]
+                    ],
+                    "git_tags_checked": list(context.git_tags),
+                },
+                source=_SOURCE,
+            )
+        ]
+
+
 def release_identity_findings(root: Path, config: GuardConfig) -> tuple[Finding, ...]:
     """Scan structural path identity and semantic content identity.
 
@@ -293,7 +407,7 @@ def release_identity_findings(root: Path, config: GuardConfig) -> tuple[Finding,
         Stable, sorted release-identity findings for the selected repository.
     """
     root = root.resolve()
-    git_tags = _git_tags(root)
+    git_tags = git_release_tags(root)
     findings: list[Finding] = []
 
     for path in _repository_paths(root):
@@ -313,24 +427,9 @@ def release_identity_findings(root: Path, config: GuardConfig) -> tuple[Finding,
             )
         if path_match is not None:
             path_token = path_match.group(0).strip("/_.-")
-            findings.append(
-                Finding(
-                    code="QG203",
-                    severity="critical",
-                    confidence="high",
-                    path=relative,
-                    line=1,
-                    column=1,
-                    message=f"仓库路径/文件名绑定 release-like identity `{path_token}`。",
-                    suggestion=(
-                        "将当前代码、测试、fixture、artifact 或文档路径改成稳定职责/能力/领域名称；"
-                        "发布身份应由 Git/release evidence 承载。"
-                    ),
-                    evidence={
-                        "mechanism": "path-release-identity",
-                        "token": path_token,
-                    },
-                    source=_SOURCE,
+            findings.extend(
+                ReleasePathIdentityRule().evaluate(
+                    ReleaseIdentityContext(relative=relative, path_token=path_token)
                 )
             )
 
@@ -351,32 +450,11 @@ def release_identity_findings(root: Path, config: GuardConfig) -> tuple[Finding,
             }.values(),
             key=lambda item: (item.line, item.column, item.kind, item.token),
         )
-        first = matches[0]
-        findings.append(
-            Finding(
-                code="QG205",
-                severity="info",
-                confidence="medium",
-                path=relative,
-                line=first.line,
-                column=first.column,
-                message=(
-                    "文件内容包含版本、release label、Git tag、commit/SHA 或固定 digest，"
-                    "需要语义判断其是否属于稳定契约。"
-                ),
-                suggestion=(
-                    "合法 API/协议/依赖/schema/迁移/完整性契约可以保留；若它只是项目自身"
-                    "发布 lineage 并驱动当前实现、测试或文档契约，则改用稳定能力/领域标识。"
-                ),
-                evidence={
-                    "mechanism": "release-identity-semantic-review",
-                    "matches": [
-                        {"kind": item.kind, "token": item.token, "line": item.line}
-                        for item in matches[:16]
-                    ],
-                    "git_tags_checked": list(git_tags),
-                },
-                source=_SOURCE,
+        findings.extend(
+            ReleaseContentIdentityRule().evaluate(
+                ReleaseIdentityContext(
+                    relative=relative, matches=tuple(matches), git_tags=git_tags
+                )
             )
         )
 

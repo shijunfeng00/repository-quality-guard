@@ -193,6 +193,28 @@ class MappingGetSemantics:
             class_name = parents[0].split(".")[-1] if len(parents) == 1 else ""
         return "unknown"
 
+    def rebound_formal_receiver(self, receiver_name: str) -> bool:
+        """Determine whether an authored formal receiver has local rebindings.
+
+        Args:
+            receiver_name: Source name of a candidate typed local or parameter.
+
+        Returns:
+            True when a local store/delete invalidates the original annotation;
+            False if no invalidating write has been observed in the active scope.
+        """
+        if not receiver_name.isidentifier() or not self.owner.function_node_stack:
+            return False
+        if receiver_name not in self.owner.annotations:
+            return False
+        function = self.owner.function_node_stack[-1]
+        return any(
+            isinstance(item, ast.Name)
+            and item.id == receiver_name
+            and isinstance(item.ctx, (ast.Store, ast.Del))
+            for item in ast.walk(function)
+        )
+
     def local_get_owner(self, receiver_name: str) -> str:
         """Classify a local get receiver using authored owners and constructors.
 
@@ -212,7 +234,11 @@ class MappingGetSemantics:
             )
         if field:
             return "unknown"
-        class_name = self.owner.annotations.get(root, "").split(".")[-1]
+        class_name = (
+            ""
+            if self.rebound_formal_receiver(root)
+            else self.owner.annotations.get(root, "").split(".")[-1]
+        )
         if not class_name and self.owner.function_node_stack:
             declarations = [
                 item.value
@@ -256,6 +282,164 @@ class MappingGetSemantics:
                     return dotted_name(statement.annotation).split(".")[-1]
         return ""
 
+    def source_bound_receiver(self, receiver_name: str, node: ast.Call) -> str:
+        """Resolve a uniquely assigned local alias to an annotated source.
+
+        Only straight-line single assignments with no competing local writes
+        provide type ownership evidence; unresolved paths keep their identity.
+
+        Args:
+            receiver_name: Lexical receiver of the observed mapping call.
+            node: Exact call source position that must follow the assignments.
+
+        Returns:
+            Authored annotated receiver identity when its alias chain is proven;
+            otherwise the original receiver without guessed type ownership.
+        """
+        if not receiver_name.isidentifier() or not self.owner.function_node_stack:
+            return receiver_name
+        function = self.owner.function_node_stack[-1]
+        writes = [
+            part.id
+            for part in ast.walk(function)
+            if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del))
+        ]
+        current = receiver_name
+        seen: set[str] = set()
+        while current not in seen:
+            seen.add(current)
+            if current in self.owner.annotations:
+                return current if writes.count(current) == 0 else receiver_name
+            if writes.count(current) != 1:
+                break
+            assigned = [
+                stmt
+                for stmt in function.body
+                if isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+                and stmt.targets[0].id == current
+                and stmt.lineno < node.lineno
+                and isinstance(stmt.value, (ast.Name, ast.Attribute))
+            ]
+            if len(assigned) != 1:
+                break
+            source = dotted_name(assigned[0].value)
+            if source.startswith("self."):
+                return source if writes.count("self") == 0 else receiver_name
+            if not source.isidentifier():
+                break
+            current = source
+        return receiver_name
+
+    def schema_key_requirement(self, receiver_name: str, selector: str) -> bool | None:
+        """Read a local TypedDict field's statically declared requirement.
+
+        Args:
+            receiver_name: Receiver whose schema must be locally resolved.
+            selector: Literal field name observed by the actual mapping read.
+
+        Returns:
+            True for a mandatory field, False for an explicitly optional
+            field, and None when neither can be proved from the declaration.
+        """
+        if not selector:
+            return None
+        root, _, field = receiver_name.partition(".")
+        name = (
+            self._self_field_type(field)
+            if root == "self" and field
+            else (
+                ""
+                if self.rebound_formal_receiver(root)
+                else self.owner.annotations.get(root, "").split(".")[-1]
+            )
+        )
+        definition = self.owner.local_classes.get(name)
+        if definition is None or not any(
+            self.owner.facts.imports.get(dotted_name(base).split(".")[0], "")
+            + (
+                "." + dotted_name(base).split(".", 1)[1]
+                if "." in dotted_name(base)
+                else ""
+            )
+            in {"typing.TypedDict", "typing_extensions.TypedDict"}
+            for base in definition.bases
+        ):
+            return None
+        total = True
+        for keyword in definition.keywords:
+            if keyword.arg == "total":
+                if not isinstance(keyword.value, ast.Constant) or not isinstance(
+                    keyword.value.value, bool
+                ):
+                    return None
+                total = keyword.value.value
+        for member in definition.body:
+            if not isinstance(member, ast.AnnAssign):
+                continue
+            if not isinstance(member.target, ast.Name) or member.target.id != selector:
+                continue
+            annotation = member.annotation
+            if isinstance(annotation, ast.Subscript):
+                marker = dotted_name(annotation.value)
+                name, _, tail = marker.partition(".")
+                qualified = self.owner.facts.imports.get(name, "")
+                if tail:
+                    qualified += "." + tail
+                if qualified in {"typing.NotRequired", "typing_extensions.NotRequired"}:
+                    return False
+                if qualified in {"typing.Required", "typing_extensions.Required"}:
+                    return True
+                if marker.split(".")[-1] in {"NotRequired", "Required"}:
+                    return None
+            return total
+        return None
+
+    def established_key_guard(
+        self, receiver_name: str, selector: str, node: ast.Call
+    ) -> bool:
+        """Prove a missing-key guard aborts immediately before a direct return.
+
+        Args:
+            receiver_name: Identity used by the guard and subsequent read.
+            selector: Exact literal key checked before the read.
+            node: Source-bound mapping call directly returned after the guard.
+
+        Returns:
+            True only when an adjacent top-level missing-key branch raises
+            before that exact read, without an intervening mutation path.
+        """
+        if not self.owner.function_node_stack or not selector:
+            return False
+        function = self.owner.function_node_stack[-1]
+        # This bounded proof accepts no intervening statements or receiver writes.
+        if receiver_name.isidentifier() and any(
+            isinstance(item, ast.Name)
+            and item.id == receiver_name
+            and isinstance(item.ctx, (ast.Store, ast.Del))
+            for item in ast.walk(function)
+        ):
+            return False
+        for guard, following in zip(function.body, function.body[1:]):
+            if (
+                isinstance(guard, ast.If)
+                and not guard.orelse
+                and len(guard.body) == 1
+                and isinstance(guard.body[0], ast.Raise)
+                and isinstance(following, ast.Return)
+                and following.value is node
+                and isinstance(guard.test, ast.Compare)
+                and len(guard.test.ops) == 1
+                and isinstance(guard.test.ops[0], ast.NotIn)
+                and isinstance(guard.test.left, ast.Constant)
+                and guard.test.left.value == selector
+                and len(guard.test.comparators) == 1
+                and dotted_name(guard.test.comparators[0]) == receiver_name
+            ):
+                return True
+        return False
+
     def required_schema_key(self, receiver_name: str, selector: str) -> bool:
         """Determine whether a named TypedDict field is contractually required.
 
@@ -266,30 +450,7 @@ class MappingGetSemantics:
         Returns:
             True only when authored schema marks the field required.
         """
-        if not selector:
-            return False
-        root, _, field = receiver_name.partition(".")
-        name = (
-            self._self_field_type(field)
-            if root == "self" and field
-            else self.owner.annotations.get(root, "").split(".")[-1]
-        )
-        definition = self.owner.local_classes.get(name)
-        if definition is None or not any(
-            dotted_name(base).split(".")[-1] == "TypedDict" for base in definition.bases
-        ):
-            return False
-        for member in definition.body:
-            if not isinstance(member, ast.AnnAssign):
-                continue
-            if not isinstance(member.target, ast.Name) or member.target.id != selector:
-                continue
-            annotation = member.annotation
-            if isinstance(annotation, ast.Subscript):
-                if dotted_name(annotation.value).split(".")[-1] == "NotRequired":
-                    return False
-            return True
-        return False
+        return self.schema_key_requirement(receiver_name, selector) is True
 
     def _sparse_constructor_empty_case(self, receiver_name: str) -> bool:
         """Prove a local field is populated from a sparse, edge-driven builder.

@@ -1,0 +1,112 @@
+{
+  "schema": "b30-field-compiler-public/v02",
+  "cases": [
+    {
+      "case_id": "b30-field-raise-normal-path",
+      "query": "field_flow",
+      "source": "class A:\n    def __init__(ref, flag):\n        if flag:\n            raise ValueError\n        ref.value = 1\n    def read(ref):\n        return ref.value\n",
+      "path": "pkg/thing.py",
+      "expected": [
+        "MUST_AT_READ"
+      ],
+      "change": {}
+    },
+    {
+      "case_id": "b30-field-symbol-rename-a",
+      "query": "field_flow",
+      "source": "class A:\n    def run(ref):\n        ref.x = 1\n        return ref.x\n",
+      "path": "pkg/thing.py",
+      "expected": [
+        "MUST_AT_READ"
+      ],
+      "change": {}
+    },
+    {
+      "case_id": "b30-field-symbol-rename-b",
+      "query": "field_flow",
+      "source": "class A:\n    def run(anything):\n        anything.queue_get = 1\n        return anything.queue_get\n",
+      "path": "pkg/thing.py",
+      "expected": [
+        "MUST_AT_READ"
+      ],
+      "change": {}
+    },
+    {
+      "case_id": "b30-compiler-valid-dedup",
+      "query": "compiler_witness",
+      "source": "def deliver(left, right):\n    return left\ndeliver(1)\n",
+      "expected": {
+        "rejected": false,
+        "findings": [
+          [
+            "QG209",
+            "warning",
+            "OPEN_WORLD"
+          ]
+        ]
+      },
+      "path": "module.py",
+      "change": {}
+    },
+    {
+      "case_id": "b30-compiler-reject-caller_sha256",
+      "query": "compiler_witness",
+      "source": "def deliver(left, right):\n    return left\ndeliver(1)\n",
+      "change": {
+        "caller_sha256": "stale"
+      },
+      "expected": {
+        "rejected": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-compiler-reject-callee_sha256",
+      "query": "compiler_witness",
+      "source": "def deliver(left, right):\n    return left\ndeliver(1)\n",
+      "change": {
+        "callee_sha256": "stale"
+      },
+      "expected": {
+        "rejected": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-compiler-reject-runtime_dispatch",
+      "query": "compiler_witness",
+      "source": "def deliver(left, right):\n    return left\ndeliver(1)\n",
+      "change": {
+        "runtime_dispatch": "CLOSED_WORLD"
+      },
+      "expected": {
+        "rejected": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-compiler-reject-line",
+      "query": "compiler_witness",
+      "source": "def deliver(left, right):\n    return left\ndeliver(1)\n",
+      "change": {
+        "line": 1
+      },
+      "expected": {
+        "rejected": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-compiler-reject-symbol",
+      "query": "compiler_witness",
+      "source": "def deliver(left, right):\n    return left\ndeliver(1)\n",
+      "change": {
+        "symbol": "module.unrelated"
+      },
+      "expected": {
+        "rejected": true
+      },
+      "path": "module.py"
+    }
+  ]
+}

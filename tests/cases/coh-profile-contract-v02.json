@@ -1,0 +1,304 @@
+{
+  "QG10000": [
+    {
+      "files": {
+        "sources/council_of_harnesses/graph_host.py": "def _scheduled_election_graph_event_is_live(self,event):\n return event['event_kind'] or ''\n"
+      },
+      "expected": [
+        [
+          "QG10000",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/graph_host.py": "def _scheduled_election_graph_event_is_live(self,event):\n return event['event_kind']\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10001": [
+    {
+      "files": {
+        "sources/council_of_harnesses/skill_graph_authority.py": "def parse(text):\n return _line_field(text, 'Chamber', required=True) or ''\n"
+      },
+      "expected": [
+        [
+          "QG10001",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/skill_graph_authority.py": "def parse(text):\n return _line_field(text, 'Chamber', required=True)\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10002": [
+    {
+      "files": {
+        "sources/council_of_harnesses/authority.py": "def act(self,result):\n digest = result['candidate_artifact_sha256'] or ''\n self.publish(digest)\n"
+      },
+      "expected": [
+        [
+          "QG10002",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/authority.py": "def act(self,result):\n digest = result['candidate_artifact_sha256']\n self.publish(digest)\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10003": [
+    {
+      "files": {
+        "sources/council_of_harnesses/signing.py": "def act(self):\n try: self.sign()\n except ValueError: pass\n"
+      },
+      "expected": [
+        [
+          "QG10003",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/signing.py": "def act(self):\n try: self.sign()\n except ValueError: raise\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10004": [
+    {
+      "files": {
+        "sources/council_of_harnesses/host_procedure_notices.py": "def notify(inst):\n return inst.context.get('_trusted_expulsion_electorate') or ()\n"
+      },
+      "expected": [
+        [
+          "QG10004",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/host_procedure_notices.py": "def freeze(inst):\n inst.context['_trusted_expulsion_electorate'] = ('H1',)\ndef notify(inst):\n return inst.context.get('_trusted_expulsion_electorate')\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10005": [
+    {
+      "files": {
+        "sources/council_of_harnesses/authoritative_state.py": "def certify_election(self,ref):\n self.commit(ref)\n return self.election(ref) or {}\n"
+      },
+      "expected": [
+        [
+          "QG10005",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/authoritative_state.py": "def certify_election(self,ref):\n row=self.election(ref)\n if row is None: raise RuntimeError('missing')\n return row\n"
+      },
+      "expected": []
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/authoritative_state.py": "def certify_election(self,ref):\n row=self.election(ref)\n return row or {}\n"
+      },
+      "expected": [
+        [
+          "QG10005",
+          "critical"
+        ]
+      ]
+    }
+  ],
+  "QG10006": [
+    {
+      "files": {
+        "sources/council_of_harnesses/host_authority_effects.py": "def apply(self):\n try: self.persist()\n except Exception: return {'status':'CERTIFIED'}\n"
+      },
+      "expected": [
+        [
+          "QG10006",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/host_authority_effects.py": "def apply(self):\n try: self.persist()\n except Exception: raise PermissionError('failed')\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10007": [
+    {
+      "files": {
+        "sources/council_of_harnesses/runtime_server.py": "def send(self,data):\n return json.dumps(data,default=str)\n"
+      },
+      "expected": [
+        [
+          "QG10007",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/runtime_server.py": "def send(self,data):\n return json.dumps(data)\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10008": [
+    {
+      "files": {
+        "sources/council_of_harnesses/runtime_server.py": "def parse(self,body):\n return json.loads(body or b'{}')\n"
+      },
+      "expected": [
+        [
+          "QG10008",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/runtime_server.py": "def parse(self,body):\n return json.loads(body)\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10009": [
+    {
+      "files": {
+        "sources/council_of_harnesses/provenance.py": "def visibility(self,record):\n return record.get('visibility','PUBLIC')\n"
+      },
+      "expected": [
+        [
+          "QG10009",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/provenance.py": "def visibility(self,record):\n return record['visibility']\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10010": [
+    {
+      "files": {
+        "sources/council_of_harnesses/provenance.py": "def render(self,data):\n return data.decode('utf-8',errors='replace')\n"
+      },
+      "expected": [
+        [
+          "QG10010",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/provenance.py": "def render(self,data):\n return data.decode('utf-8',errors='strict')\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10011": [
+    {
+      "files": {
+        "sources/council_of_harnesses/authoritative_state.py": "def record_effect(self,basis_shas):\n kept=[sha for sha in basis_shas if sha]\n self.persist(kept)\n"
+      },
+      "expected": [
+        [
+          "QG10011",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/authoritative_state.py": "def record_effect(self,basis_shas):\n for sha in basis_shas:\n  if not sha: raise ValueError('bad')\n self.persist(basis_shas)\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10012": [
+    {
+      "files": {
+        "sources/council_of_harnesses/consumer.py": "def close(self,obj,state):\n if state.type!='SEALED_CASE': raise ValueError('wrong')\n payload=obj.bundle\n values=payload.get('evidence_entries')\n evidence=dict(payload['receipt_map'] or {})\n self.stamper.attest(values)\n self.core.finalize_state(obj)\n",
+        "sources/council_of_harnesses/producer.py": "def construct(self,obj,state):\n draft={'type':state.type}\n if state.type=='SEALED_CASE': draft.update({'evidence_entries':[],'receipt_map':{}})\n self.storage.freeze_state(obj,state,draft)\n",
+        "sources/council_of_harnesses/relay.py": "def freeze_state(self,obj,state,draft):\n obj.bundle=draft\n"
+      },
+      "expected": [
+        [
+          "QG10012",
+          "critical"
+        ],
+        [
+          "QG10012",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/consumer.py": "def close(self,obj,state):\n if state.type!='SEALED_CASE': raise ValueError('wrong')\n payload=obj.bundle\n values=payload['evidence_entries']\n evidence=dict(payload['receipt_map'])\n self.stamper.attest(values)\n self.core.finalize_state(obj)\n",
+        "sources/council_of_harnesses/producer.py": "def construct(self,obj,state):\n draft={'type':state.type}\n if state.type=='SEALED_CASE': draft.update({'evidence_entries':[],'receipt_map':{}})\n self.storage.freeze_state(obj,state,draft)\n",
+        "sources/council_of_harnesses/relay.py": "def freeze_state(self,obj,state,draft):\n obj.bundle=draft\n"
+      },
+      "expected": []
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/consumer.py": "def close(self,obj,state):\n if state.type!='SEALED_CASE': raise ValueError('wrong')\n payload=obj.bundle\n values=payload.get('evidence_entries')\n evidence=dict(payload['receipt_map'] or {})\n self.stamper.attest(values)\n self.core.finalize_state(obj)\n",
+        "sources/council_of_harnesses/producer.py": "def construct(self,obj,state):\n draft={'type':state.type}\n if state.type=='SEALED_CASE': draft.update({'evidence_entries':[],'receipt_map':{}})\n self.storage.unknown_method(obj,state,draft)\n",
+        "sources/council_of_harnesses/relay.py": "def freeze_state(self,obj,state,draft):\n obj.bundle=draft\n"
+      },
+      "expected": []
+    }
+  ],
+  "QG10013": [
+    {
+      "files": {
+        "sources/council_of_harnesses/stage.py": "def execute(self,value):\n if self.service.hook is not None:\n  processed=self.service.hook(value) or []\n self.db.write_state(value)\n self.audit.append_record(value)\n",
+        "sources/council_of_harnesses/producer.py": "def __init__(self, hook: Callable[..., list[dict]] | None):\n self.hook=hook\n"
+      },
+      "expected": [
+        [
+          "QG10013",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/stage.py": "def execute(self,value):\n if self.service.hook is not None:\n  processed=self.service.hook(value)\n self.db.write_state(value)\n self.audit.append_record(value)\n",
+        "sources/council_of_harnesses/producer.py": "def __init__(self, hook: Callable[..., list[dict]] | None):\n self.hook=hook\n"
+      },
+      "expected": []
+    },
+    {
+      "files": {
+        "sources/council_of_harnesses/stage.py": "def execute(self,value):\n if self.service.hook is not None:\n  processed=self.service.hook(value) or []\n self.db.write_state(value)\n self.audit.append_record(value)\n",
+        "sources/council_of_harnesses/producer.py": "def __init__(self, hook: Callable[..., list[dict] | None] | None):\n self.hook=hook\n"
+      },
+      "expected": []
+    }
+  ]
+}

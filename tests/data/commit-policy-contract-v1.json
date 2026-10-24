@@ -1,0 +1,104 @@
+{
+  "source_sha256": "118b135355bd6e35bf61982b9364c588b9d8d9492bb055ba42a8283302c99240",
+  "cases": [
+    {
+      "subject": "fix: 统一提交信息语言契约",
+      "policy": {
+        "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+        "subject_example": "fix: 修复问题",
+        "min_body_bullets": 2,
+        "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
+      },
+      "accepted": true,
+      "case_id": "commit-profile-valid-0"
+    },
+    {
+      "subject": "feature: 增加提交契约能力",
+      "policy": {
+        "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+        "subject_example": "fix: 修复问题",
+        "min_body_bullets": 2,
+        "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
+      },
+      "accepted": true,
+      "case_id": "commit-profile-valid-1"
+    },
+    {
+      "subject": "perf: 优化提交契约校验",
+      "policy": {
+        "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+        "subject_example": "fix: 修复问题",
+        "min_body_bullets": 2,
+        "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
+      },
+      "accepted": true,
+      "case_id": "commit-profile-valid-2"
+    },
+    {
+      "subject": "refactor(parser): 收敛提交解析职责",
+      "policy": {
+        "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+        "subject_example": "fix: 修复问题",
+        "min_body_bullets": 2,
+        "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
+      },
+      "accepted": true,
+      "case_id": "commit-profile-valid-3"
+    },
+    {
+      "subject": "feat: 增加提交契约能力",
+      "policy": {
+        "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+        "subject_example": "fix: 修复问题",
+        "min_body_bullets": 2,
+        "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
+      },
+      "accepted": false,
+      "case_id": "commit-profile-reject-0"
+    },
+    {
+      "subject": "修复：统一提交信息语言契约",
+      "policy": {
+        "subject_regex": "^(?:fix|feature|perf|refactor|test|docs|chore|build|release|revert)(?:\\([^)]+\\))?:\\s+.*[\\u4e00-\\u9fff].*$",
+        "subject_example": "fix: 修复问题",
+        "min_body_bullets": 2,
+        "body_bullet_regex": "^- .*[\\u4e00-\\u9fff].*$"
+      },
+      "accepted": false,
+      "case_id": "commit-profile-reject-1"
+    },
+    {
+      "subject": "feat: add capability",
+      "accepted": true,
+      "case_id": "commit-generic-allows-0"
+    },
+    {
+      "subject": "[BUG-123] repair parser",
+      "accepted": true,
+      "case_id": "commit-generic-allows-1"
+    },
+    {
+      "subject": "CASE-123 | FIX | repair parser",
+      "bullets": [],
+      "policy": {
+        "subject_regex": "^CASE-\\d+ \\| (?:FIX|FEATURE) \\| .+$",
+        "subject_example": "CASE-123 | FIX | repair parser",
+        "min_body_bullets": 0,
+        "body_bullet_regex": ""
+      },
+      "accepted": true,
+      "case_id": "commit-alternate-policy-accept"
+    },
+    {
+      "subject": "fix: 修复解析器",
+      "policy": {
+        "subject_regex": "^CASE-\\d+ \\| (?:FIX|FEATURE) \\| .+$",
+        "subject_example": "CASE-123 | FIX | repair parser",
+        "min_body_bullets": 0,
+        "body_bullet_regex": ""
+      },
+      "accepted": false,
+      "case_id": "commit-alternate-policy-reject"
+    }
+  ]
+}

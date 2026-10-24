@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.10)
+project(rqg_testunit_cpp LANGUAGES CXX)
+enable_testing()
+add_executable(rqg_testunit_cpp test_main.cpp)
+target_include_directories(rqg_testunit_cpp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../../../runtime/contracts/cpp")
+set_target_properties(rqg_testunit_cpp PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME testunit_public_contract COMMAND rqg_testunit_cpp)

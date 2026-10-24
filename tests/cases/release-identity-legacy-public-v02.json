@@ -1,0 +1,267 @@
+{
+  "schema": "release-identity-legacy-public/v02",
+  "cases": [
+    {
+      "case_id": "release-readme-exemptions",
+      "files": {
+        "README.md": "release v2.8-rc3\n",
+        "README_zh.md": "release v2.8-rc3\n",
+        "README_ja.md": "release v2.8-rc3\n",
+        "ARCHITECTURE.md": "frozen at v2.8-rc3\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "ARCHITECTURE.md"
+        ],
+        [
+          "QG205",
+          "README_ja.md"
+        ]
+      ],
+      "observe": "codes-by-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-path-critical",
+      "files": {
+        "tests/test_v28_rc3_graph_backend.py": "def test_graph_backend():\n    assert True\n"
+      },
+      "codes": [
+        "QG203"
+      ],
+      "observe": "severity-mechanism",
+      "expected": [
+        [
+          "QG203",
+          "critical",
+          "path-release-identity"
+        ]
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-test-data-only",
+      "files": {
+        "tests/test_contract.py": "def test_contract():\n    session = 'rc5-ticket'\n    dependency = 'agent-dsl-core==0.3.0'\n    assert session and dependency\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "info",
+          "tests/test_contract.py"
+        ]
+      ],
+      "observe": "code-severity-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-sha-digest",
+      "files": {
+        "integrity.py": "EXPECTED_SHA256 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+      },
+      "codes": [
+        "QG205"
+      ],
+      "observe": "token-kinds",
+      "expected": [
+        "digest"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-api-control-flow",
+      "files": {
+        "client.py": "def encode(api_version, payload):\n    if api_version == 'v1.0':\n        return {'legacy_payload': payload}\n    return {'payload': payload}\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "client.py"
+        ]
+      ],
+      "observe": "codes-by-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-python-dependencies",
+      "files": {
+        "pyproject.toml": "[project]\nrequires-python = \">=3.11\"\ndependencies = [\"pydantic>=2.8,<3\"]\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "pyproject.toml"
+        ]
+      ],
+      "observe": "codes-by-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-visual-decimals-ignored",
+      "files": {
+        "dashboard.html": "<style>.card{line-height:1.4;opacity:.52}</style><script>const versionLabel=\"current\"; if(x>1.2){y=.5}</script><svg stroke-width=\"1.2\" viewBox=\"0 0 21.8625 11.0292\"></svg>\n"
+      },
+      "codes": [
+        "QG205"
+      ],
+      "expected": [],
+      "observe": "codes-by-path",
+      "git": true
+    },
+    {
+      "case_id": "release-local-api-semver",
+      "files": {
+        "client.py": "API_VERSION = '1.2'\nthreshold = 1.4\n"
+      },
+      "codes": [
+        "QG205"
+      ],
+      "observe": "tokens",
+      "expected": [
+        "1.2"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-requirements-two-part",
+      "files": {
+        "requirements.txt": "pydantic>=2.8\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "requirements.txt"
+        ]
+      ],
+      "observe": "codes-by-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-full-semver-no-submatches",
+      "files": {
+        "config.toml": "dependency = \"lib==0.20.1\"\n"
+      },
+      "codes": [
+        "QG205"
+      ],
+      "observe": "tokens",
+      "expected": [
+        "0.20.1"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-real-git-tag",
+      "files": {
+        "policy.toml": "expected_tag = 'v2.8-rc3'\n"
+      },
+      "git_tag": "v2.8-rc3",
+      "codes": [
+        "QG205"
+      ],
+      "observe": "git-tags",
+      "expected": [
+        "v2.8-rc3"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-generated-report-ignored",
+      "files": {
+        "修改说明.md": "# audit artifact\nrelease=v2.8-rc3\ndigest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        "feature.py": "TOKEN = 'v2.8-rc3'\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "feature.py"
+        ]
+      ],
+      "observe": "codes-by-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ],
+      "git": true
+    },
+    {
+      "case_id": "release-gitless-scanner",
+      "git": false,
+      "files": {
+        "api.py": "API_VERSION = '1.2.3'\n"
+      },
+      "expected": [
+        [
+          "QG205",
+          "api.py"
+        ]
+      ],
+      "observe": "codes-by-path",
+      "codes": [
+        "QG203",
+        "QG205"
+      ]
+    },
+    {
+      "case_id": "release-custom-excludes-retain-generated",
+      "custom_excludes": true,
+      "files": {
+        "pyproject.toml": "[tool.repo_quality_guard]\nexclude = [\"vendor/**\"]\n"
+      },
+      "expected": [
+        [
+          "docs/api-reference/**",
+          true
+        ],
+        [
+          "vendor/**",
+          true
+        ],
+        [
+          "修改说明.md",
+          true
+        ]
+      ],
+      "observe": "codes-by-path"
+    },
+    {
+      "case_id": "release-semantic-routing-both",
+      "files": {
+        "artifact_v2.8-rc3.txt": "release=v2.8-rc3\n"
+      },
+      "annotate": true,
+      "observe": "semantic-routed",
+      "expected": [
+        [
+          "QG203",
+          true
+        ],
+        [
+          "QG205",
+          true
+        ]
+      ]
+    }
+  ]
+}

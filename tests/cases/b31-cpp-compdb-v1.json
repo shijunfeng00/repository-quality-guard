@@ -1,0 +1,270 @@
+{
+  "cases": [
+    {
+      "case_id": "b31-cpp-gcc-compile-flags",
+      "databases": {
+        "build": [
+          {
+            "directory": "@build",
+            "file": "@src/main.cpp",
+            "arguments": [
+              "/usr/bin/g++",
+              "-DMODE=7",
+              "-I",
+              "@include",
+              "-std=gnu++20",
+              "-c",
+              "@src/main.cpp",
+              "-o",
+              "main.o"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "src/main.cpp": {
+          "family": "gcc",
+          "compiler": "/usr/bin/g++",
+          "flags": [
+            "-DMODE=7",
+            "-std=gnu++20"
+          ],
+          "prefix": [],
+          "syntax_flag": "-fsyntax-only",
+          "no_object_output": true,
+          "no_compile_only": true
+        }
+      },
+      "sources": [
+        "src/main.cpp"
+      ],
+      "assert_wrapper": false
+    },
+    {
+      "case_id": "b31-cpp-malformed-arguments-fail-closed",
+      "databases": {
+        "build": [
+          {
+            "directory": "@build",
+            "file": "@src/main.cpp",
+            "command": "g++ -c @src/main.cpp",
+            "arguments": null
+          }
+        ]
+      },
+      "expected": {},
+      "sources": [
+        "src/main.cpp"
+      ],
+      "assert_wrapper": false
+    },
+    {
+      "case_id": "b31-cpp-clang-command",
+      "databases": {
+        "build": [
+          {
+            "directory": "@build",
+            "file": "@src/main.cpp",
+            "command": "clang++ -DCLANG_ONLY -std=c++23 -c @src/main.cpp -o x.o"
+          }
+        ]
+      },
+      "expected": {
+        "src/main.cpp": {
+          "family": "clang",
+          "compiler": "clang++",
+          "flags": [
+            "-DCLANG_ONLY",
+            "-std=c++23"
+          ],
+          "prefix": [],
+          "syntax_flag": "-fsyntax-only",
+          "no_object_output": true,
+          "no_compile_only": true
+        }
+      },
+      "sources": [
+        "src/main.cpp"
+      ],
+      "assert_wrapper": false
+    },
+    {
+      "case_id": "b31-cpp-ccache-wrapper",
+      "databases": {
+        "build": [
+          {
+            "directory": "@build",
+            "file": "@src/main.cpp",
+            "arguments": [
+              "ccache",
+              "/usr/bin/g++",
+              "-c",
+              "@src/main.cpp"
+            ]
+          }
+        ]
+      },
+      "assert_wrapper": true,
+      "expected": {
+        "src/main.cpp": {
+          "family": "gcc",
+          "compiler": "/usr/bin/g++",
+          "flags": [],
+          "prefix": [
+            "ccache",
+            "/usr/bin/g++"
+          ],
+          "syntax_flag": "-fsyntax-only",
+          "no_object_output": true,
+          "no_compile_only": true
+        }
+      },
+      "sources": [
+        "src/main.cpp"
+      ]
+    },
+    {
+      "case_id": "b31-cpp-msvc-syntax-contract",
+      "databases": {
+        "build": [
+          {
+            "directory": "@build",
+            "file": "@src/main.cpp",
+            "arguments": [
+              "cl.exe",
+              "/std:c++20",
+              "/c",
+              "@src/main.cpp",
+              "/Fomain.obj"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "src/main.cpp": {
+          "family": "msvc",
+          "compiler": "cl.exe",
+          "flags": [
+            "/std:c++20"
+          ],
+          "prefix": [],
+          "syntax_flag": "/Zs",
+          "no_object_output": true,
+          "no_compile_only": true
+        }
+      },
+      "sources": [
+        "src/main.cpp"
+      ],
+      "assert_wrapper": false
+    },
+    {
+      "case_id": "b31-cpp-two-subproject-tu",
+      "sources": [
+        "first/src/main.cpp",
+        "second/src/main.cpp"
+      ],
+      "databases": {
+        "first/build-rqg": [
+          {
+            "directory": "@first/build-rqg",
+            "file": "@first/src/main.cpp",
+            "arguments": [
+              "g++",
+              "-c",
+              "@first/src/main.cpp"
+            ]
+          }
+        ],
+        "second/build-rqg": [
+          {
+            "directory": "@second/build-rqg",
+            "file": "@second/src/main.cpp",
+            "arguments": [
+              "g++",
+              "-c",
+              "@second/src/main.cpp"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "first/src/main.cpp": {
+          "family": "gcc",
+          "compiler": "g++",
+          "flags": [],
+          "prefix": [],
+          "syntax_flag": "-fsyntax-only",
+          "no_object_output": true,
+          "no_compile_only": true
+        },
+        "second/src/main.cpp": {
+          "family": "gcc",
+          "compiler": "g++",
+          "flags": [],
+          "prefix": [],
+          "syntax_flag": "-fsyntax-only",
+          "no_object_output": true,
+          "no_compile_only": true
+        }
+      },
+      "assert_wrapper": false
+    },
+    {
+      "case_id": "b31-cpp-duplicate-conflict-no-guess",
+      "databases": {
+        "build-a": [
+          {
+            "directory": "@build-a",
+            "file": "@src/main.cpp",
+            "arguments": [
+              "g++",
+              "-DA",
+              "-c",
+              "@src/main.cpp"
+            ]
+          }
+        ],
+        "build-b": [
+          {
+            "directory": "@build-b",
+            "file": "@src/main.cpp",
+            "arguments": [
+              "g++",
+              "-DB",
+              "-c",
+              "@src/main.cpp"
+            ]
+          }
+        ]
+      },
+      "expected": {},
+      "sources": [
+        "src/main.cpp"
+      ],
+      "assert_wrapper": false
+    },
+    {
+      "case_id": "b31-cpp-revision-does-not-steal-worktree",
+      "label": "HEAD",
+      "databases": {
+        "build": [
+          {
+            "directory": "@build",
+            "file": "@src/main.cpp",
+            "arguments": [
+              "g++",
+              "-c",
+              "@src/main.cpp"
+            ]
+          }
+        ]
+      },
+      "expected": {},
+      "sources": [
+        "src/main.cpp"
+      ],
+      "assert_wrapper": false
+    }
+  ]
+}

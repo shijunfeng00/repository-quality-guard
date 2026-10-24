@@ -1,0 +1,635 @@
+{
+  "cases": [
+    {
+      "case_id": "b26-contract-typed-internal",
+      "sources": {
+        "service.py": "from typing import Mapping\n\ndef read(payload: Mapping[str,object]):\n return payload.get('required',0)\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [],
+        "contracts": [
+          [
+            4,
+            "mapping_get_default",
+            "internal_formal",
+            "required"
+          ]
+        ],
+        "details": []
+      },
+      "codes": [
+        "QG004"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "contract_rationale": "Contract ownership/typing can be proven, but no mandatory key is declared. A .get default on Mapping/dict/external framework state is not a source-proven defect; retain the contract fact without finding.",
+      "finding_details": []
+    },
+    {
+      "case_id": "b26-contract-unresolved",
+      "sources": {
+        "service.py": "def read(payload):\n return payload.get('optional',None)\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [
+          [
+            "QG026",
+            2,
+            "info",
+            "unknown"
+          ]
+        ],
+        "contracts": [
+          [
+            2,
+            "mapping_get_default",
+            "unknown",
+            "optional"
+          ]
+        ],
+        "details": [
+          [
+            "QG026",
+            2,
+            "semantic_review_required",
+            true
+          ]
+        ]
+      },
+      "codes": [
+        "QG026"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "finding_details": [
+        [
+          "QG026",
+          2,
+          "semantic_review_required"
+        ]
+      ]
+    },
+    {
+      "case_id": "b26-contract-imported-annotation",
+      "sources": {
+        "service.py": "from fakefw import OptionalSettings\n\ndef read(settings: OptionalSettings):\n return settings.get('steps',None)\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [
+          [
+            "QG026",
+            4,
+            "info",
+            "unknown"
+          ]
+        ],
+        "contracts": [
+          [
+            4,
+            "mapping_get_default",
+            "unknown",
+            "steps"
+          ]
+        ],
+        "provenance": [
+          true
+        ],
+        "details": []
+      },
+      "codes": [
+        "QG026"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "contract_provenance": [
+        [
+          4,
+          "external_annotation_candidate:fakefw.OptionalSettings"
+        ]
+      ],
+      "finding_details": []
+    },
+    {
+      "case_id": "b26-contract-framework-base",
+      "sources": {
+        "callback.py": "from fakefw import Callback\n\nclass Metrics(Callback):\n def on_train_begin(self):\n  return self.params.get('steps',None)\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [],
+        "contracts": [
+          [
+            5,
+            "mapping_get_default",
+            "external_optional",
+            "steps"
+          ]
+        ],
+        "provenance": [
+          true
+        ],
+        "details": []
+      },
+      "codes": [
+        "QG004"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "contract_provenance": [
+        [
+          5,
+          "resolved_external_base:fakefw.Callback"
+        ]
+      ],
+      "contract_rationale": "Contract ownership/typing can be proven, but no mandatory key is declared. A .get default on Mapping/dict/external framework state is not a source-proven defect; retain the contract fact without finding.",
+      "finding_details": []
+    },
+    {
+      "case_id": "b26-contract-local-subclass",
+      "sources": {
+        "callback.py": "from fakefw import Callback\n\nclass Metrics(Callback):\n def __init__(self):\n  self.params: dict[str,object] = {}\n\n def read(self):\n  return self.params.get('required',0)\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [],
+        "contracts": [
+          [
+            8,
+            "mapping_get_default",
+            "internal_formal",
+            "required"
+          ]
+        ],
+        "details": []
+      },
+      "codes": [
+        "QG004"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "contract_rationale": "Contract ownership/typing can be proven, but no mandatory key is declared. A .get default on Mapping/dict/external framework state is not a source-proven defect; retain the contract fact without finding.",
+      "finding_details": []
+    },
+    {
+      "case_id": "b26-contract-external-internal-hasattr",
+      "sources": {
+        "callback.py": "from fakefw import Callback\n\nclass Metrics(Callback):\n def external(self):\n  return hasattr(self,'params')\n\n def internal(self):\n  self.state=1\n  return hasattr(self,'state')\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [
+          [
+            "QG005",
+            5,
+            "info",
+            "external_optional"
+          ],
+          [
+            "QG005",
+            9,
+            "error",
+            "internal_formal"
+          ]
+        ],
+        "contracts": [
+          [
+            5,
+            "hasattr",
+            "external_optional",
+            "params"
+          ],
+          [
+            9,
+            "hasattr",
+            "internal_formal",
+            "state"
+          ]
+        ],
+        "details": []
+      },
+      "codes": [
+        "QG005"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "finding_details": []
+    },
+    {
+      "case_id": "b26-contract-directory-not-ownership",
+      "sources": {
+        "api/adapter.py": "from typing import Mapping\n\ndef read(payload: Mapping[str,object]):\n return payload.get('optional',None)\n"
+      },
+      "query": "contract",
+      "expected": {
+        "findings": [],
+        "contracts": [
+          [
+            4,
+            "mapping_get_default",
+            "internal_formal",
+            "optional"
+          ]
+        ],
+        "details": []
+      },
+      "codes": [
+        "QG004"
+      ],
+      "stubs": {
+        "fakefw/__init__.pyi": "class Callback:\n def on_train_begin(self): ...\nclass OptionalSettings: ...\n"
+      },
+      "strict_get": true,
+      "contract_rationale": "Contract ownership/typing can be proven, but no mandatory key is declared. A .get default on Mapping/dict/external framework state is not a source-proven defect; retain the contract fact without finding.",
+      "finding_details": []
+    },
+    {
+      "case_id": "b26-topology-callback-reference",
+      "sources": {
+        "sample.py": "class Worker:\n    def _helper(self):\n        return 1\n\n    def run(self):\n        return self._helper()\n\ndef callback(value):\n    return value\n\ndef consume(fn):\n    return fn(1)\n\ndef main():\n    return consume(callback)\n"
+      },
+      "query": "scan_incoming",
+      "expected": [
+        [
+          "sample.main",
+          "callable_reference",
+          15
+        ]
+      ],
+      "target": "sample.callback",
+      "kinds": [
+        "callable_reference"
+      ]
+    },
+    {
+      "case_id": "b65-qg185-tp-recursive-facade-graph-and-finding",
+      "issue": "RQG-HF-QG185-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG185",
+      "query": "graph_finding",
+      "sources": {
+        "sample.py": "class Recursor:\n    def search(self, item):\n        return self._search(item)\n    def _search(self, item):\n        if item <= 0:\n            return 0\n        return self._search(item - 1) + 1\n"
+      },
+      "edges": [
+        [
+          "sample.Recursor.search",
+          "sample.Recursor._search",
+          "DIRECT_CALL"
+        ],
+        [
+          "sample.Recursor._search",
+          "sample.Recursor._search",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "findings": [
+          {
+            "symbol": "sample.Recursor.search",
+            "line": 2,
+            "severity": "critical",
+            "evidence": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "b65-qg185-tn-recursive-state-init-graph-and-finding",
+      "issue": "RQG-HF-QG185-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG185",
+      "query": "graph_finding",
+      "sources": {
+        "sample.py": "class Search:\n    def search(self, root):\n        return self._search(root, set(), 0)\n    def _search(self, root, visited, depth):\n        if root in visited:\n            return depth\n        visited.add(root)\n        return self._search(root, visited, depth + 1)\n"
+      },
+      "edges": [
+        [
+          "sample.Search.search",
+          "sample.Search._search",
+          "DIRECT_CALL"
+        ],
+        [
+          "sample.Search._search",
+          "sample.Search._search",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "findings": []
+      }
+    },
+    {
+      "case_id": "b65-qg010-tp-redundant-helper-graph-and-finding",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TP",
+      "rule": "QG010",
+      "query": "graph_finding",
+      "sources": {
+        "sample.py": "def target(value):\n    return value + 1\n\ndef _forward(value):\n    return target(value)\n\ndef use():\n    return _forward(10)\n"
+      },
+      "edges": [
+        [
+          "sample._forward",
+          "sample.target",
+          "DIRECT_CALL"
+        ],
+        [
+          "sample.use",
+          "sample._forward",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "findings": [
+          {
+            "symbol": "sample._forward",
+            "line": 4,
+            "severity": "critical",
+            "evidence": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "b65-qg010-tn-initialized-helper-graph-and-finding",
+      "issue": "RQG-HF-QG010-GRAPH-20261019",
+      "polarity": "TN",
+      "rule": "QG010",
+      "query": "graph_finding",
+      "sources": {
+        "sample.py": "def _search(value, visited):\n    if value in visited:\n        return 0\n    visited.add(value)\n    return _search(value - 1, visited) if value > 0 else 1\n\ndef search(value):\n    return _search(value, set())\n"
+      },
+      "edges": [
+        [
+          "sample.search",
+          "sample._search",
+          "DIRECT_CALL"
+        ],
+        [
+          "sample._search",
+          "sample._search",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "findings": []
+      }
+    },
+    {
+      "case_id": "b87-qg010-unknown-open-world-callback",
+      "issue": "CORE-02-UNKNOWN-SOURCE-PROOF",
+      "polarity": "UNKNOWN",
+      "rule": "QG010",
+      "query": "graph_finding",
+      "boundary": "The source-bound call to dispatch is proven but the callback target and its external consumers are not closed. It is not a provably redundant function layer.",
+      "sources": {
+        "sample.py": "def dispatch(fn, payload):\n    return fn(payload)\ndef entry(fn, payload):\n    return dispatch(fn, payload)\n"
+      },
+      "edges": [
+        [
+          "sample.entry",
+          "sample.dispatch",
+          "DIRECT_CALL"
+        ],
+        [
+          "sample.dispatch",
+          "sample.fn",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true,
+          false
+        ],
+        "findings": []
+      }
+    },
+    {
+      "case_id": "core02-b99-qg010-crossmodule-pure-alias-closure",
+      "issue": "CORE-02-QG010-FULL-CALL-GRAPH-CLOSURE",
+      "polarity": "TP",
+      "rule": "QG010",
+      "query": "graph_finding",
+      "sources": {
+        "helper.py": "def target(value):\n    return value + 1\n",
+        "sample.py": "from helper import target as imported_target\ndef _forward(value):\n    alias = imported_target\n    return alias(value)\ndef use():\n    return _forward(10)\n"
+      },
+      "edges": [
+        [
+          "sample._forward",
+          "helper.target",
+          "DIRECT_CALL"
+        ],
+        [
+          "sample.use",
+          "sample._forward",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "findings": [
+          {
+            "symbol": "sample._forward",
+            "line": 2,
+            "severity": "critical",
+            "evidence": {}
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "core02-b99-qg010-ambiguous-alias-stays-open",
+      "issue": "CORE-02-QG010-FULL-CALL-GRAPH-CLOSURE",
+      "polarity": "UNKNOWN",
+      "rule": "QG010",
+      "query": "graph_finding",
+      "sources": {
+        "first.py": "def target(value):\n    return value + 1\n",
+        "second.py": "def target(value):\n    return value + 2\n",
+        "sample.py": "from first import target as imported_target\nfrom second import target as imported_target\ndef _forward(value):\n    alias = imported_target\n    return alias(value)\ndef use():\n    return _forward(10)\n"
+      },
+      "edges": [
+        [
+          "sample.use",
+          "sample._forward",
+          "DIRECT_CALL"
+        ]
+      ],
+      "expected": {
+        "edges": [
+          true
+        ],
+        "findings": []
+      }
+    },
+    {
+      "query": "typed_chain",
+      "producer_symbol": "producer.query",
+      "consumer_symbol": "consumer.consume",
+      "codes": [
+        "QG003",
+        "QG216"
+      ],
+      "edges": [
+        [
+          "entry.entry",
+          "producer.query",
+          "DIRECT_CALL"
+        ],
+        [
+          "entry.entry",
+          "consumer.consume",
+          "DIRECT_CALL"
+        ]
+      ],
+      "case_id": "core02-b99-typed-direct-unique-import",
+      "issue": "AUTHENTICATED_TYPED_SCHEMA_CHAIN",
+      "polarity": "TP",
+      "sources": {
+        "schema.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    rows: list[str]\n",
+        "producer.py": "from schema import Payload\ndef query() -> Payload:\n    return {\"rows\": []}\n",
+        "consumer.py": "from schema import Payload\ndef consume(data: Payload):\n    return data.get(\"rows\")\n",
+        "entry.py": "from producer import query\nfrom consumer import consume\ndef entry():\n    return consume(query())\n"
+      },
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "shared_schema": [
+          "schema.Payload"
+        ],
+        "findings": [
+          [
+            "QG003",
+            "consumer.consume",
+            "schema.Payload"
+          ]
+        ]
+      }
+    },
+    {
+      "query": "typed_chain",
+      "producer_symbol": "producer.query",
+      "consumer_symbol": "consumer.consume",
+      "codes": [
+        "QG003",
+        "QG216"
+      ],
+      "edges": [
+        [
+          "entry.entry",
+          "producer.query",
+          "DIRECT_CALL"
+        ],
+        [
+          "entry.entry",
+          "consumer.consume",
+          "DIRECT_CALL"
+        ]
+      ],
+      "case_id": "core02-b99-typed-conflicting-import-open",
+      "issue": "AUTHENTICATED_TYPED_SCHEMA_CHAIN",
+      "polarity": "UNKNOWN",
+      "sources": {
+        "schema.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    rows: list[str]\n",
+        "producer.py": "from schema import Payload\nfrom external_api import Payload\ndef query() -> Payload:\n    return {\"rows\": []}\n",
+        "consumer.py": "from schema import Payload\ndef consume(data: Payload):\n    return data.get(\"rows\")\n",
+        "entry.py": "from producer import query\nfrom consumer import consume\ndef entry():\n    return consume(query())\n"
+      },
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "shared_schema": [],
+        "findings": [
+          [
+            "QG003",
+            "consumer.consume",
+            "schema.Payload"
+          ]
+        ]
+      }
+    },
+    {
+      "query": "typed_chain",
+      "producer_symbol": "producer.query",
+      "consumer_symbol": "consumer.consume",
+      "codes": [
+        "QG003",
+        "QG216"
+      ],
+      "edges": [
+        [
+          "entry.entry",
+          "producer.query",
+          "DIRECT_CALL"
+        ],
+        [
+          "entry.entry",
+          "consumer.consume",
+          "DIRECT_CALL"
+        ]
+      ],
+      "case_id": "core02-b99-typed-rebound-schema-open",
+      "issue": "AUTHENTICATED_TYPED_SCHEMA_CHAIN",
+      "polarity": "UNKNOWN",
+      "sources": {
+        "schema.py": "from typing import TypedDict\nclass Payload(TypedDict):\n    rows: list[str]\n",
+        "producer.py": "from schema import Payload\nPayload = object\ndef query() -> Payload:\n    return {\"rows\": []}\n",
+        "consumer.py": "from schema import Payload\ndef consume(data: Payload):\n    return data.get(\"rows\")\n",
+        "entry.py": "from producer import query\nfrom consumer import consume\ndef entry():\n    return consume(query())\n"
+      },
+      "expected": {
+        "edges": [
+          true,
+          true
+        ],
+        "shared_schema": [],
+        "findings": [
+          [
+            "QG003",
+            "consumer.consume",
+            "schema.Payload"
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "cases": [
+    {
+      "case_id": "b32-script-matching-name-does-not-prove-call",
+      "sources": {
+        "src/app.ts": "function helper(value: number) { return value; }\nfunction run() { return helper(1); }\n"
+      },
+      "script_facts": [
+        {
+          "path": "src/app.ts",
+          "language": "typescript",
+          "definitions": [
+            {
+              "name": "helper",
+              "qualname": "helper",
+              "kind": "function",
+              "scope_key": "source-file",
+              "line": 1,
+              "end_line": 1,
+              "parameter_count": 1,
+              "calls": []
+            },
+            {
+              "name": "run",
+              "qualname": "run",
+              "kind": "function",
+              "scope_key": "source-file",
+              "line": 2,
+              "end_line": 2,
+              "parameter_count": 0,
+              "calls": [
+                "helper"
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "symbols": [
+          "helper",
+          "run"
+        ],
+        "visibility": {
+          "helper": "unknown",
+          "run": "unknown"
+        },
+        "call_edges": 0,
+        "owners": 1
+      }
+    },
+    {
+      "case_id": "b32-markup-styles-have-no-callable-topology",
+      "sources": {
+        "style.css": ".x { color: red; }",
+        "index.html": "<main></main>"
+      },
+      "script_facts": [],
+      "expected": {
+        "symbols": [],
+        "visibility": {},
+        "call_edges": 0,
+        "owners": 0
+      }
+    }
+  ]
+}

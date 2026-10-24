@@ -1,0 +1,80 @@
+{
+  "cases": [
+    {
+      "case_id": "profile-manifest-merges-and-disables-rule",
+      "manifest": {
+        "name": "sample",
+        "rules": {
+          "disable": [
+            "QG060"
+          ]
+        },
+        "capabilities": [
+          "base",
+          "python"
+        ],
+        "nonblocking_paths": [
+          "tests/**"
+        ],
+        "test_baseline_passthrough_paths": [
+          "utils/tracing.py"
+        ]
+      },
+      "expected": {
+        "disabled": [
+          "QG060"
+        ],
+        "capabilities": [
+          "base",
+          "python"
+        ],
+        "nonblocking": [
+          "tests/**"
+        ],
+        "baseline_passthrough": [
+          "utils/tracing.py"
+        ],
+        "agents": ""
+      }
+    },
+    {
+      "case_id": "profile-nonblocking-not-baseline-passthrough",
+      "manifest": {
+        "name": "sample",
+        "nonblocking_paths": [
+          "tests/**",
+          "utils/tracing.py"
+        ],
+        "test_baseline_passthrough_paths": [
+          "utils/tracing.py"
+        ]
+      },
+      "expected": {
+        "disabled": [],
+        "capabilities": [],
+        "nonblocking": [
+          "tests/**",
+          "utils/tracing.py"
+        ],
+        "baseline_passthrough": [
+          "utils/tracing.py"
+        ],
+        "agents": ""
+      }
+    },
+    {
+      "case_id": "profile-manifest-selects-agents-instructions",
+      "manifest": {
+        "name": "sample",
+        "agents_file": "AGENTS.md"
+      },
+      "expected": {
+        "disabled": [],
+        "capabilities": [],
+        "nonblocking": [],
+        "baseline_passthrough": [],
+        "agents": "AGENTS.md"
+      }
+    }
+  ]
+}

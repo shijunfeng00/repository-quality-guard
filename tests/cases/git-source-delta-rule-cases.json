@@ -1,0 +1,103 @@
+{
+  "schema": "core-rule-batch14-git-public/v02",
+  "cases": [
+    {
+      "case_id": "b14-qg176-tp",
+      "rule": "QG176",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG176",
+          "critical",
+          "src/store.py",
+          "f"
+        ]
+      ],
+      "expected_all": [
+        [
+          "QG176",
+          "critical",
+          "src/store.py",
+          "f"
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg176-tn",
+      "rule": "QG176",
+      "kind": "TN",
+      "expected": [],
+      "expected_all": []
+    },
+    {
+      "case_id": "b14-qg178-tp",
+      "rule": "QG178",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG178",
+          "info",
+          "fixture.py",
+          "<module>"
+        ]
+      ],
+      "expected_all": [
+        [
+          "QG178",
+          "info",
+          "fixture.py",
+          "<module>"
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg178-tn",
+      "rule": "QG178",
+      "kind": "TN",
+      "expected": [],
+      "expected_all": [
+        [
+          "QG191",
+          "info",
+          "fixture.py",
+          "<module>"
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg191-tp",
+      "rule": "QG191",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG191",
+          "info",
+          "fixture.py",
+          "<module>"
+        ]
+      ],
+      "expected_all": [
+        [
+          "QG191",
+          "info",
+          "fixture.py",
+          "<module>"
+        ]
+      ]
+    },
+    {
+      "case_id": "b14-qg191-tn",
+      "rule": "QG191",
+      "kind": "TN",
+      "expected": [],
+      "expected_all": [
+        [
+          "QG178",
+          "info",
+          "fixture.py",
+          "<module>"
+        ]
+      ]
+    }
+  ]
+}

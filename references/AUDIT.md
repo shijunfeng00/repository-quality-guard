@@ -4,7 +4,7 @@
 
 `.agents/skills/repository-quality-guard/**` 是仓库协作运行时，必须进入 Git；根 `AGENTS.md` 是宿主共享协调文件；QG 从不覆盖已有文件，仅当本轮 deploy 在原本缺失时创建了根 `AGENTS.md` 才可能属于同一升级提交。它们与默认不入 Git 的 `修改说明.md` 属于不同交付通道。正式升级默认始终是**从任意旧/残缺版本到当前 manifest 的全量替换**，不要求逐版本升级；deploy 用 staging 构造完整目标树并原子替换旧目录，目标版本不存在的历史文件必须消失。仅在本机 deploy 成功不证明可交付：必须至少 `git add -A -- .agents/skills/repository-quality-guard`，只有本轮同步过根 `AGENTS.md` 时才一并 stage，提交新增/修改/删除，并从 commit fresh clone。clone 中必须存在 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py`、完整 `runtime/src` 与 `SKILL.md`；根 `AGENTS.md` 仅对本轮受管理模板做条件验证，且必须能实跑报告闭环。若用户明确要求本机临时安装而不提交，必须把“不可由同事 pull 复现”列为显式非持久化状态，不得声称仓库升级完成。
 
-Canonical full-repository ZIP 是外部独立运行、备份与 authoring 的唯一完整介质：必须携带 `.git`、完整本地 Profile catalog，并可以携带 `README.md`、`README_zh.md`、`dev-tests/`、authoring/release tools，同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
+Canonical full-repository ZIP 是外部独立运行、备份与 authoring 的唯一完整介质：必须携带 `.git`、完整本地 Profile catalog，并可以携带 `README.md`、`README_zh.md` 与 authoring/release tools（不包含已废弃的 `dev-tests/` 或 `tests-deprecated/`），同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
 
 ## 报告结构
 
@@ -36,7 +36,7 @@ Canonical full-repository ZIP 是外部独立运行、备份与 authoring 的唯
 
 fallback/宽松契约的保留必须属于明确的外部兼容、用户可见降级、可选能力或 best-effort side effect；内部确定性契约默认 fail-loud。用户降级必须保持失败可观测，不伪造工具/检索/证据成功，不污染 canonical state，也不能吞未知程序 bug。
 
-QG144 的不同返回结构只有在存在显式 union/discriminator/公开协议时才能保留。QG020 suppression 必须窄且确有必要。QG128 必须证明聚合依赖来自协议固定签名，否则缩小依赖面。QG178 未获 Git 基线授权时只能 BLOCKING。QG191 表示本轮手工构造标准协议对象（例如 OpenAI tool_call）而未复用项目既有 schema/validator/ledger owner；必须结合 doc-search 与真实源码裁决，不能靠手工 JSON “形状看起来一样”放行。
+QG144 的不同返回结构只有在存在显式 union/discriminator/公开协议时才能保留。QG020 suppression 必须窄且确有必要。QG128 必须证明聚合依赖来自协议固定签名，否则缩小依赖面。QG178 未命中 Profile 精确豁免时只能 BLOCKING；确定性词法/语法例外在 Profile 中声明并由独立正反例证明，不由报告自行授权。QG191 表示本轮手工构造标准协议对象（例如 OpenAI tool_call）而未复用项目既有 schema/validator/ledger owner；必须结合 doc-search 与真实源码裁决，不能靠手工 JSON “形状看起来一样”放行。
 
 ### Semantic Review Method
 

@@ -247,6 +247,18 @@ def _trivial_wrapper_value(
         assigned_value = assignment.value
     returned = body[1].value
     if not assigned_name or not isinstance(returned, ast.Name):
+        # A local alias is only a transparent wrapper fact when it is a pure
+        # Name-to-Name assignment and the immediately returned call uses that
+        # exact alias.  Graph resolution still has to prove the target; an
+        # ambiguous import or rebinding therefore remains open-world.
+        if (
+            isinstance(assignment, ast.Assign)
+            and isinstance(assigned_value, ast.Name)
+            and isinstance(returned, ast.Call)
+            and isinstance(returned.func, ast.Name)
+            and returned.func.id == assigned_name
+        ):
+            return returned, assigned_value.id
         return None, ""
     return (assigned_value, "") if returned.id == assigned_name else (None, "")
 
@@ -269,36 +281,42 @@ def is_trivial_wrapper(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     value, direct_target = _trivial_wrapper_value(body, property_facade)
     if direct_target:
         return direct_target
+    # A call expression or an assignment-then-return is not automatically a
+    # replaceable function layer. Preserve QG185's separate facade contract.
+    if len(body) != 1 or not isinstance(body[0], ast.Return):
+        return ""
+    if (
+        decorators
+        or node.args.defaults
+        or any(value is not None for value in node.args.kw_defaults)
+    ):
+        return ""
     if isinstance(value, ast.Await):
-        value = value.value
+        return ""
     if not isinstance(value, ast.Call):
         return ""
-    parameter_names = {
+    formals = [
         argument.arg
-        for argument in (
-            list(node.args.posonlyargs)
-            + list(node.args.args)
-            + list(node.args.kwonlyargs)
-        )
-    }
-    optional_arguments = (node.args.vararg, node.args.kwarg)
-    parameter_names.update(
-        argument.arg for argument in optional_arguments if argument is not None
-    )
-    forwarded: set[str] = set()
-    for argument in value.args:
-        if isinstance(argument, ast.Name):
-            forwarded.add(argument.id)
-        elif isinstance(argument, ast.Starred) and isinstance(argument.value, ast.Name):
-            forwarded.add(argument.value.id)
-    forwarded.update(
-        keyword.value.id
-        for keyword in value.keywords
-        if isinstance(keyword.value, ast.Name)
-    )
-    meaningful_parameters = parameter_names - {"self", "cls"}
-    if meaningful_parameters and not meaningful_parameters.issubset(forwarded):
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+        if argument.arg not in {"self", "cls"}
+    ]
+    if node.args.vararg or node.args.kwarg:
         return ""
+    positional = [
+        argument.id if isinstance(argument, ast.Name) else None
+        for argument in value.args
+    ]
+    keyword_values = [
+        keyword.value.id
+        if keyword.arg is not None and isinstance(keyword.value, ast.Name)
+        else None
+        for keyword in value.keywords
+    ]
+    forwarded = positional + keyword_values
+    if len(forwarded) != len(formals) or sorted(forwarded, key=str) != sorted(formals):
+        return ""
+    # Unknown receivers and computed/injected arguments must not be inferred
+    # to be identity delegates merely because original parameters survived.
     return dotted_name(value.func)
 
 

@@ -1,0 +1,731 @@
+{
+  "schema": "semantic-rule-public/v02",
+  "cases": [
+    {
+      "case_id": "r3_silent_fallback-broad_silent_return_and_default_parameter_are_detected-0",
+      "origin": "test_r3_silent_fallback.py::test_broad_silent_return_and_default_parameter_are_detected",
+      "engine": "test_r3_silent_fallback",
+      "source": "def load(fetch, default=None):\n    try:\n        return fetch()\n    except Exception:\n        return default\ndef query():\n    try: return unknown()\n    except BaseException: return {}\n",
+      "expected": {
+        "observed": [
+          [
+            5,
+            "warning",
+            "parameter:default"
+          ],
+          [
+            8,
+            "warning",
+            "{}"
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG214",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_silent_fallback-finalizer_exception_suppression_follows_cpython_protocol-0",
+      "origin": "test_r3_silent_fallback.py::test_finalizer_exception_suppression_follows_cpython_protocol",
+      "engine": "test_r3_silent_fallback",
+      "source": "class Cleanup:\n    def __del__(self):\n        try: self.close()\n        except Exception: return None\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG214",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_silent_fallback-nested_handlers_are_scoped_to_the_actual_function-0",
+      "origin": "test_r3_silent_fallback.py::test_nested_handlers_are_scoped_to_the_actual_function",
+      "engine": "test_r3_silent_fallback",
+      "source": "def outer():\n    def inner():\n        try: return bad()\n        except Exception: return False\n    return inner()\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG214",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_silent_fallback-observed_and_explicitly_narrow_error_handling_is_not_a_silent_fallback-0",
+      "origin": "test_r3_silent_fallback.py::test_observed_and_explicitly_narrow_error_handling_is_not_a_silent_fallback",
+      "engine": "test_r3_silent_fallback",
+      "source": "def read(fn):\n    try: return fn()\n    except ValueError: return None\ndef guarded(fn):\n    try: return fn()\n    except Exception as exc:\n        logger.exception(str(exc))\n        return None\ndef rethrow(fn):\n    try: return fn()\n    except Exception:\n        raise\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG214",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_silent_handler_fallthrough-assigning_explicit_failure_state_is_not_categorically_a_bug-0",
+      "origin": "test_r3_silent_handler_fallthrough.py::test_assigning_explicit_failure_state_is_not_categorically_a_bug",
+      "engine": "test_r3_silent_handler_fallthrough",
+      "source": "def validate(fn):\n    verified = True\n    try: fn()\n    except Exception: verified = False\n    return verified\n",
+      "expected": {
+        "observed": [
+          [
+            4,
+            "warning",
+            "assign_sentinel",
+            "verified"
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG215",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_silent_handler_fallthrough-observable_handling_and_nested_scopes_do_not_create_false_findings-0",
+      "origin": "test_r3_silent_handler_fallthrough.py::test_observable_handling_and_nested_scopes_do_not_create_false_findings",
+      "engine": "test_r3_silent_handler_fallthrough",
+      "source": "def observed(fn):\n    try: fn()\n    except Exception as exc: logger.warning(str(exc))\ndef reraised(fn):\n    try: fn()\n    except Exception: raise\ndef narrow(fn):\n    try: fn()\n    except ValueError: pass\ndef outer():\n    def inner():\n        try: broken()\n        except Exception: pass\n    return inner()\nclass Cleanup:\n    def __del__(self):\n        try: self.close()\n        except Exception: pass\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG215",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_silent_handler_fallthrough-pass_continue_and_sentinel_assignment_are_source_bound-0",
+      "origin": "test_r3_silent_handler_fallthrough.py::test_pass_continue_and_sentinel_assignment_are_source_bound",
+      "engine": "test_r3_silent_handler_fallthrough",
+      "source": "def update(fetch):\n    try: fetch()\n    except Exception: pass\ndef parse(fetch):\n    try: result = fetch()\n    except BaseException: result = None\n    return result\ndef loop(fetch):\n    for item in [1]:\n        try: fetch(item)\n        except: continue\n",
+      "expected": {
+        "observed": [
+          [
+            3,
+            "warning",
+            "pass",
+            null
+          ],
+          [
+            6,
+            "warning",
+            "assign_sentinel",
+            "result"
+          ],
+          [
+            11,
+            "warning",
+            "continue",
+            null
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG215",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-both_builtin_container_mutations_inside_swallowed_exception-0",
+      "origin": "test_r3_partial_commit_flow.py::test_both_builtin_container_mutations_inside_swallowed_exception",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class Owner:\n    def __init__(self):\n        self.done: set[str] = set()\n        self.results: dict[str, str] = {}\n    def save(self, key, value):\n        try:\n            self.done.add(key)\n            self.results[key] = value\n            return value\n        except Exception:\n            return {'ok': False}\n",
+      "expected": {
+        "observed": [
+          [
+            8,
+            "warning",
+            7,
+            8
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-handler_compensation_keeps_effect_outcome_unknown-0",
+      "origin": "test_r3_partial_commit_flow.py::test_handler_compensation_keeps_effect_outcome_unknown",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class O:\n def __init__(self):\n  self.seen=set()\n  self.results={}\n def run(self,k,v):\n  try:\n   self.seen.add(k)\n   self.results[k]=v\n  except Exception:\n   self.seen.discard(k)\n   return None\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-no_claim_without_both_source_bound_builtins_or_swallow-0",
+      "origin": "test_r3_partial_commit_flow.py::test_no_claim_without_both_source_bound_builtins_or_swallow",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class Owner:\n    def __init__(self):\n        self.done = external()\n        self.results = {}\n    def save(self, key, value):\n        try:\n            self.done.add(key)\n            self.results[key] = value\n        except Exception:\n            return None\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-no_claim_without_both_source_bound_builtins_or_swallow-1",
+      "origin": "test_r3_partial_commit_flow.py::test_no_claim_without_both_source_bound_builtins_or_swallow",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class Owner:\n    def __init__(self):\n        self.done = set()\n        self.results = {}\n    def save(self, key, value):\n        try:\n            self.done.add(key)\n            self.results[key] = value\n        except ValueError:\n            return None\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-no_claim_without_both_source_bound_builtins_or_swallow-2",
+      "origin": "test_r3_partial_commit_flow.py::test_no_claim_without_both_source_bound_builtins_or_swallow",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class Owner:\n    def __init__(self):\n        self.done = set()\n        self.results = {}\n    def save(self, key, value):\n        try:\n            self.done.add(key)\n            self.results[key] = value\n        except Exception:\n            raise\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-no_claim_without_both_source_bound_builtins_or_swallow-3",
+      "origin": "test_r3_partial_commit_flow.py::test_no_claim_without_both_source_bound_builtins_or_swallow",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class Owner:\n    def __init__(self):\n        self.done = set()\n        self.results = {}\n    def save(self, key, value):\n        try:\n            self.done.custom(key)\n            self.results[key] = value\n        except Exception:\n            return None\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 3,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-renaming_fields_does_not_change_detection-0",
+      "origin": "test_r3_partial_commit_flow.py::test_renaming_fields_does_not_change_detection",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class O:\n def __init__(self):\n  self.a=set()\n  self.b={}\n def run(self,k,v):\n  try:\n   self.a.add(k)\n   self.b[k]=v\n  except Exception:\n   return None\n",
+      "expected": {
+        "observed": [
+          [
+            8,
+            "warning",
+            7,
+            8
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-renaming_fields_does_not_change_detection-1",
+      "origin": "test_r3_partial_commit_flow.py::test_renaming_fields_does_not_change_detection",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "class O:\n def __init__(self):\n  self.queue_get=set()\n  self.cache={}\n def run(self,k,v):\n  try:\n   self.queue_get.add(k)\n   self.cache[k]=v\n  except Exception:\n   return None\n",
+      "expected": {
+        "observed": [
+          [
+            8,
+            "warning",
+            7,
+            8
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_partial_commit_flow-shadowed_builtin_set_is_not_certified-0",
+      "origin": "test_r3_partial_commit_flow.py::test_shadowed_builtin_set_is_not_certified",
+      "engine": "test_r3_partial_commit_flow",
+      "source": "set = lambda: other_container()\nclass O:\n def __init__(self):\n  self.a=set()\n  self.b={}\n def run(self,k,v):\n  try:\n   self.a.add(k)\n   self.b[k]=v\n  except Exception:\n   return None\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "conditional_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "conditional_review"
+      ],
+      "rule": "QG213",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-container_return_does_not_masquerade_as_mapping_producer-0",
+      "origin": "test_r3_required_literal_producer.py::test_container_return_does_not_masquerade_as_mapping_producer",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Item(TypedDict):\n  identifier: str\ndef provide() -> list[Item]:\n  return {}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-dynamic_spread_and_open_key_cannot_certify_omission-0",
+      "origin": "test_r3_required_literal_producer.py::test_dynamic_spread_and_open_key_cannot_certify_omission",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Item(TypedDict):\n  identifier: str\ndef provide(extra: dict) -> Item:\n  return {**extra}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-dynamic_spread_and_open_key_cannot_certify_omission-1",
+      "origin": "test_r3_required_literal_producer.py::test_dynamic_spread_and_open_key_cannot_certify_omission",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Item(TypedDict):\n  identifier: str\ndef provide(extra: dict) -> Item:\n  return {next(iter(extra)): 1}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 1,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-missing_required_field_in_literal_return-0",
+      "origin": "test_r3_required_literal_producer.py::test_missing_required_field_in_literal_return",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict, NotRequired\nclass Item(TypedDict):\n  identifier: str\n  label: NotRequired[str]\ndef provide() -> Item:\n  return {'label': 'ok'}\n",
+      "expected": {
+        "observed": [
+          [
+            "QG216",
+            6,
+            "error",
+            [
+              "identifier"
+            ],
+            {
+              "identifier": 3
+            }
+          ]
+        ],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_required_literal_producer-nested_branch_and_caught_failure_return_use_same_schema-0",
+      "origin": "test_r3_required_literal_producer.py::test_nested_branch_and_caught_failure_return_use_same_schema",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Response(TypedDict):\n  status: str\n  payload: str\ndef create(ok: bool) -> Response:\n  if ok:\n    return {'status': 'ok', 'payload': 'ready'}\n  try:\n    raise ValueError()\n  except ValueError:\n    return {'status': 'failed'}\n",
+      "expected": {
+        "observed": [
+          [
+            "QG216",
+            11,
+            "error",
+            [
+              "payload"
+            ],
+            {
+              "payload": 4
+            }
+          ]
+        ],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r3_required_literal_producer-nested_function_literal_does_not_belong_to_outer_schema-0",
+      "origin": "test_r3_required_literal_producer.py::test_nested_function_literal_does_not_belong_to_outer_schema",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Response(TypedDict):\n  status: str\ndef create() -> Response:\n  def nested():\n    return {}\n  return {'status': 'ok'}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-nested_open_dict_remains_unknown-0",
+      "origin": "test_r3_required_literal_producer.py::test_nested_open_dict_remains_unknown",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Response(TypedDict):\n  status: str\ndef create(extra: dict) -> Response:\n  if extra:\n    return {**extra}\n  return {'status': 'ok'}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-optional_field_or_complete_literal_is_not_a_violation-0",
+      "origin": "test_r3_required_literal_producer.py::test_optional_field_or_complete_literal_is_not_a_violation",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Item(TypedDict, total=False):\n  identifier: str\ndef provide() -> Item:\n  return {}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-optional_field_or_complete_literal_is_not_a_violation-1",
+      "origin": "test_r3_required_literal_producer.py::test_optional_field_or_complete_literal_is_not_a_violation",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Item(TypedDict):\n  identifier: str\ndef provide() -> Item:\n  return {'identifier': 'ok'}\n",
+      "expected": {
+        "observed": [],
+        "checks": {}
+      },
+      "index": 1,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r3_required_literal_producer-typed_assignment_literal_uses_same_schema_contract-0",
+      "origin": "test_r3_required_literal_producer.py::test_typed_assignment_literal_uses_same_schema_contract",
+      "engine": "test_r3_required_literal_producer",
+      "source": "from typing import TypedDict\nclass Item(TypedDict):\n  identifier: str\n  title: str\nrecord: Item = {'identifier': 'ok'}\n",
+      "expected": {
+        "observed": [
+          [
+            "QG216",
+            5,
+            "error",
+            [
+              "title"
+            ],
+            {
+              "title": 4
+            }
+          ]
+        ],
+        "checks": {}
+      },
+      "index": 0,
+      "checks": [],
+      "rule": "QG216",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r2_constructor_read_order-augmented_read_before_write_and_initialized_field-0",
+      "origin": "test_r2_constructor_read_order.py::test_augmented_read_before_write_and_initialized_field",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class S:\n def __init__(q):\n  q.count += 1\n",
+      "expected": {
+        "observed": [
+          [
+            3,
+            "warning",
+            3
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TP"
+    },
+    {
+      "case_id": "r2_constructor_read_order-augmented_read_before_write_and_initialized_field-1",
+      "origin": "test_r2_constructor_read_order.py::test_augmented_read_before_write_and_initialized_field",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class S:\n def __init__(q):\n  q.count = 1\n  x = q.count\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r2_constructor_read_order-class_member_decorator_branch_and_call_are_open_world-0",
+      "origin": "test_r2_constructor_read_order.py::test_class_member_decorator_branch_and_call_are_open_world",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class S:\n field = 10\n def __init__(q):\n  x = q.field\n  q.field = 3\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r2_constructor_read_order-class_member_decorator_branch_and_call_are_open_world-1",
+      "origin": "test_r2_constructor_read_order.py::test_class_member_decorator_branch_and_call_are_open_world",
+      "engine": "test_r2_constructor_read_order",
+      "source": "@decorate\nclass S:\n def __init__(q):\n  x = q.field\n  q.field = 3\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 1,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r2_constructor_read_order-class_member_decorator_branch_and_call_are_open_world-2",
+      "origin": "test_r2_constructor_read_order.py::test_class_member_decorator_branch_and_call_are_open_world",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class S:\n def __init__(q, flag):\n  if flag: q.field = 1\n  x = q.field\n  q.field = 3\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 2,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r2_constructor_read_order-class_member_decorator_branch_and_call_are_open_world-3",
+      "origin": "test_r2_constructor_read_order.py::test_class_member_decorator_branch_and_call_are_open_world",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class S:\n def __init__(q, fn):\n  fn(q)\n  x = q.field\n  q.field = 3\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 3,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r2_constructor_read_order-class_member_decorator_branch_and_call_are_open_world-4",
+      "origin": "test_r2_constructor_read_order.py::test_class_member_decorator_branch_and_call_are_open_world",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class S:\n def __getattr__(q, name): return 1\n def __init__(q):\n  x = q.field\n  q.field = 3\n",
+      "expected": {
+        "observed": [],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 4,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TN"
+    },
+    {
+      "case_id": "r2_constructor_read_order-uninitialized_read_in_straight_line_is_visible-0",
+      "origin": "test_r2_constructor_read_order.py::test_uninitialized_read_in_straight_line_is_visible",
+      "engine": "test_r2_constructor_read_order",
+      "source": "class Store:\n    def __init__(this):\n        previous = this.records\n        this.records = {}\n",
+      "expected": {
+        "observed": [
+          [
+            3,
+            "warning",
+            4
+          ]
+        ],
+        "checks": {
+          "finding_identity": true,
+          "semantic_review": true
+        }
+      },
+      "index": 0,
+      "checks": [
+        "finding_identity",
+        "semantic_review"
+      ],
+      "rule": "QG210",
+      "kind": "TP"
+    }
+  ]
+}

@@ -12,6 +12,11 @@ from typing import Any
 from .commit_policy import parse_commit_policy
 from .config import GuardConfig
 from .model import Finding
+from .scoped_rule_policy import (
+    ScopedRuleDisable,
+    UNSUPPRESSIBLE_RULE_PREFIXES,
+    parse_scoped_disables,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -132,14 +137,15 @@ class SSEProtocolContract:
 
 _RULE_CODE_RE = re.compile(r"^QG(?P<number>\d{3,5})$")
 # Report/release integrity is part of the guard's trust boundary, not project policy.
-UNSUPPRESSIBLE_RULE_PREFIXES = ("QG98", "QG99")
 CUSTOM_RULE_CODE_MIN = 10000
 CUSTOM_RULE_CODE_MAX = 99999
 PROFILE_LOCK_SCHEMA = "repository-quality-guard/profile-lock-v1"
 RULE_LEVELS = frozenset({"info", "warning", "error", "critical", "semantic", "blocker"})
 _PROFILE_MANIFEST_DEFAULTS: Mapping[str, Any] = MappingProxyType(
     {
-        "rules": MappingProxyType({"disable": (), "levels": MappingProxyType({})}),
+        "rules": MappingProxyType(
+            {"disable": (), "levels": MappingProxyType({}), "scoped_disable": ()}
+        ),
         "capabilities": (),
         "nonblocking_paths": (),
         "test_baseline_passthrough_paths": (),
@@ -213,7 +219,7 @@ def _prepare_profile_manifest(
     rules = normalized["rules"]
     if not isinstance(rules, Mapping):
         raise ValueError("profile rules must be an object")
-    normalized_rules = {"disable": (), "levels": {}}
+    normalized_rules = {"disable": (), "levels": {}, "scoped_disable": []}
     normalized_rules.update(rules)
     if not isinstance(normalized_rules["levels"], Mapping):
         raise ValueError("profile rules.levels must be an object")
@@ -400,11 +406,11 @@ class ProjectProfile:
     route_contracts: tuple[RouteContract, ...] = ()
     header_contracts: tuple[HeaderContract, ...] = ()
     semantic_heuristic_exemptions: tuple[str, ...] = ()
-    semantic_authorization_path: str = ""
     enable_semantic_heuristic_candidates: bool = False
     nonblocking_paths: tuple[str, ...] = ()
     test_baseline_passthrough_paths: tuple[str, ...] = ()
     disabled_rules: tuple[str, ...] = ()
+    scoped_rule_disables: tuple[ScopedRuleDisable, ...] = ()
     rule_levels: Mapping[str, str] = MappingProxyType({})
     capabilities: tuple[str, ...] = ()
     settings: Mapping[str, Any] = MappingProxyType({})
@@ -466,6 +472,7 @@ class QualityGuardProfile:
         self.settings: dict[str, Any] = dict(self.manifest["settings"])
         self._configured = False
         self._disabled_rules: list[str] = []
+        self._scoped_rule_disables: list[ScopedRuleDisable] = []
         self._rule_levels: dict[str, str] = {}
         self._capabilities: list[str] = []
         self._nonblocking_paths: list[str] = []
@@ -491,7 +498,6 @@ class QualityGuardProfile:
             "header_contracts": [],
             "semantic_heuristic_exemptions": [],
         }
-        self.semantic_authorization_path = ""
 
     def configure(self) -> None:
         """Apply normalized declarative policy to this authoring instance.
@@ -502,6 +508,9 @@ class QualityGuardProfile:
         rules = self.manifest["rules"]
         for code in _string_sequence(rules["disable"]):
             self.disable_rule(code)
+        self._scoped_rule_disables.extend(
+            parse_scoped_disables(rules["scoped_disable"], validate_rule_code)
+        )
         for code, level in rules["levels"].items():
             self.set_rule_level(str(code), str(level))
 
@@ -724,7 +733,6 @@ class QualityGuardProfile:
             semantic_heuristic_exemptions=tuple(
                 dict.fromkeys(self._legacy["semantic_heuristic_exemptions"])
             ),
-            semantic_authorization_path=self.semantic_authorization_path,
             enable_semantic_heuristic_candidates="semantic-heuristic-candidates"
             in self._capabilities,
             nonblocking_paths=tuple(dict.fromkeys(self._nonblocking_paths)),
@@ -732,6 +740,7 @@ class QualityGuardProfile:
                 dict.fromkeys(self._test_baseline_passthrough_paths)
             ),
             disabled_rules=tuple(dict.fromkeys(self._disabled_rules)),
+            scoped_rule_disables=tuple(dict.fromkeys(self._scoped_rule_disables)),
             rule_levels=MappingProxyType(dict(sorted(self._rule_levels.items()))),
             capabilities=tuple(dict.fromkeys(self._capabilities)),
             settings=MappingProxyType(dict(self.settings)),

@@ -1,0 +1,194 @@
+{
+  "schema": "rqg.core-expanded-rule-object-cases.v1",
+  "cases": [
+    {
+      "case_id": "qg060-disjoint",
+      "rule": "QG060",
+      "kind": "TP",
+      "source": "def inspect(value: int):\n    return isinstance(value, str)\n",
+      "expected": [
+        [
+          "QG060",
+          "critical",
+          2,
+          "inspect"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg060-compatible",
+      "rule": "QG060",
+      "kind": "TN",
+      "source": "def inspect(value: int):\n    return isinstance(value, int)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg061-wrap",
+      "rule": "QG061",
+      "kind": "TP",
+      "source": "def consume(value: dict):\n    return value if isinstance(value, dict) else [value]\n",
+      "expected": [
+        [
+          "QG061",
+          "critical",
+          2,
+          "consume"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg061-no-wrap",
+      "rule": "QG061",
+      "kind": "TN",
+      "source": "def consume(value: dict):\n    return value if value else {}\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg066-default",
+      "rule": "QG066",
+      "kind": "TP",
+      "source": "def load(data: dict):\n    return data or {}\n",
+      "expected": [
+        [
+          "QG066",
+          "warning",
+          2,
+          "load"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg066-required",
+      "rule": "QG066",
+      "kind": "TN",
+      "source": "def load(data: dict):\n    return data[\"key\"]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg045-incompatible",
+      "rule": "QG045",
+      "kind": "TP",
+      "source": "def load(flag):\n    if flag:\n        return []\n    return 42\n",
+      "expected": [
+        [
+          "QG045",
+          "error",
+          3,
+          "load"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg045-compatible",
+      "rule": "QG045",
+      "kind": "TN",
+      "source": "def load(flag):\n    if flag:\n        return []\n    return [42]\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg144-shape",
+      "rule": "QG144",
+      "kind": "TP",
+      "source": "def load(flag):\n    if flag:\n        return {\"a\": 1}\n    return {\"b\": 2}\n",
+      "expected": [
+        [
+          "QG144",
+          "info",
+          3,
+          "load"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg144-uniform",
+      "rule": "QG144",
+      "kind": "TN",
+      "source": "def load(flag):\n    if flag:\n        return {\"a\": 1}\n    return {\"a\": 2}\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg046-implicit",
+      "rule": "QG046",
+      "kind": "TP",
+      "source": "def load(flag) -> int:\n    if flag:\n        return 1\n",
+      "expected": [
+        [
+          "QG046",
+          "error",
+          1,
+          "load"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg046-covered",
+      "rule": "QG046",
+      "kind": "TN",
+      "source": "def load(flag) -> int:\n    if flag:\n        return 1\n    return 2\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg047-protocol",
+      "rule": "QG047",
+      "kind": "TP",
+      "source": "def serialize_payload(data):\n    return str(data)\n",
+      "expected": [
+        [
+          "QG047",
+          "warning",
+          2,
+          "serialize_payload"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg047-text",
+      "rule": "QG047",
+      "kind": "TN",
+      "source": "def serialize_payload(data) -> str:\n    return str(data)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg159-legacy",
+      "rule": "QG159",
+      "kind": "TP",
+      "source": "def build(cfg):\n    return cfg\n",
+      "expected": [
+        [
+          "QG159",
+          "critical",
+          1,
+          "build:parameter:cfg"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg159-canonical",
+      "rule": "QG159",
+      "kind": "TN",
+      "source": "def build(config):\n    return config\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg160-vague",
+      "rule": "QG160",
+      "kind": "TP",
+      "source": "def normalize_payload(data):\n    return data\n",
+      "expected": [
+        [
+          "QG160",
+          "critical",
+          1,
+          "normalize_payload"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg160-math",
+      "rule": "QG160",
+      "kind": "TN",
+      "source": "def normalize_vectors(data):\n    return data\n",
+      "expected": []
+    }
+  ]
+}

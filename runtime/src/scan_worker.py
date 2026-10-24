@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import cli
+from .process_lifecycle import terminate_isolated_process_tree
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -112,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         """
         while not stopped.wait(5):
             if os.getppid() != options.parent_pid:
-                os._exit(3)
+                terminate_isolated_process_tree()
             _write_status(
                 status,
                 _Status("RUNNING", phase[0], round(time.perf_counter() - started, 1)),

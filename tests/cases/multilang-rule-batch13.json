@@ -1,0 +1,225 @@
+{
+  "schema": "rqg.multilang-rule-batch13.v1",
+  "cases": [
+    {
+      "case_id": "b13-QG195-TP",
+      "rule": "QG195",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG195",
+          "error",
+          "high",
+          "fixture.ts",
+          5,
+          "Owner::run",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG195-TN",
+      "rule": "QG195",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG200-TP",
+      "rule": "QG200",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG200",
+          "info",
+          "medium",
+          "fixture.ts",
+          5,
+          "fixture.ts::Other.run | fixture.ts::Owner.run",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG200-TN",
+      "rule": "QG200",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG198-TP",
+      "rule": "QG198",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG198",
+          "warning",
+          "high",
+          "fixture.ts",
+          1,
+          "Controller",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG198-TN",
+      "rule": "QG198",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG199-TP",
+      "rule": "QG199",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG199",
+          "warning",
+          "high",
+          "fixture.ts",
+          1,
+          "Controller",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG199-TN",
+      "rule": "QG199",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG207-TP",
+      "rule": "QG207",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG207",
+          "info",
+          "medium",
+          "fixture.ts",
+          1,
+          "javascript",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG207-TN",
+      "rule": "QG207",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG201-TP",
+      "rule": "QG201",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG201",
+          "info",
+          "high",
+          "style.css",
+          3,
+          "style.css::.first | style.css::.second",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG201-TN",
+      "rule": "QG201",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG202-TP",
+      "rule": "QG202",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG202",
+          "error",
+          "high",
+          "index.html",
+          2,
+          "main",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG202-TN",
+      "rule": "QG202",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG196-TP",
+      "rule": "QG196",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG196",
+          "info",
+          "high",
+          "fixture.ts",
+          3,
+          "Owner",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG196-TN",
+      "rule": "QG196",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG197-TP",
+      "rule": "QG197",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG197",
+          "info",
+          "medium",
+          "fixture.ts",
+          3,
+          "Owner",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG197-TN",
+      "rule": "QG197",
+      "kind": "TN",
+      "expected": []
+    },
+    {
+      "case_id": "b13-QG204-TP",
+      "rule": "QG204",
+      "kind": "TP",
+      "expected": [
+        [
+          "QG204",
+          "critical",
+          "medium",
+          "fixture.cpp",
+          3,
+          "work",
+          "quality-guard-multilang"
+        ]
+      ]
+    },
+    {
+      "case_id": "b13-QG204-TN",
+      "rule": "QG204",
+      "kind": "TN",
+      "expected": []
+    }
+  ]
+}

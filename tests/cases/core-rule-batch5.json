@@ -1,0 +1,446 @@
+{
+  "schema": "rqg.core-rule-batch5.v1",
+  "cases": [
+    {
+      "case_id": "qg031-trigger",
+      "rule": "QG031",
+      "kind": "TP",
+      "source": "def sample(flag: bool = 1):\n    return flag\n",
+      "expected": [
+        [
+          "QG031",
+          "error",
+          1,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg031-allowed",
+      "rule": "QG031",
+      "kind": "TN",
+      "source": "def sample(flag: bool = False):\n    return flag\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg032-trigger",
+      "rule": "QG032",
+      "kind": "TP",
+      "source": "def sample(flag: bool | str):\n    return flag\n",
+      "expected": [
+        [
+          "QG032",
+          "warning",
+          1,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg032-allowed",
+      "rule": "QG032",
+      "kind": "TN",
+      "source": "def sample(flag: bool):\n    return flag\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg033-trigger",
+      "rule": "QG033",
+      "kind": "TP",
+      "source": "def sample(flag: bool):\n    return bool(flag)\n",
+      "expected": [
+        [
+          "QG033",
+          "warning",
+          2,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg033-allowed",
+      "rule": "QG033",
+      "kind": "TN",
+      "source": "def sample(flag: bool):\n    return flag\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg034-trigger",
+      "rule": "QG034",
+      "kind": "TP",
+      "source": "def sample(*args):\n    return args\n",
+      "expected": [
+        [
+          "QG034",
+          "warning",
+          1,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg034-allowed",
+      "rule": "QG034",
+      "kind": "TN",
+      "source": "def sample(value):\n    return value\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg039-trigger",
+      "rule": "QG039",
+      "kind": "TP",
+      "source": "def sample(items=[]):\n    return items\n",
+      "expected": [
+        [
+          "QG039",
+          "error",
+          1,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg039-allowed",
+      "rule": "QG039",
+      "kind": "TN",
+      "source": "def sample(items=None):\n    return items\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg040-trigger",
+      "rule": "QG040",
+      "kind": "TP",
+      "source": "def sample(value: str = None):\n    return value\n",
+      "expected": [
+        [
+          "QG040",
+          "warning",
+          1,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg040-allowed",
+      "rule": "QG040",
+      "kind": "TN",
+      "source": "def sample(value: str | None = None):\n    return value\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg042-trigger",
+      "rule": "QG042",
+      "kind": "TP",
+      "source": "def sample(**kwargs):\n    return kwargs\n",
+      "expected": [
+        [
+          "QG042",
+          "warning",
+          1,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg042-allowed",
+      "rule": "QG042",
+      "kind": "TN",
+      "source": "def sample(value):\n    return value\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg145-trigger",
+      "rule": "QG145",
+      "kind": "TP",
+      "source": "def sample(value):\n    del value\n",
+      "expected": [
+        [
+          "QG145",
+          "warning",
+          2,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg145-allowed",
+      "rule": "QG145",
+      "kind": "TN",
+      "source": "def sample(value):\n    return value\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg053-trigger",
+      "rule": "QG053",
+      "kind": "TP",
+      "source": "import subprocess\ndef sample():\n    subprocess.run([\"true\"])\n",
+      "expected": [
+        [
+          "QG053",
+          "warning",
+          3,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg053-allowed",
+      "rule": "QG053",
+      "kind": "TN",
+      "source": "import subprocess\ndef sample():\n    subprocess.run([\"true\"], check=True)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg054-trigger",
+      "rule": "QG054",
+      "kind": "TP",
+      "source": "import requests\ndef sample():\n    requests.get(\"https://api.internal\")\n",
+      "expected": [
+        [
+          "QG054",
+          "warning",
+          3,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg054-allowed",
+      "rule": "QG054",
+      "kind": "TN",
+      "source": "import requests\ndef sample():\n    requests.get(\"https://api.internal\", timeout=5)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg055-trigger",
+      "rule": "QG055",
+      "kind": "TP",
+      "source": "import time\nasync def sample():\n    time.sleep(1)\n",
+      "expected": [
+        [
+          "QG055",
+          "warning",
+          3,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg055-allowed",
+      "rule": "QG055",
+      "kind": "TN",
+      "source": "import time\ndef sample():\n    time.sleep(1)\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg056-trigger",
+      "rule": "QG056",
+      "kind": "TP",
+      "source": "def sample():\n    return eval(\"1 + 1\")\n",
+      "expected": [
+        [
+          "QG056",
+          "error",
+          2,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg056-allowed",
+      "rule": "QG056",
+      "kind": "TN",
+      "source": "def sample():\n    return int(\"1\")\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg091-trigger",
+      "rule": "QG091",
+      "kind": "TP",
+      "source": "def one(): pass\ndef two(): pass\ndef three(): pass\ndef four(): pass\ndef five(): pass\ndef six(): pass\ndef seven(): pass\ndef eight(): pass\n",
+      "expected": [
+        [
+          "QG091",
+          "info",
+          1,
+          "utils"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg091-allowed",
+      "rule": "QG091",
+      "kind": "TN",
+      "source": "def one(): pass\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg092-trigger",
+      "rule": "QG092",
+      "kind": "TP",
+      "source": "cache = []\n",
+      "expected": [
+        [
+          "QG092",
+          "info",
+          1,
+          "subject"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg092-allowed",
+      "rule": "QG092",
+      "kind": "TN",
+      "source": "CACHE = []\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg093-trigger",
+      "rule": "QG093",
+      "kind": "TP",
+      "source": "from math import *\n",
+      "expected": [
+        [
+          "QG093",
+          "warning",
+          1,
+          "subject"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg093-allowed",
+      "rule": "QG093",
+      "kind": "TN",
+      "source": "from math import sqrt\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg094-trigger",
+      "rule": "QG094",
+      "kind": "TP",
+      "source": "def legacy_reader():\n    return 1\n",
+      "expected": [
+        [
+          "QG094",
+          "info",
+          1,
+          "legacy_reader"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg094-allowed",
+      "rule": "QG094",
+      "kind": "TN",
+      "source": "def reader():\n    return 1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg095-trigger",
+      "rule": "QG095",
+      "kind": "TP",
+      "source": "def migrate_records():\n    return 1\n",
+      "expected": [
+        [
+          "QG095",
+          "info",
+          1,
+          "migrate_records"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg095-allowed",
+      "rule": "QG095",
+      "kind": "TN",
+      "source": "def load_records():\n    return 1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg096-trigger",
+      "rule": "QG096",
+      "kind": "TP",
+      "source": "def process():\n    return 1\n",
+      "expected": [
+        [
+          "QG096",
+          "info",
+          1,
+          "process"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg096-allowed",
+      "rule": "QG096",
+      "kind": "TN",
+      "source": "def process_records():\n    return 1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg097-trigger",
+      "rule": "QG097",
+      "kind": "TP",
+      "source": "def sample():\n    def inner():\n        return 1\n    return inner()\n",
+      "expected": [
+        [
+          "QG097",
+          "info",
+          2,
+          "sample"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg097-allowed",
+      "rule": "QG097",
+      "kind": "TN",
+      "source": "def sample():\n    return 1\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg102-trigger",
+      "rule": "QG102",
+      "kind": "TP",
+      "source": "BASE = \"https://api.internal\"\n",
+      "expected": [
+        [
+          "QG102",
+          "warning",
+          1,
+          "subject"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg102-allowed",
+      "rule": "QG102",
+      "kind": "TN",
+      "source": "BASE = \"https://example.com\"\n",
+      "expected": []
+    },
+    {
+      "case_id": "qg106-trigger",
+      "rule": "QG106",
+      "kind": "TP",
+      "source": "import os\nVALUE = os.getenv(\"A\") or os.getenv(\"B\")\n",
+      "expected": [
+        [
+          "QG106",
+          "warning",
+          2,
+          "subject"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg106-allowed",
+      "rule": "QG106",
+      "kind": "TN",
+      "source": "import os\nVALUE = os.getenv(\"A\")\n",
+      "expected": []
+    }
+  ]
+}

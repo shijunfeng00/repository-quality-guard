@@ -1,0 +1,255 @@
+{
+  "cases": [
+    {
+      "case_id": "b30-handler-tp-proc",
+      "query": "handler_entry",
+      "source": "async def operation(start):\n    try:\n        proc = await start()\n    except TimeoutError:\n        if proc.returncode is None:\n            return 1\n    return 2\n",
+      "runtime_timeout": true,
+      "expected": {
+        "lines": [
+          5
+        ],
+        "source_bound": true,
+        "capabilities": [
+          "SOURCE_BOUND_EXCEPTION_PATH_OPEN_PROVIDER"
+        ],
+        "runtime": "UNBOUND_LOCAL"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-handler-tp-other_variable",
+      "query": "handler_entry",
+      "source": "async def operation(make):\n    try:\n        other_variable = await make()\n    except TimeoutError:\n        if other_variable.returncode is None:\n            return 1\n    return 2\n",
+      "runtime_timeout": true,
+      "expected": {
+        "lines": [
+          5
+        ],
+        "source_bound": true,
+        "capabilities": [
+          "SOURCE_BOUND_EXCEPTION_PATH_OPEN_PROVIDER"
+        ],
+        "runtime": "UNBOUND_LOCAL"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-handler-tn-prebound",
+      "query": "handler_entry",
+      "source": "async def operation(start):\n    proc = None\n    try:\n        proc = await start()\n    except TimeoutError:\n        if proc is None: return 3\n",
+      "runtime_timeout": true,
+      "expected": {
+        "lines": [],
+        "source_bound": true,
+        "capabilities": [],
+        "runtime": "NO_UNBOUND_LOCAL"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-handler-tn-after_assignment",
+      "query": "handler_entry",
+      "source": "async def operation(start):\n    try:\n        proc = 3\n        await start()\n    except TimeoutError:\n        return proc\n",
+      "runtime_timeout": false,
+      "expected": {
+        "lines": [],
+        "source_bound": true,
+        "capabilities": [],
+        "runtime": "NOT_EXECUTED"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-handler-tn-unreachable",
+      "query": "handler_entry",
+      "source": "async def operation(start):\n    try:\n        if False:\n            proc = await start()\n    except TimeoutError:\n        return proc\n",
+      "runtime_timeout": false,
+      "expected": {
+        "lines": [],
+        "source_bound": true,
+        "capabilities": [],
+        "runtime": "NOT_EXECUTED"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-handler-tn-handler_assignment",
+      "query": "handler_entry",
+      "source": "async def operation(start):\n    try:\n        proc = await start()\n    except TimeoutError:\n        proc = 0\n        return proc\n",
+      "runtime_timeout": false,
+      "expected": {
+        "lines": [],
+        "source_bound": true,
+        "capabilities": [],
+        "runtime": "NOT_EXECUTED"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-handler-tn-preawait_sync",
+      "query": "handler_entry",
+      "source": "async def operation(start):\n    try:\n        queued_at = monotonic()\n        await start()\n    except TimeoutError:\n        return queued_at\n",
+      "runtime_timeout": false,
+      "expected": {
+        "lines": [],
+        "source_bound": true,
+        "capabilities": [],
+        "runtime": "NOT_EXECUTED"
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-visitor-inherited-protocol",
+      "query": "ast_protocol",
+      "source": "import ast\ndef inspect(root):\n    class Collector(ast.NodeVisitor):\n        def visit_Name(self, node):\n            return node.id\n    instance = Collector()\n    return instance.visit(root)\n",
+      "expected": {
+        "false_ephemeral": [],
+        "protocol_hooks": [
+          "module.inspect.Collector.visit_Name"
+        ]
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-visitor-unrelated-namesake",
+      "query": "ast_protocol",
+      "source": "def inspect(root):\n    class Collector:\n        def visit_Name(self, node):\n            return node.id\n    instance = Collector()\n    return instance\n",
+      "expected": {
+        "false_ephemeral": [],
+        "protocol_hooks": []
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-mapping-zero-argument-get",
+      "query": "mapping_behavior",
+      "source": "class Provider:\n    def get(self):\n        return 42\ndef issue(provider: Provider):\n    return provider.get()\n",
+      "call": "issue(Provider())",
+      "expected": {
+        "findings": [],
+        "result": 42
+      },
+      "path": "module.py",
+      "forbidden": null
+    },
+    {
+      "case_id": "b30-mapping-inherited-custom-get",
+      "query": "mapping_behavior",
+      "source": "class Source:\n    def get(self, key):\n        return key.upper()\nclass Middle(Source):\n    pass\nclass Destination(Middle):\n    pass\ndef convert(value: Destination):\n    return value.get(\"x\")\n",
+      "call": "convert(Destination())",
+      "expected": {
+        "findings": [],
+        "result": "X"
+      },
+      "path": "module.py",
+      "forbidden": null
+    },
+    {
+      "case_id": "b30-mapping-explicit-optional-result",
+      "query": "mapping_behavior",
+      "source": "from typing import Optional\nclass Node: pass\ndef find(index: dict[str, Node], key: str) -> Optional[Node]:\n    return index.get(key, None)\n",
+      "call": "find({}, \"missing\")",
+      "expected": {
+        "findings": [],
+        "result": null
+      },
+      "path": "module.py",
+      "forbidden": null
+    },
+    {
+      "case_id": "b30-mapping-sparse-valid-absence",
+      "query": "mapping_behavior",
+      "source": "class Graph:\n    def __init__(self, nodes, edges):\n        self.nodes = set(nodes)\n        incoming = {}\n        for source, target in edges:\n            assert source in nodes and target in nodes\n            incoming.setdefault(target, []).append(source)\n        self._incoming = incoming\n    def parents(self, target: str) -> list[str]:\n        assert target in self.nodes\n        return self._incoming.get(target, [])\n",
+      "call": "(Graph({\"A\", \"B\"}, [(\"B\", \"A\")]).parents(\"A\"), Graph({\"A\", \"B\"}, [(\"B\", \"A\")]).parents(\"B\"))",
+      "forbidden": [
+        [
+          "QG004",
+          11
+        ]
+      ],
+      "expected": {
+        "findings": [],
+        "result": [
+          [
+            "B"
+          ],
+          []
+        ]
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-executor-field",
+      "query": "executor_dispatch",
+      "source": "from concurrent.futures import ThreadPoolExecutor\nclass Job:\n    def __init__(self):\n        self.pool = ThreadPoolExecutor(max_workers=1)\n    def run(self):\n        return 1\n    def schedule(self):\n        return self.pool.submit(self.run)\n",
+      "expected": {
+        "scheduled": true,
+        "never_direct": true,
+        "trace_open_world": true,
+        "statistics_expose_schedule": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-executor-local",
+      "query": "executor_dispatch",
+      "source": "from concurrent.futures import ThreadPoolExecutor\ndef task():\n    return 1\ndef launch():\n    with ThreadPoolExecutor(max_workers=1) as pool:\n        return pool.submit(task)\n",
+      "expected": {
+        "scheduled": true,
+        "never_direct": true,
+        "trace_open_world": true,
+        "statistics_expose_schedule": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-executor-nested_closure",
+      "query": "executor_dispatch",
+      "source": "from concurrent.futures import ThreadPoolExecutor\nclass Job:\n    def __init__(self):\n        self.pool = ThreadPoolExecutor(max_workers=1)\n    def task(self):\n        return 1\n    def configure(self):\n        def callback():\n            return self.pool.submit(self.task)\n        return callback\n",
+      "expected": {
+        "scheduled": true,
+        "never_direct": true,
+        "trace_open_world": true,
+        "statistics_expose_schedule": true
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-executor-nested_self_shadow",
+      "query": "executor_dispatch",
+      "source": "from concurrent.futures import ThreadPoolExecutor\nclass Job:\n    def __init__(self):\n        self.pool = ThreadPoolExecutor(max_workers=1)\n    def task(self):\n        return 1\n    def configure(self):\n        def callback(self):\n            return self.pool.submit(self.task)\n        return callback\n",
+      "expected": {
+        "scheduled": false,
+        "never_direct": true,
+        "trace_open_world": false,
+        "statistics_expose_schedule": false
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-executor-fake",
+      "query": "executor_dispatch",
+      "source": "class Fake:\n    def submit(self, cb):\n        return 'unused'\nclass Job:\n    def __init__(self):\n        self.pool = Fake()\n    def run(self):\n        return 1\n    def schedule(self):\n        return self.pool.submit(self.run)\n",
+      "expected": {
+        "scheduled": false,
+        "never_direct": true,
+        "trace_open_world": false,
+        "statistics_expose_schedule": false
+      },
+      "path": "module.py"
+    },
+    {
+      "case_id": "b30-executor-rebinding",
+      "query": "executor_dispatch",
+      "source": "from concurrent.futures import ThreadPoolExecutor\nclass Job:\n    def __init__(self):\n        self.pool = ThreadPoolExecutor()\n    def override(self, other):\n        self.pool = other\n    def run(self):\n        return 1\n    def schedule(self):\n        return self.pool.submit(self.run)\n",
+      "expected": {
+        "scheduled": false,
+        "never_direct": true,
+        "trace_open_world": false,
+        "statistics_expose_schedule": false
+      },
+      "path": "module.py"
+    }
+  ]
+}

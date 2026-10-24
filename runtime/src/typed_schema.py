@@ -137,6 +137,53 @@ def _declared_schema(
     return None
 
 
+def _imported_schema_aliases(
+    tree: ast.Module, table: symtable.SymbolTable, schema_ids: set[str]
+) -> dict[str, str]:
+    """Resolve only unique direct imports to already-authenticated local schemas.
+
+    A same-spelled alias, a relative import, or later source assignment is an
+    open boundary.  This deliberately accepts the CodeGraph-compatible pure
+    alias case only when the local source snapshot provides one exact target.
+    """
+    candidates: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    observed: dict[str, str] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Import):
+            imports = (
+                (item.asname or item.name.split(".", 1)[0], "OPEN_IMPORT:" + item.name)
+                for item in statement.names
+            )
+        elif isinstance(statement, ast.ImportFrom):
+            # Relative and external imports also occupy the alias.  They may
+            # shadow an earlier known schema even when their target is open.
+            imports = (
+                (item.asname or item.name, (
+                    statement.module + "." + item.name
+                    if statement.module and statement.level == 0
+                    else "OPEN_IMPORT:" + str(statement.module) + "." + item.name
+                ))
+                for item in statement.names
+                if item.name != "*"
+            )
+        else:
+            continue
+        for alias, target in imports:
+            if alias in observed and observed[alias] != target:
+                ambiguous.add(alias)
+            observed[alias] = target
+            if target in schema_ids:
+                candidates[alias] = target
+    return {
+        alias: target
+        for alias, target in candidates.items()
+        if alias not in ambiguous
+        and alias in table.get_identifiers()
+        and not table.lookup(alias).is_assigned()
+    }
+
+
 def _authored_returns(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> tuple[ast.Return, ...]:
@@ -347,6 +394,63 @@ def typed_schema_facts(
                             _literal_keys(stmt.value),
                         )
                     )
+    # The first pass authenticates every schema in the snapshot.  A second,
+    # strictly direct-import pass can then connect an imported return
+    # annotation to that exact schema without treating spelling as evidence.
+    schema_ids = {field.schema_symbol_id for field in field_rows}
+    for path in snapshot.paths:
+        unit = snapshot.units[path]
+        if unit.tree is None:
+            continue
+        try:
+            module_scope = symtable.symtable(unit.source, path, "exec")
+        except SyntaxError:
+            continue
+        aliases = _imported_schema_aliases(unit.tree, module_scope, schema_ids)
+        if not aliases:
+            continue
+        digest = hashlib.sha256(unit.source.encode()).hexdigest()
+        declarations: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+        for statement in unit.tree.body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                declarations.append(statement)
+            elif isinstance(statement, ast.ClassDef):
+                declarations.extend(
+                    member
+                    for member in statement.body
+                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+                )
+        for declaration_node in declarations:
+            if not isinstance(declaration_node.returns, ast.Name):
+                continue
+            schema_id = aliases.get(declaration_node.returns.id)
+            symbol = functions.get((path, declaration_node.lineno))
+            if schema_id is None or symbol is None or declaration_node.decorator_list:
+                continue
+            producer_rows.append(
+                TypedProducerFact(
+                    schema_id,
+                    symbol.symbol_id,
+                    Path(path),
+                    declaration_node.lineno,
+                    digest,
+                    "DECLARED_RETURN",
+                )
+            )
+            for child in _authored_returns(declaration_node):
+                if isinstance(child.value, ast.Dict):
+                    producer_rows.append(
+                        TypedProducerFact(
+                            schema_id,
+                            symbol.symbol_id,
+                            Path(path),
+                            child.lineno,
+                            digest,
+                            "OBSERVED_RETURN_LITERAL",
+                            _literal_keys(child.value),
+                        )
+                    )
+
     return (
         tuple(
             sorted(

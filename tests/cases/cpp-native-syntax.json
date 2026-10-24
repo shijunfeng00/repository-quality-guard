@@ -1,0 +1,82 @@
+{
+  "cases": [
+    {
+      "case_id": "gcc-syntax-error",
+      "source": "int broken() { return unknown_name; }\n",
+      "flags": [
+        "-std=c++17"
+      ],
+      "expected": {
+        "findings": [],
+        "native_syntax": {
+          "fail": 1
+        },
+        "compiler_families": {
+          "gcc": 1
+        },
+        "build_contracts": 1,
+        "translation_units": 1,
+        "missing_contracts": 0,
+        "native_unavailable": 0,
+        "native_failures": [
+          [
+            "src/sample.cpp",
+            "gcc",
+            1,
+            true,
+            true
+          ]
+        ]
+      },
+      "diagnostic_marker": "unknown_name",
+      "command_flag": "-std=c++17"
+    },
+    {
+      "case_id": "gcc-syntax-success",
+      "source": "int good() { return 1; }\n",
+      "flags": [
+        "-std=c++14"
+      ],
+      "expected": {
+        "findings": [],
+        "native_syntax": {
+          "pass": 1
+        },
+        "compiler_families": {
+          "gcc": 1
+        },
+        "build_contracts": 1,
+        "translation_units": 1,
+        "missing_contracts": 0,
+        "native_unavailable": 0,
+        "native_failures": []
+      },
+      "diagnostic_marker": "",
+      "command_flag": "-std=c++14"
+    },
+    {
+      "case_id": "gcc-project-macro-retained",
+      "source": "#if !defined(FEATURE_FLAG) || FEATURE_FLAG != 7\n#error Original compiler macro was lost\n#endif\nint feature() { return FEATURE_FLAG; }\n",
+      "flags": [
+        "-std=c++17",
+        "-DFEATURE_FLAG=7"
+      ],
+      "expected": {
+        "findings": [],
+        "native_syntax": {
+          "pass": 1
+        },
+        "compiler_families": {
+          "gcc": 1
+        },
+        "build_contracts": 1,
+        "translation_units": 1,
+        "missing_contracts": 0,
+        "native_unavailable": 0,
+        "native_failures": []
+      },
+      "diagnostic_marker": "",
+      "command_flag": "-DFEATURE_FLAG=7"
+    }
+  ]
+}

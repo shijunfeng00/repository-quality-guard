@@ -1,0 +1,110 @@
+[
+  {
+    "case_id": "tp-reexported-test-only-target",
+    "modules": {
+      "pkg/bridge.py": "from tests.helper import normalize_item as external_api\n",
+      "tests/helper.py": "def normalize_item(payload):\n    return payload\n"
+    },
+    "entry_import": "from pkg.bridge import external_api",
+    "entry_return": "external_api",
+    "expected": 1,
+    "test_roots": []
+  },
+  {
+    "case_id": "tn-reexported-repository-production",
+    "modules": {
+      "pkg/bridge.py": "from pkg.engine import calculate as external_api\n",
+      "pkg/engine.py": "def calculate(value):\n    return value + 1\n"
+    },
+    "entry_import": "from pkg.bridge import external_api",
+    "entry_return": "external_api",
+    "expected": 0,
+    "test_roots": []
+  },
+  {
+    "case_id": "tn-sdk-outgoing-production-reference",
+    "modules": {
+      "pkg/sdk.py": "from pkg.logic import analyze\ndef run(v):\n    return analyze(v)\n",
+      "pkg/logic.py": "def analyze(v):\n    return v * 2\n"
+    },
+    "entry_import": "from pkg.sdk import run",
+    "entry_return": "run",
+    "expected": 0,
+    "test_roots": []
+  },
+  {
+    "case_id": "tn-repository-pure-leaf-function",
+    "modules": {
+      "pkg/math_core.py": "def multiply(value):\n    return value * 2\n"
+    },
+    "entry_import": "from pkg.math_core import multiply",
+    "entry_return": "multiply",
+    "expected": 0,
+    "test_roots": []
+  },
+  {
+    "case_id": "tp-isolated-third-party-target",
+    "modules": {
+      "pkg/logic.py": "def multiply(value):\n    return value * 2\n"
+    },
+    "entry_import": "import math",
+    "entry_return": "math.sqrt",
+    "expected": 1,
+    "test_roots": []
+  },
+  {
+    "case_id": "tn-production-basename-test-prefix",
+    "modules": {
+      "pkg/test_processor.py": "def process(value):\n    return value + 1\n"
+    },
+    "entry_import": "from pkg.test_processor import process",
+    "entry_return": "process",
+    "expected": 0,
+    "test_roots": []
+  },
+  {
+    "case_id": "tp-test-helper-without-prefix",
+    "modules": {
+      "tests/helper.py": "def process(value):\n    return value + 1\n"
+    },
+    "entry_import": "from tests.helper import process",
+    "entry_return": "process",
+    "expected": 1,
+    "test_roots": []
+  },
+  {
+    "case_id": "tp-configured-unconventional-directory",
+    "test_roots": [
+      "checks"
+    ],
+    "modules": {
+      "checks/processor.py": "def process(value):\n    return value + 1\n"
+    },
+    "entry_import": "from checks.processor import process",
+    "entry_return": "process",
+    "expected": 1
+  },
+  {
+    "case_id": "tn-sibling-prefix-is-not-directory",
+    "test_roots": [
+      "checks"
+    ],
+    "modules": {
+      "checks_extra/test_processor.py": "def process(value):\n    return value + 1\n"
+    },
+    "entry_import": "from checks_extra.test_processor import process",
+    "entry_return": "process",
+    "expected": 0
+  },
+  {
+    "case_id": "unknown-dynamic-reexport",
+    "modules": {
+      "pkg/bridge.py": "def get_handler(name):\n    return globals()[name]\n"
+    },
+    "entry_import": "from pkg.bridge import get_handler",
+    "entry_return": "get_handler('handler')",
+    "expected": 1,
+    "v02_review": "get_enterpoint invokes a production factory rather than return an authenticated reference; this is a QG240 getter-shape violation only, not proof of dynamic target ownership",
+    "test_roots": []
+  }
+]

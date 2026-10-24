@@ -190,7 +190,7 @@ class _DirectReads(ast.NodeVisitor):
             None; updates the collector state or intentionally skips this lexical scope.
         """
         self.parameters = parameters
-        self.rows: list[tuple[str, str, int, int]] = []
+        self.rows: list[tuple[str, str, int, int, str]] = []
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
         """Record parameter key reads in load context, then visit their child expressions.
@@ -203,7 +203,38 @@ class _DirectReads(ast.NodeVisitor):
         """
         match = _keys(node, self.parameters)
         if match is not None and isinstance(node.ctx, ast.Load):
-            self.rows.append((match[0], match[1], node.lineno, node.col_offset))
+            self.rows.append(
+                (
+                    match[0],
+                    match[1],
+                    node.lineno,
+                    node.col_offset,
+                    "DIRECT_SUBSCRIPT_READ",
+                )
+            )
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """Record a literal `.get()` on an authenticated schema formal parameter."""
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in self.parameters
+            and len(node.args) in {1, 2}
+            and not node.keywords
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            self.rows.append(
+                (
+                    node.func.value.id,
+                    node.args[0].value,
+                    node.lineno,
+                    node.col_offset,
+                    "GET_DEFAULT" if len(node.args) == 2 else "GET_NO_DEFAULT",
+                )
+            )
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -224,7 +255,7 @@ class _DirectReads(ast.NodeVisitor):
 
 def _candidate_reads(
     node: ast.AST, parameters: set[str]
-) -> list[tuple[str, str, int, int]]:
+) -> list[tuple[str, str, int, int, str]]:
     """Collect direct literal-key reads reachable in the supplied syntax node only."""
     visitor = _DirectReads(parameters)
     visitor.visit(node)
@@ -353,7 +384,9 @@ def typed_consumer_facts(
                     parts.append((stmt, "DIRECT_STATEMENT"))
                 # No implicit traversal of loops, exception handlers, nested scopes.
                 for part, context in parts:
-                    for name, key, line, column in _candidate_reads(part, names):
+                    for name, key, line, column, operation in _candidate_reads(
+                        part, names
+                    ):
                         declaration_fact = fields[params[name]].get(key)
                         if declaration_fact is None:
                             continue
@@ -375,11 +408,13 @@ def typed_consumer_facts(
                                 field=key,
                                 required=declaration_fact.required,
                                 declared_type=declaration_fact.annotation,
-                                observation="DIRECT_SUBSCRIPT_READ",
+                                observation=operation,
                                 guard_observation=guard[2] if correlated else "NONE",
                                 guard_line=stmt.lineno if correlated else 0,
-                                presence_witness_line=validated_reads.get(
-                                    (line, column, name, key), 0
+                                presence_witness_line=(
+                                    validated_reads.get((line, column, name, key), 0)
+                                    if operation == "DIRECT_SUBSCRIPT_READ"
+                                    else 0
                                 ),
                             )
                         )
@@ -395,3 +430,46 @@ def typed_consumer_facts(
             ),
         )
     )
+
+
+def typed_required_get_findings(
+    topology: RepositoryTopology, audited_paths: frozenset[str]
+):
+    """QG003/QG004 on positively proven TypedDict keys across module imports.
+
+    Consume the already-normalized source graph: unknown schemas, unknown
+    selectors and explicitly NotRequired fields cannot become deficiencies.
+    """
+    from .model import Finding
+
+    findings = []
+    for record in topology.typed_consumers:
+        if (
+            record.path.as_posix() not in audited_paths
+            or record.observation not in {"GET_DEFAULT", "GET_NO_DEFAULT"}
+            or not record.required
+        ):
+            continue
+        rule = "QG004" if record.observation == "GET_DEFAULT" else "QG003"
+        findings.append(
+            Finding(
+                code=rule,
+                severity="warning",
+                confidence="high",
+                path=record.path.as_posix(),
+                line=record.line,
+                column=record.column,
+                symbol=record.consumer_symbol_id,
+                message=f"已认证 TypedDict `{record.schema_symbol_id}` 的必需键 `{record.field}` 使用 .get() 兜底。",
+                suggestion="直接读取必需字段；如允许缺失，应修改真实 TypedDict 声明。",
+                evidence={
+                    "schema_symbol_id": record.schema_symbol_id,
+                    "consumer_symbol_id": record.consumer_symbol_id,
+                    "requiredness": "PROVEN_REQUIRED",
+                    "field": record.field,
+                    "topology_resolution": "authenticated-cross-module-schema",
+                },
+                source="source-bound-r3",
+            )
+        )
+    return findings

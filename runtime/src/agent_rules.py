@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import ast
 from collections import defaultdict
 
@@ -10,6 +12,7 @@ from .ast_utils import (
     enclosing_class_name,
 )
 from .config import GuardConfig
+from .core_rule_contract import CoreQualityRule
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
@@ -482,20 +485,9 @@ def check_declared_state_read(
     Returns:
         未声明字段发现；字段合法时返回空列表。
     """
-    parameter, field_name = read
-    contract = contracts[parameter]
-    if contract is None or field_name in contract.fields:
-        return []
-    return [
-        facts.make_finding(
-            node,
-            "QG125",
-            f"读取状态类型 `{contract.name}` 未声明字段 `{field_name}`。",
-            symbol=qualname,
-            severity="error",
-            suggestion="先在唯一状态模型中声明字段，再按正式契约直接访问。",
-        )
-    ]
+    return UndeclaredStateReadRule().evaluate(
+        UndeclaredStateReadRuleContext(facts, node, qualname, contracts, read)
+    )
 
 
 def record_state_write(
@@ -529,17 +521,13 @@ def record_state_write(
         (value_type, facts.path, node.lineno)
     )
     findings = check_declared_state_write(facts, node, qualname, contract, field_name)
-    if is_tool:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG120",
-                f"Tool `{qualname}` 直接修改状态 `{parameter}.{field_name}`。",
-                symbol=qualname,
-                severity="error",
-                suggestion="Tool 返回结构化结果，由 Agent 或唯一 update_state 入口归并。",
+    findings.extend(
+        DirectToolStateMutationRule().evaluate(
+            DirectToolStateMutationContext(
+                facts, node, qualname, parameter, field_name, is_tool
             )
         )
+    )
     findings.extend(
         check_sequence_state_write(
             facts,
@@ -574,18 +562,9 @@ def check_declared_state_write(
     Returns:
         未声明字段发现列表。
     """
-    if contract is None or field_name in contract.fields or field_name.startswith("<"):
-        return []
-    return [
-        facts.make_finding(
-            node,
-            "QG124",
-            f"写入状态类型 `{contract.name}` 未声明字段 `{field_name}`。",
-            symbol=qualname,
-            severity="error",
-            suggestion="先在唯一状态模型中声明字段及归并语义。",
-        )
-    ]
+    return UndeclaredStateWriteRule().evaluate(
+        UndeclaredStateWriteRuleContext(facts, node, qualname, contract, field_name)
+    )
 
 
 def check_sequence_state_write(
@@ -612,25 +591,11 @@ def check_sequence_state_write(
     Returns:
         嵌套序列风险发现列表。
     """
-    if contract is None or field_name not in contract.fields:
-        return []
-    field = contract.fields[field_name]
-    if (
-        not field.is_sequence
-        or method_name != "append"
-        or value_type not in {"list", "tuple", "set"}
-    ):
-        return []
-    return [
-        facts.make_finding(
-            node,
-            "QG127",
-            f"序列状态字段 `{field_name}` 使用 append() 追加整个 {value_type}。",
-            symbol=qualname,
-            severity="warning",
-            suggestion="确认是否误把 extend() 写成 append()，避免产生嵌套列表。",
+    return NestedSequenceStateWriteRule().evaluate(
+        NestedSequenceStateWriteRuleContext(
+            facts, node, qualname, contract, field_name, value_type, method_name
         )
-    ]
+    )
 
 
 def state_parameter_contracts(
@@ -914,40 +879,9 @@ def check_state_scope(
     Returns:
         依赖范围过宽发现列表。
     """
-    findings: list[Finding] = []
-    for parameter, fields in accesses.items():
-        if len(fields) != 1:
-            continue
-        high_confidence = (
-            not _protocol_like_method(node)
-            and node.name not in signals.callback_names_by_module[facts.module]
-            and not _state_parameter_escapes(node, parameter)
-        )
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG128",
-                f"`{qualname}` 接收完整状态 `{parameter}`，但只读取字段 `{next(iter(fields))}`。",
-                symbol=qualname,
-                severity="warning" if high_confidence else "info",
-                confidence="high" if high_confidence else "medium",
-                suggestion=(
-                    "高置信依赖面过宽：优先改为传入所需子对象或字段；若签名由协议固定，必须在语义审计中证明。"
-                    if high_confidence
-                    else "检查协议/回调签名与透传语义；若不受约束，缩小状态依赖面。"
-                ),
-                evidence={
-                    "state_parameter": parameter,
-                    "fields": sorted(fields),
-                    "qg179_exempt": high_confidence,
-                    "semantic_review_required": True,
-                    "semantic_review_question": "Q4,Q5",
-                    "semantic_review_kind": "dependency-surface",
-                    "high_confidence": high_confidence,
-                },
-            )
-        )
-    return findings
+    return StateScopeEscapeRule().evaluate(
+        StateScopeEscapeRuleContext(facts, node, qualname, accesses, signals)
+    )
 
 
 def check_state_update_entry(
@@ -970,30 +904,11 @@ def check_state_update_entry(
     Returns:
         状态更新入口发现列表。
     """
-    if not state_parameters or any(
-        marker in node.name for marker in config.state_writer_names
-    ):
-        return []
-    writes = [
-        item
-        for item in direct_body_nodes(node)
-        if state_write(item, state_parameters) is not None
-    ]
-    if not writes:
-        return []
-    return [
-        facts.make_finding(
-            writes[0],
-            "QG134",
-            f"`{qualname}` 在非状态更新入口中直接写入配置的状态对象。",
-            symbol=qualname,
-            severity="warning",
-            suggestion=(
-                "把状态归并集中到配置的 canonical state-writer 入口："
-                + ", ".join(config.state_writer_names)
-            ),
+    return UnscopedStateUpdateEntryRule().evaluate(
+        UnscopedStateUpdateEntryRuleContext(
+            facts, node, qualname, state_parameters, config
         )
-    ]
+    )
 
 
 def check_state_merge_methods(
@@ -1014,20 +929,9 @@ def check_state_merge_methods(
     Returns:
         归并语义不一致发现列表。
     """
-    findings: list[Finding] = []
-    for (_, field_name), method_names in methods.items():
-        if {"append", "extend"} <= method_names:
-            findings.append(
-                facts.make_finding(
-                    node,
-                    "QG135",
-                    f"状态字段 `{field_name}` 在同一函数中混用 append() 和 extend()。",
-                    symbol=qualname,
-                    severity="warning",
-                    suggestion="为字段固定单项追加或批量归并语义。",
-                )
-            )
-    return findings
+    return StateMergeAmbiguityRule().evaluate(
+        StateMergeAmbiguityRuleContext(facts, node, qualname, methods)
+    )
 
 
 def check_tool_contract(
@@ -1051,43 +955,14 @@ def check_tool_contract(
     findings: list[Finding] = []
     returns = [item for item in nodes if isinstance(item, ast.Return)]
     shapes = {return_shape(item.value) for item in returns}
-    if len(shapes) > 1:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG121",
-                f"Tool `{qualname}` 存在多种返回结构：{sorted(shapes)}。",
-                symbol=qualname,
-                severity="error",
-                suggestion="固定 Tool JSON schema，并在工具描述中说明消费方式。",
-            )
-        )
-    if any(shape in {"str", "call:str", "call:repr"} for shape in shapes):
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG122",
-                f"Tool `{qualname}` 返回裸字符串而不是稳定结构。",
-                symbol=qualname,
-                severity="warning",
-                suggestion="返回包含状态、数据、错误和后续动作字段的固定 JSON 对象。",
-            )
-        )
     dict_keys = tool_return_dict_keys(returns)
     docstring = ast.get_docstring(node, clean=False) or ""
     undocumented = sorted(key for key in dict_keys if key not in docstring)
-    if dict_keys and undocumented:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG131",
-                f"Tool `{qualname}` 的 docstring 未说明返回字段：{undocumented}。",
-                symbol=qualname,
-                severity="warning",
-                suggestion="在 Returns 中列出固定 JSON 字段、类型、语义和模型如何消费。",
-                evidence={"fields": sorted(dict_keys), "undocumented": undocumented},
-            )
-        )
+    context = ToolReturnContractContext(
+        facts, node, qualname, shapes, dict_keys, undocumented
+    )
+    findings.extend(BareToolStringRule().evaluate(context))
+    findings.extend(UndocumentedToolResultRule().evaluate(context))
     return findings
 
 
@@ -1146,41 +1021,12 @@ def check_history_trace_rules(
         and not any(marker in name for marker in config.history_markers)
         for name in call_names
     )
+    context = HistoryTraceRuleContext(
+        facts, node, qualname, nodes, config, uses_history, uses_trace
+    )
     findings: list[Finding] = []
-    if uses_history and uses_trace:
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG129",
-                f"`{qualname}` 同时处理 History 与 Trace。",
-                symbol=qualname,
-                severity="warning",
-                suggestion="成功对话历史与完整执行轨迹使用独立模型、存储入口和失败过滤规则。",
-            )
-        )
-    for item in nodes:
-        if not isinstance(item, ast.ExceptHandler):
-            continue
-        history_calls = [
-            child
-            for statement in item.body
-            for child in ast.walk(statement)
-            if isinstance(child, ast.Call)
-            and any(
-                marker in call_name(child).lower() for marker in config.history_markers
-            )
-        ]
-        if history_calls:
-            findings.append(
-                facts.make_finding(
-                    history_calls[0],
-                    "QG130",
-                    "异常处理路径把失败步骤写入 History。",
-                    symbol=qualname,
-                    severity="error",
-                    suggestion="失败过程只进入 Trace；History 仅保存成功完成的用户对话和结果。",
-                )
-            )
+    findings.extend(MixedHistoryTraceRule().evaluate(context))
+    findings.extend(FailureHistoryPollutionRule().evaluate(context))
     return findings
 
 
@@ -1194,30 +1040,631 @@ def check_state_write_types(signals: RepositorySignals) -> list[Finding]:
     Returns:
         状态字段类型不一致发现列表。
     """
-    findings: list[Finding] = []
-    for (contract, field_name), writes in signals.state_writes.items():
-        value_types = {value_type for value_type, _, _ in writes}
-        if len(value_types) <= 1:
-            continue
-        _, path, line = writes[0]
-        findings.append(
-            Finding(
-                code="QG126",
+    return InconsistentStateWriteTypeRule().evaluate(
+        InconsistentStateWriteTypeRuleContext(signals)
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class UndeclaredStateReadRuleContext:
+    """Precollected state/AST inputs for QG125; never reparses source.
+
+    Fields: facts, node, qualname, contracts, read."""
+
+    facts: ModuleFacts
+    node: ast.AST
+    qualname: str
+    contracts: dict[str, StateContract | None]
+    read: tuple[str, str]
+
+
+class UndeclaredStateReadRule(CoreQualityRule[UndeclaredStateReadRuleContext]):
+    """Own the actual QG125 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG125"
+
+    def evaluate(self, context: UndeclaredStateReadRuleContext) -> list[Finding]:
+        """Evaluate QG125 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        contracts = context.contracts
+        read = context.read
+        parameter, field_name = read
+        contract = contracts[parameter]
+        if contract is None or field_name in contract.fields:
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG125",
+                f"读取状态类型 `{contract.name}` 未声明字段 `{field_name}`。",
+                symbol=qualname,
                 severity="error",
-                confidence="medium",
-                path=str(path),
-                line=line,
-                column=1,
-                message=f"状态字段 `{contract}.{field_name}` 被写入多种结构：{sorted(value_types)}。",
-                symbol=f"{contract}.{field_name}",
-                suggestion="在状态模型中固定字段类型和归并语义。",
-                evidence={
-                    "types": sorted(value_types),
-                    "writes": [
-                        f"{item_path}:{item_line}:{value_type}"
-                        for value_type, item_path, item_line in writes
-                    ],
-                },
+                suggestion="先在唯一状态模型中声明字段，再按正式契约直接访问。",
             )
+        ]
+
+
+@dataclass(slots=True, frozen=True)
+class UndeclaredStateWriteRuleContext:
+    """Precollected state/AST inputs for QG124; never reparses source.
+
+    Fields: facts, node, qualname, contract, field_name."""
+
+    facts: ModuleFacts
+    node: ast.AST
+    qualname: str
+    contract: StateContract | None
+    field_name: str
+
+
+class UndeclaredStateWriteRule(CoreQualityRule[UndeclaredStateWriteRuleContext]):
+    """Own the actual QG124 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG124"
+
+    def evaluate(self, context: UndeclaredStateWriteRuleContext) -> list[Finding]:
+        """Evaluate QG124 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        contract = context.contract
+        field_name = context.field_name
+        if (
+            contract is None
+            or field_name in contract.fields
+            or field_name.startswith("<")
+        ):
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG124",
+                f"写入状态类型 `{contract.name}` 未声明字段 `{field_name}`。",
+                symbol=qualname,
+                severity="error",
+                suggestion="先在唯一状态模型中声明字段及归并语义。",
+            )
+        ]
+
+
+@dataclass(slots=True, frozen=True)
+class NestedSequenceStateWriteRuleContext:
+    """Precollected state/AST inputs for QG127; never reparses source.
+
+    Fields: facts, node, qualname, contract, field_name, value_type, method_name."""
+
+    facts: ModuleFacts
+    node: ast.AST
+    qualname: str
+    contract: StateContract | None
+    field_name: str
+    value_type: str
+    method_name: str
+
+
+class NestedSequenceStateWriteRule(
+    CoreQualityRule[NestedSequenceStateWriteRuleContext]
+):
+    """Own the actual QG127 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG127"
+
+    def evaluate(self, context: NestedSequenceStateWriteRuleContext) -> list[Finding]:
+        """Evaluate QG127 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        contract = context.contract
+        field_name = context.field_name
+        value_type = context.value_type
+        method_name = context.method_name
+        if contract is None or field_name not in contract.fields:
+            return []
+        field = contract.fields[field_name]
+        if (
+            not field.is_sequence
+            or method_name != "append"
+            or value_type not in {"list", "tuple", "set"}
+        ):
+            return []
+        return [
+            facts.make_finding(
+                node,
+                "QG127",
+                f"序列状态字段 `{field_name}` 使用 append() 追加整个 {value_type}。",
+                symbol=qualname,
+                severity="warning",
+                suggestion="确认是否误把 extend() 写成 append()，避免产生嵌套列表。",
+            )
+        ]
+
+
+@dataclass(slots=True, frozen=True)
+class StateScopeEscapeRuleContext:
+    """Precollected state/AST inputs for QG128; never reparses source.
+
+    Fields: facts, node, qualname, accesses, signals."""
+
+    facts: ModuleFacts
+    node: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    accesses: dict[str, set[str]]
+    signals: RepositorySignals
+
+
+class StateScopeEscapeRule(CoreQualityRule[StateScopeEscapeRuleContext]):
+    """Own the actual QG128 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG128"
+
+    def evaluate(self, context: StateScopeEscapeRuleContext) -> list[Finding]:
+        """Evaluate QG128 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        accesses = context.accesses
+        signals = context.signals
+        findings: list[Finding] = []
+        for parameter, fields in accesses.items():
+            if len(fields) != 1:
+                continue
+            high_confidence = (
+                not _protocol_like_method(node)
+                and node.name not in signals.callback_names_by_module[facts.module]
+                and not _state_parameter_escapes(node, parameter)
+            )
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG128",
+                    f"`{qualname}` 接收完整状态 `{parameter}`，但只读取字段 `{next(iter(fields))}`。",
+                    symbol=qualname,
+                    severity="warning" if high_confidence else "info",
+                    confidence="high" if high_confidence else "medium",
+                    suggestion=(
+                        "高置信依赖面过宽：优先改为传入所需子对象或字段；若签名由协议固定，必须在语义审计中证明。"
+                        if high_confidence
+                        else "检查协议/回调签名与透传语义；若不受约束，缩小状态依赖面。"
+                    ),
+                    evidence={
+                        "state_parameter": parameter,
+                        "fields": sorted(fields),
+                        "qg179_exempt": high_confidence,
+                        "semantic_review_required": True,
+                        "semantic_review_question": "Q4,Q5",
+                        "semantic_review_kind": "dependency-surface",
+                        "high_confidence": high_confidence,
+                    },
+                )
+            )
+        return findings
+
+
+@dataclass(slots=True, frozen=True)
+class UnscopedStateUpdateEntryRuleContext:
+    """Precollected state/AST inputs for QG134; never reparses source.
+
+    Fields: facts, node, qualname, state_parameters, config."""
+
+    facts: ModuleFacts
+    node: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    state_parameters: set[str]
+    config: GuardConfig
+
+
+class UnscopedStateUpdateEntryRule(
+    CoreQualityRule[UnscopedStateUpdateEntryRuleContext]
+):
+    """Own the actual QG134 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG134"
+
+    def evaluate(self, context: UnscopedStateUpdateEntryRuleContext) -> list[Finding]:
+        """Evaluate QG134 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        state_parameters = context.state_parameters
+        config = context.config
+        if not state_parameters or any(
+            marker in node.name for marker in config.state_writer_names
+        ):
+            return []
+        writes = [
+            item
+            for item in direct_body_nodes(node)
+            if state_write(item, state_parameters) is not None
+        ]
+        if not writes:
+            return []
+        return [
+            facts.make_finding(
+                writes[0],
+                "QG134",
+                f"`{qualname}` 在非状态更新入口中直接写入配置的状态对象。",
+                symbol=qualname,
+                severity="warning",
+                suggestion=(
+                    "把状态归并集中到配置的 canonical state-writer 入口："
+                    + ", ".join(config.state_writer_names)
+                ),
+            )
+        ]
+
+
+@dataclass(slots=True, frozen=True)
+class StateMergeAmbiguityRuleContext:
+    """Precollected state/AST inputs for QG135; never reparses source.
+
+    Fields: facts, node, qualname, methods."""
+
+    facts: ModuleFacts
+    node: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    methods: dict[tuple[str, str], set[str]]
+
+
+class StateMergeAmbiguityRule(CoreQualityRule[StateMergeAmbiguityRuleContext]):
+    """Own the actual QG135 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG135"
+
+    def evaluate(self, context: StateMergeAmbiguityRuleContext) -> list[Finding]:
+        """Evaluate QG135 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.facts
+        node = context.node
+        qualname = context.qualname
+        methods = context.methods
+        findings: list[Finding] = []
+        for (_, field_name), method_names in methods.items():
+            if {"append", "extend"} <= method_names:
+                findings.append(
+                    facts.make_finding(
+                        node,
+                        "QG135",
+                        f"状态字段 `{field_name}` 在同一函数中混用 append() 和 extend()。",
+                        symbol=qualname,
+                        severity="warning",
+                        suggestion="为字段固定单项追加或批量归并语义。",
+                    )
+                )
+        return findings
+
+
+@dataclass(slots=True, frozen=True)
+class InconsistentStateWriteTypeRuleContext:
+    """Precollected state/AST inputs for QG126; never reparses source.
+
+    Fields: signals."""
+
+    signals: RepositorySignals
+
+
+class InconsistentStateWriteTypeRule(
+    CoreQualityRule[InconsistentStateWriteTypeRuleContext]
+):
+    """Own the actual QG126 detection logic.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG126"
+
+    def evaluate(self, context: InconsistentStateWriteTypeRuleContext) -> list[Finding]:
+        """Evaluate QG126 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        signals = context.signals
+        findings: list[Finding] = []
+        for (contract, field_name), writes in signals.state_writes.items():
+            value_types = {value_type for value_type, _, _ in writes}
+            if len(value_types) <= 1:
+                continue
+            _, path, line = writes[0]
+            findings.append(
+                Finding(
+                    code="QG126",
+                    severity="error",
+                    confidence="medium",
+                    path=str(path),
+                    line=line,
+                    column=1,
+                    message=f"状态字段 `{contract}.{field_name}` 被写入多种结构：{sorted(value_types)}。",
+                    symbol=f"{contract}.{field_name}",
+                    suggestion="在状态模型中固定字段类型和归并语义。",
+                    evidence={
+                        "types": sorted(value_types),
+                        "writes": [
+                            f"{item_path}:{item_line}:{value_type}"
+                            for value_type, item_path, item_line in writes
+                        ],
+                    },
+                )
+            )
+        return findings
+
+
+@dataclass(slots=True, frozen=True)
+class ToolReturnContractContext:
+    """Carry typed rule inputs: facts, node, qualname, shapes, dict_keys.
+
+    Fields: facts, node, qualname, shapes, dict_keys, undocumented."""
+
+    facts: ModuleFacts
+    node: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    shapes: set[str]
+    dict_keys: set[str]
+    undocumented: list[str]
+
+
+@dataclass(slots=True, frozen=True)
+class HistoryTraceRuleContext:
+    """Carry typed rule inputs: facts, node, qualname, nodes, config.
+
+    Fields: facts, node, qualname, nodes, config, uses_history, uses_trace."""
+
+    facts: ModuleFacts
+    node: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    nodes: list[ast.AST]
+    config: GuardConfig
+    uses_history: bool
+    uses_trace: bool
+
+
+@dataclass(slots=True, frozen=True)
+class DirectToolStateMutationContext:
+    """Carry typed rule inputs: facts, node, qualname, parameter, field_name.
+
+    Fields: facts, node, qualname, parameter, field_name, is_tool."""
+
+    facts: ModuleFacts
+    node: ast.AST
+    qualname: str
+    parameter: str
+    field_name: str
+    is_tool: bool
+
+
+class DirectToolStateMutationRule(CoreQualityRule[DirectToolStateMutationContext]):
+    """Detect QG120 on a proven Tool write using already-collected state facts.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG120"
+
+    def evaluate(self, context: DirectToolStateMutationContext) -> list[Finding]:
+        """Evaluate QG120 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, node, qualname = context.facts, context.node, context.qualname
+        parameter, field_name, is_tool = (
+            context.parameter,
+            context.field_name,
+            context.is_tool,
         )
-    return findings
+        findings: list[Finding] = []
+        if is_tool:
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG120",
+                    f"Tool `{qualname}` 直接修改状态 `{parameter}.{field_name}`。",
+                    symbol=qualname,
+                    severity="error",
+                    suggestion="Tool 返回结构化结果，由 Agent 或唯一 update_state 入口归并。",
+                )
+            )
+        return findings
+
+
+class BareToolStringRule(CoreQualityRule[ToolReturnContractContext]):
+    """Evaluate QG122 from one shared Tool shape and documentation summary.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG122"
+
+    def evaluate(self, context: ToolReturnContractContext) -> list[Finding]:
+        """Evaluate QG122 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts, node, qualname, shapes = (
+            context.facts,
+            context.node,
+            context.qualname,
+            context.shapes,
+        )
+        findings: list[Finding] = []
+        if any(shape in {"str", "call:str", "call:repr"} for shape in shapes):
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG122",
+                    f"Tool `{qualname}` 返回裸字符串而不是稳定结构。",
+                    symbol=qualname,
+                    severity="warning",
+                    suggestion="返回包含状态、数据、错误和后续动作字段的固定 JSON 对象。",
+                )
+            )
+        return findings
+
+
+class UndocumentedToolResultRule(CoreQualityRule[ToolReturnContractContext]):
+    """Evaluate QG131 from one shared Tool shape and documentation summary.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG131"
+
+    def evaluate(self, context: ToolReturnContractContext) -> list[Finding]:
+        """Evaluate QG131 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        (facts, node, qualname) = (context.facts, context.node, context.qualname)
+        dict_keys, undocumented = context.dict_keys, context.undocumented
+        findings: list[Finding] = []
+        if dict_keys and undocumented:
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG131",
+                    f"Tool `{qualname}` 的 docstring 未说明返回字段：{undocumented}。",
+                    symbol=qualname,
+                    severity="warning",
+                    suggestion="在 Returns 中列出固定 JSON 字段、类型、语义和模型如何消费。",
+                    evidence={
+                        "fields": sorted(dict_keys),
+                        "undocumented": undocumented,
+                    },
+                )
+            )
+        return findings
+
+
+class MixedHistoryTraceRule(CoreQualityRule[HistoryTraceRuleContext]):
+    """Own QG129 logic over one shared call-name set and AST body.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG129"
+
+    def evaluate(self, context: HistoryTraceRuleContext) -> list[Finding]:
+        """Evaluate QG129 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        (facts, node, qualname) = (context.facts, context.node, context.qualname)
+        uses_history, uses_trace = context.uses_history, context.uses_trace
+        findings: list[Finding] = []
+        if uses_history and uses_trace:
+            findings.append(
+                facts.make_finding(
+                    node,
+                    "QG129",
+                    f"`{qualname}` 同时处理 History 与 Trace。",
+                    symbol=qualname,
+                    severity="warning",
+                    suggestion="成功对话历史与完整执行轨迹使用独立模型、存储入口和失败过滤规则。",
+                )
+            )
+        return findings
+
+
+class FailureHistoryPollutionRule(CoreQualityRule[HistoryTraceRuleContext]):
+    """Own QG130 logic over one shared call-name set and AST body.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG130"
+
+    def evaluate(self, context: HistoryTraceRuleContext) -> list[Finding]:
+        """Evaluate QG130 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        (facts, qualname, nodes, config) = (
+            context.facts,
+            context.qualname,
+            context.nodes,
+            context.config,
+        )
+        findings: list[Finding] = []
+        for item in nodes:
+            if not isinstance(item, ast.ExceptHandler):
+                continue
+            history_calls = [
+                child
+                for statement in item.body
+                for child in ast.walk(statement)
+                if isinstance(child, ast.Call)
+                and any(
+                    marker in call_name(child).lower()
+                    for marker in config.history_markers
+                )
+            ]
+            if history_calls:
+                findings.append(
+                    facts.make_finding(
+                        history_calls[0],
+                        "QG130",
+                        "异常处理路径把失败步骤写入 History。",
+                        symbol=qualname,
+                        severity="error",
+                        suggestion="失败过程只进入 Trace；History 仅保存成功完成的用户对话和结果。",
+                    )
+                )
+        return findings

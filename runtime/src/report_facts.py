@@ -119,9 +119,16 @@ class ReportFacts:
     digest: str
 
 
-def _numstat_changes(root: Path, revision: str) -> dict[str, tuple[int, int]]:
+def _numstat_changes(
+    root: Path, revision: str, staged: bool = False
+) -> dict[str, tuple[int, int]]:
     """Parse ``git diff --numstat -z`` into target-path line deltas."""
-    result = run_readonly_git(root, ("diff", "--numstat", "-z", revision, "--"))
+    command = (
+        ("diff", "--cached", "--numstat", "-z", revision, "--")
+        if staged
+        else ("diff", "--numstat", "-z", revision, "--")
+    )
+    result = run_readonly_git(root, command)
     if result.returncode != 0:
         return {}
     numbers: dict[str, tuple[int, int]] = {}
@@ -147,9 +154,16 @@ def _numstat_changes(root: Path, revision: str) -> dict[str, tuple[int, int]]:
     return numbers
 
 
-def _name_status_changes(root: Path, revision: str) -> dict[str, str]:
+def _name_status_changes(
+    root: Path, revision: str, staged: bool = False
+) -> dict[str, str]:
     """Parse ``git diff --name-status -z`` into target-path status codes."""
-    result = run_readonly_git(root, ("diff", "--name-status", "-z", revision, "--"))
+    command = (
+        ("diff", "--cached", "--name-status", "-z", revision, "--")
+        if staged
+        else ("diff", "--name-status", "-z", revision, "--")
+    )
+    result = run_readonly_git(root, command)
     if result.returncode != 0:
         return {}
     statuses: dict[str, str] = {}
@@ -170,7 +184,9 @@ def _name_status_changes(root: Path, revision: str) -> dict[str, str]:
     return statuses
 
 
-def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
+def collect_changed_files(
+    root: Path, revision: str, staged: bool = False
+) -> tuple[ChangedFile, ...]:
     """读取含 rename/untracked 的完整 Git 文件变化，并排除工具产物。
 
     ``git diff --numstat`` 的非 ``-z`` rename 会把路径压成 ``{old => new}``，
@@ -179,18 +195,22 @@ def collect_changed_files(root: Path, revision: str) -> tuple[ChangedFile, ...]:
 
     Args:
         root: Git 工作树根目录。
-        revision: 用于比较当前工作树的基线 revision。
+        revision: 用于比较当前快照的 Git 基线。
+        staged: True 只审 INDEX；False 审 WORKTREE 并包含未跟踪文件。
 
     Returns:
         已规范化并排除工具产物的文件变化元组。
     """
-    numbers = _numstat_changes(root, revision)
-    statuses = _name_status_changes(root, revision)
-    untracked = run_readonly_git(root, ("ls-files", "--others", "--exclude-standard"))
-    if untracked.returncode == 0:
-        for path in filter(None, untracked.stdout.splitlines()):
-            statuses[path] = "A?"
-            numbers[path] = (report_schema.line_count(root / path), 0)
+    numbers = _numstat_changes(root, revision, staged)
+    statuses = _name_status_changes(root, revision, staged)
+    if not staged:
+        untracked = run_readonly_git(
+            root, ("ls-files", "--others", "--exclude-standard")
+        )
+        if untracked.returncode == 0:
+            for path in filter(None, untracked.stdout.splitlines()):
+                statuses[path] = "A?"
+                numbers[path] = (report_schema.line_count(root / path), 0)
     excluded = {report_schema.REPORT_FILENAME, "修改说明报告.md"}
     generated_parts = {"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
     paths = sorted(
@@ -433,7 +453,9 @@ def build_report_facts(
         )
     )
     all_changed_files = (
-        collect_changed_files(report.root, revision)
+        collect_changed_files(
+            report.root, revision, staged=report.comparison_target == "STAGED"
+        )
         if report.baseline is not None
         else ()
     )

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import json
 import os
@@ -24,6 +25,7 @@ _DIR_EXCLUDES = {
     ".mypy_cache",
     "equivalence-fixtures",
     "__pycache__",
+    ".cache",
 }
 _FILE_EXCLUDES = {"修改说明.md"}
 
@@ -111,17 +113,42 @@ def _validate_source(source: Path) -> None:
         "assert profile is not None; "
         "profile.build()"
     )
-    for profile_dir in sorted(path for path in profiles.iterdir() if path.is_dir()):
-        if not (profile_dir / "profile.json").is_file():
-            continue
+    # Reject an incomplete offline release before launching independent Profile
+    # interpreters.  No later validation can make the missing media valid.
+    _validate_offline_payload(source)
+    profile_dirs = tuple(
+        path
+        for path in sorted(profiles.iterdir())
+        if path.is_dir() and (path / "profile.json").is_file()
+    )
+
+    def validate_profile(profile_dir: Path) -> None:
+        # Each Profile builds in its own Python process, so mutable registries and
+        # imports cannot leak between independent validation contracts.
+        """Verify one bundled Profile in a fresh Python interpreter.
+
+        Args:
+           profile_dir: Profile package containing its declarative configuration
+               and Python extension, loaded independently of every other Profile.
+
+        Returns:
+           None if the child successfully imports, builds and validates the Profile.
+
+        Raises:
+           subprocess.CalledProcessError: The isolated Profile build fails; the
+               packaging operation aborts instead of distributing a broken Profile.
+        """
         subprocess.run(
             [sys.executable, "-c", validation, str(profile_dir)],
             cwd=source,
             check=True,
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
-    _validate_offline_payload(source)
 
+    # Profile validators are independent processes. Bound the concurrency to
+    # avoid spawning an unbounded number of Python runtimes for large catalogs.
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(profile_dirs)))) as pool:
+        list(pool.map(validate_profile, profile_dirs))
     integrity = _load_integrity(source)
     lock_path = source / integrity.RELEASE_LOCK_NAME
     lock: dict[str, str] = {}

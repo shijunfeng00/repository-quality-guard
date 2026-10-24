@@ -1,0 +1,717 @@
+{
+  "cases": [
+    {
+      "case_id": "qg003-keyless-b9",
+      "rule": "QG003",
+      "kind": "TP",
+      "source": "mapping.get()",
+      "expected": [
+        [
+          "QG003",
+          "error",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "get",
+      "confirmed_mapping": true,
+      "strict_get": false,
+      "is_aggregation": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg003-has-default-b9",
+      "rule": "QG003",
+      "kind": "TN",
+      "source": "mapping.get('k', None)",
+      "expected": [],
+      "family": "call",
+      "full_name": "get",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg004-formal-required-key-default-b9",
+      "rule": "QG004",
+      "kind": "TP",
+      "source": "from typing import TypedDict\nclass Payload(TypedDict):\n    id: str\ndef consume(mapping: Payload):\n    return mapping.get('id', None)\n",
+      "expected": [
+        [
+          "QG004",
+          "warning",
+          5,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "get",
+      "ownership": "internal_formal",
+      "required_schema_key": true,
+      "ownership_evidence": [
+        "Payload.id is a required TypedDict key"
+      ],
+      "selector": "id",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false
+    },
+    {
+      "case_id": "qg004-default-b9",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "mapping.get('k', None)",
+      "expected": [],
+      "family": "call",
+      "full_name": "get",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg004-without-default-b9",
+      "rule": "QG004",
+      "kind": "TN",
+      "source": "mapping.get('k')",
+      "expected": [],
+      "family": "call",
+      "full_name": "get",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg026-unknown-owner-b9",
+      "rule": "QG026",
+      "kind": "TP",
+      "source": "data.get('x')",
+      "expected": [
+        [
+          "QG026",
+          "info",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "get",
+      "ownership": "unknown",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg026-proven-owner-b9",
+      "rule": "QG026",
+      "kind": "TN",
+      "source": "data.get('x')",
+      "expected": [],
+      "family": "call",
+      "full_name": "get",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg012-state-default-b9",
+      "rule": "QG012",
+      "kind": "TP",
+      "source": "cache.setdefault('key', [])",
+      "expected": [
+        [
+          "QG012",
+          "warning",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "setdefault",
+      "confirmed_mapping": true,
+      "strict_get": false,
+      "is_aggregation": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg012-aggregation-b9",
+      "rule": "QG012",
+      "kind": "TN",
+      "source": "cache.setdefault('key', []).append(1)",
+      "expected": [],
+      "family": "call",
+      "full_name": "setdefault",
+      "confirmed_mapping": true,
+      "is_aggregation": true,
+      "strict_get": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg025-silent-pop-b9",
+      "rule": "QG025",
+      "kind": "TP",
+      "source": "cache.pop('key', None)",
+      "expected": [
+        [
+          "QG025",
+          "warning",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "pop",
+      "confirmed_mapping": true,
+      "strict_get": false,
+      "is_aggregation": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg025-required-pop-b9",
+      "rule": "QG025",
+      "kind": "TN",
+      "source": "cache.pop('key')",
+      "expected": [],
+      "family": "call",
+      "full_name": "pop",
+      "confirmed_mapping": true,
+      "strict_get": false,
+      "is_aggregation": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg005-hasattr-b9",
+      "rule": "QG005",
+      "kind": "TP",
+      "source": "hasattr(value, 'x')",
+      "expected": [
+        [
+          "QG005",
+          "error",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "hasattr",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg005-no-hasattr-b9",
+      "rule": "QG005",
+      "kind": "TN",
+      "source": "getattr(value, 'x', None)",
+      "expected": [],
+      "family": "call",
+      "full_name": "getattr",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg006-getattr-default-b9",
+      "rule": "QG006",
+      "kind": "TP",
+      "source": "getattr(value, 'x', None)",
+      "expected": [
+        [
+          "QG006",
+          "error",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "getattr",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg006-required-getattr-b9",
+      "rule": "QG006",
+      "kind": "TN",
+      "source": "getattr(value, 'x')",
+      "expected": [],
+      "family": "call",
+      "full_name": "getattr",
+      "ownership": "internal_formal",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg024-suppress-b9",
+      "rule": "QG024",
+      "kind": "TP",
+      "source": "contextlib.suppress(Exception)",
+      "expected": [
+        [
+          "QG024",
+          "warning",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "call",
+      "full_name": "contextlib.suppress",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg024-different-call-b9",
+      "rule": "QG024",
+      "kind": "TN",
+      "source": "logger.warning('x')",
+      "expected": [],
+      "family": "call",
+      "full_name": "logger.warning",
+      "confirmed_mapping": false,
+      "strict_get": false,
+      "is_aggregation": false,
+      "ownership": "unknown",
+      "required_schema_key": false,
+      "ownership_evidence": [],
+      "selector": "key"
+    },
+    {
+      "case_id": "qg007-broad-b9",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except Exception:\n        return None\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "Exception"
+      ],
+      "is_swallowed": true,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-specific-b9",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except KeyError:\n        return None\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "KeyError"
+      ],
+      "is_swallowed": true,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-unused-literal",
+      "rule": "QG007",
+      "kind": "TP",
+      "source": "def sample():\n    try:\n        work()\n    except RuntimeError:\n        comment = \"\"\n",
+      "expected": [
+        [
+          "QG007",
+          "warning",
+          4,
+          "sample"
+        ]
+      ],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-consumed-return",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except RuntimeError:\n        comment = \"\"\n    return comment\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-consumed-effect",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample(tables):\n    try:\n        comment = read_comment()\n    except RuntimeError:\n        comment = \"\"\n    tables.append(comment)\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-direct-pass",
+      "rule": "QG007",
+      "kind": "TP",
+      "source": "def sample():\n    try:\n        work()\n    except RuntimeError:\n        pass\n",
+      "expected": [
+        [
+          "QG007",
+          "warning",
+          4,
+          "sample"
+        ]
+      ],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-broad-structured-return",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        return work()\n    except Exception as err:\n        return {\"ok\": False, \"error\": str(err)}\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "Exception"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-broad-return-branches",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample(flag):\n    try:\n        work()\n    except Exception:\n        if flag:\n            return False\n        else:\n            return None\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "Exception"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-broad-no-control",
+      "rule": "QG007",
+      "kind": "TP",
+      "source": "def sample():\n    try:\n        work()\n    except Exception:\n        pass\n",
+      "expected": [
+        [
+          "QG007",
+          "error",
+          4,
+          "sample"
+        ]
+      ],
+      "family": "exception",
+      "exception_names": [
+        "Exception"
+      ],
+      "is_swallowed": true,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-unused-call-side-effect",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except RuntimeError:\n        comment = report_failure()\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-local-dynamic-introspection",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except RuntimeError:\n        comment = \"\"\n    return locals()\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-global-effect",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    global comment\n    try:\n        work()\n    except RuntimeError:\n        comment = \"\"\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-closure-reference",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except RuntimeError:\n        comment = \"\"\n    def capture():\n        return comment\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-unknown-module-level",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "try:\n    work()\nexcept RuntimeError:\n    comment = \"\"\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "RuntimeError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg007-broad-conditional-unhandled",
+      "rule": "QG007",
+      "kind": "TP",
+      "source": "def sample(flag):\n    try:\n        work()\n    except Exception:\n        if flag:\n            return None\n        else:\n            pass\n",
+      "expected": [
+        [
+          "QG007",
+          "warning",
+          4,
+          "sample"
+        ]
+      ],
+      "family": "exception",
+      "exception_names": [
+        "Exception"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg023-silence-b9",
+      "rule": "QG023",
+      "kind": "TP",
+      "source": "def sample():\n    try:\n        work()\n    except KeyError:\n        return None\n",
+      "expected": [
+        [
+          "QG023",
+          "warning",
+          4,
+          "sample"
+        ]
+      ],
+      "family": "exception",
+      "exception_names": [
+        "KeyError"
+      ],
+      "is_swallowed": true,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg023-propagate-b9",
+      "rule": "QG023",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except KeyError:\n        raise\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "KeyError"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg009-import-fallback-b9",
+      "rule": "QG009",
+      "kind": "TP",
+      "source": "def sample():\n    try:\n        work()\n    except ImportError:\n        import fallback\n",
+      "expected": [
+        [
+          "QG009",
+          "info",
+          4,
+          "sample"
+        ]
+      ],
+      "family": "exception",
+      "exception_names": [
+        "ImportError"
+      ],
+      "has_fallback_import": true
+    },
+    {
+      "case_id": "qg009-propagate-b9",
+      "rule": "QG009",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except ImportError:\n        raise\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "ImportError"
+      ],
+      "has_fallback_import": false
+    },
+    {
+      "case_id": "qg153-projection-b9",
+      "rule": "QG153",
+      "kind": "TP",
+      "source": "def sample(payload):\n    return {'a': payload.get('a'), 'b': payload.get('b'), 'c': payload.get('c')}\n",
+      "expected": [
+        [
+          "QG153",
+          "warning",
+          2,
+          "sample"
+        ]
+      ],
+      "family": "projection",
+      "receiver": "payload",
+      "fields": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "case_id": "qg153-not-projection-b9",
+      "rule": "QG153",
+      "kind": "TN",
+      "source": "def sample(payload):\n    return {'a': 1}\n",
+      "expected": [],
+      "family": "projection",
+      "receiver": "",
+      "fields": []
+    },
+    {
+      "case_id": "qg154-nested-b9",
+      "rule": "QG154",
+      "kind": "TP",
+      "source": "def outer():\n    class Nested:\n        pass\n",
+      "expected": [
+        [
+          "QG154",
+          "info",
+          2,
+          "sample"
+        ]
+      ],
+      "family": "nested",
+      "owner": "outer",
+      "is_class": true
+    },
+    {
+      "case_id": "qg154-top-level-b9",
+      "rule": "QG154",
+      "kind": "TN",
+      "source": "class TopLevel:\n    pass\n",
+      "expected": [],
+      "family": "nested",
+      "owner": "",
+      "is_class": true
+    },
+    {
+      "case_id": "qg158-claim-b9",
+      "rule": "QG158",
+      "kind": "TP",
+      "source": "CLAIM = 'output remains unchanged'",
+      "expected": [
+        [
+          "QG158",
+          "warning",
+          1,
+          "sample"
+        ]
+      ],
+      "family": "claim",
+      "claim": "output remains unchanged"
+    },
+    {
+      "case_id": "qg158-current-b9",
+      "rule": "QG158",
+      "kind": "TN",
+      "source": "CLAIM = 'output shape is a list'",
+      "expected": [],
+      "family": "claim",
+      "claim": ""
+    },
+    {
+      "case_id": "qg007-broad-assign-then-return",
+      "rule": "QG007",
+      "kind": "TN",
+      "source": "def sample():\n    try:\n        work()\n    except Exception as caught:\n        error = str(caught)\n        return {\"ok\": False, \"error\": error}\n",
+      "expected": [],
+      "family": "exception",
+      "exception_names": [
+        "Exception"
+      ],
+      "is_swallowed": false,
+      "has_fallback_import": false
+    }
+  ]
+}

@@ -20,13 +20,13 @@ _FAMILY_RULES: tuple[tuple[str, frozenset[str]], ...] = (
     ("异常吞没与降级返回", frozenset({"QG007", "QG214", "QG215"})),
     ("生产者与类型契约", frozenset({"QG209", "QG210", "QG211", "QG216"})),
     ("副作用及结果替代", frozenset({"QG213"})),
-    ("原生编译及覆盖证明", frozenset({"QG208", "QG212"})),
+    ("原生编译覆盖缺口", frozenset({"QG208"})),
 )
 
 # A source-bound observation can be exact without proving that the application's
 # requirements forbid the observed behavior. Only codes with an explicitly
 # verified static contract violation may occupy the first evidence class.
-_PROVEN_CONTRACT = frozenset({"QG209", "QG211", "QG216", "QG212"})
+_PROVEN_CONTRACT = frozenset({"QG209", "QG211", "QG216"})
 _CONDITIONAL = frozenset({"QG157", "QG210", "QG213", "QG214", "QG215", "QG208"})
 
 

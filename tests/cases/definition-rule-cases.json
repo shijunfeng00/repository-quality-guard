@@ -1,0 +1,597 @@
+{
+  "schema": "rqg.core-definition-batch7.v1",
+  "cases": [
+    {
+      "case_id": "qg001-tp",
+      "rule": "QG001",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "name": "_private_helper",
+          "kind": "function",
+          "code_line_count": 2
+        },
+        "usage": {
+          "visibility": "private"
+        }
+      },
+      "expected": [
+        [
+          "QG001",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg001-tn",
+      "rule": "QG001",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "name": "public_func",
+          "kind": "function",
+          "code_line_count": 2
+        },
+        "usage": {
+          "visibility": "public"
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg002-tp",
+      "rule": "QG002",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "name": "Small",
+          "kind": "class",
+          "code_line_count": 2
+        }
+      },
+      "expected": [
+        [
+          "QG002",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg002-tn",
+      "rule": "QG002",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "name": "Large",
+          "kind": "class",
+          "code_line_count": 25
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg008-tp",
+      "rule": "QG008",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "kind": "class",
+          "direct_method_count": 51
+        }
+      },
+      "expected": [
+        [
+          "QG008",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg008-tn",
+      "rule": "QG008",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "kind": "class",
+          "direct_method_count": 3
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg013-tp",
+      "rule": "QG013",
+      "kind": "TP",
+      "facts": {
+        "helper_count": 6
+      },
+      "expected": [
+        [
+          "QG013",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg013-tn",
+      "rule": "QG013",
+      "kind": "TN",
+      "facts": {
+        "helper_count": 2
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg014-tp",
+      "rule": "QG014",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "code_line_count": 501
+        }
+      },
+      "expected": [
+        [
+          "QG014",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg014-tn",
+      "rule": "QG014",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "code_line_count": 10
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg015-tp",
+      "rule": "QG015",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "parameter_count": 9
+        }
+      },
+      "expected": [
+        [
+          "QG015",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg015-tn",
+      "rule": "QG015",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "parameter_count": 1
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg016-tp",
+      "rule": "QG016",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "max_nesting": 5
+        }
+      },
+      "expected": [
+        [
+          "QG016",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg016-tn",
+      "rule": "QG016",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "max_nesting": 1
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg017-tp",
+      "rule": "QG017",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "branch_count": 25
+        }
+      },
+      "expected": [
+        [
+          "QG017",
+          "info"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg017-tn",
+      "rule": "QG017",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "branch_count": 0
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg018-tp",
+      "rule": "QG018",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "boolean_flag_count": 3
+        }
+      },
+      "expected": [
+        [
+          "QG018",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg018-tn",
+      "rule": "QG018",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "boolean_flag_count": 1
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg019-tp",
+      "rule": "QG019",
+      "kind": "TP",
+      "facts": {
+        "source": "x=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\nx=0\n"
+      },
+      "expected": [
+        [
+          "QG019",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg019-tn",
+      "rule": "QG019",
+      "kind": "TN",
+      "facts": {
+        "source": "x=0\nx=0\nx=0\nx=0\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg020-tp",
+      "rule": "QG020",
+      "kind": "TP",
+      "facts": {
+        "source": "x=1  # noqa\n"
+      },
+      "expected": [
+        [
+          "QG020",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg020-tn",
+      "rule": "QG020",
+      "kind": "TN",
+      "facts": {
+        "source": "x=1 # explanatory comment\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg021-tp",
+      "rule": "QG021",
+      "kind": "TP",
+      "facts": {
+        "duplicate_count": 2
+      },
+      "expected": [
+        [
+          "QG021",
+          "critical"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg021-tn",
+      "rule": "QG021",
+      "kind": "TN",
+      "facts": {
+        "duplicate_count": 1
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg022-tp",
+      "rule": "QG022",
+      "kind": "TP",
+      "facts": {
+        "cycle": true
+      },
+      "expected": [
+        [
+          "QG022",
+          "warning"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg022-tn",
+      "rule": "QG022",
+      "kind": "TN",
+      "facts": {
+        "cycle": false
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg027-tp",
+      "rule": "QG027",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "docstring_text": ""
+        }
+      },
+      "expected": [
+        [
+          "QG027",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg027-tn",
+      "rule": "QG027",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "docstring_text": "Some documentation here."
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg028-tp",
+      "rule": "QG028",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "docstring_text": "Brief.",
+          "docstring_line_count": 1
+        }
+      },
+      "expected": [
+        [
+          "QG028",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg028-tn",
+      "rule": "QG028",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "docstring_text": "Long documentation.",
+          "docstring_line_count": 3
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg029-tp",
+      "rule": "QG029",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "parameter_names": [
+            "arg"
+          ],
+          "documented_parameters": [],
+          "docstring_text": "Some docs",
+          "docstring_line_count": 3,
+          "docstring_sections": [
+            "Returns"
+          ]
+        }
+      },
+      "expected": [
+        [
+          "QG029",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg029-tn",
+      "rule": "QG029",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "parameter_names": [
+            "arg"
+          ],
+          "documented_parameters": [
+            "arg"
+          ],
+          "docstring_text": "Some docs",
+          "docstring_line_count": 3,
+          "docstring_sections": [
+            "Returns"
+          ]
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg030-tp",
+      "rule": "QG030",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "docstring_text": "Some docs",
+          "docstring_line_count": 3,
+          "docstring_sections": []
+        }
+      },
+      "expected": [
+        [
+          "QG030",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg030-tn",
+      "rule": "QG030",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "docstring_text": "Some docs",
+          "docstring_line_count": 3,
+          "docstring_sections": [
+            "Returns"
+          ]
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg156-tp",
+      "rule": "QG156",
+      "kind": "TP",
+      "facts": {
+        "definition": {
+          "kind": "function",
+          "name": "_unused",
+          "calls": 0,
+          "references": 0
+        },
+        "usage": {
+          "normalized": true
+        }
+      },
+      "expected": [
+        [
+          "QG156",
+          "error"
+        ]
+      ]
+    },
+    {
+      "case_id": "qg156-tn",
+      "rule": "QG156",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "kind": "function",
+          "name": "_used",
+          "calls": 1,
+          "references": 0
+        },
+        "usage": {
+          "normalized": true
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg002-function-tn",
+      "rule": "QG002",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "kind": "function",
+          "name": "SmallFunction",
+          "code_line_count": 2
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg014-class-tn",
+      "rule": "QG014",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "kind": "class",
+          "code_line_count": 501
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg027-disabled-tn",
+      "rule": "QG027",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "docstring_text": ""
+        },
+        "config": {
+          "require_docstrings": false
+        }
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg029-private-tn",
+      "rule": "QG029",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "name": "_private",
+          "parameter_names": [
+            "x"
+          ],
+          "documented_parameters": [],
+          "docstring_text": "docs",
+          "docstring_line_count": 4
+        },
+        "private": true
+      },
+      "expected": []
+    },
+    {
+      "case_id": "qg030-private-tn",
+      "rule": "QG030",
+      "kind": "TN",
+      "facts": {
+        "definition": {
+          "name": "_private",
+          "docstring_text": "docs",
+          "docstring_line_count": 4,
+          "docstring_sections": []
+        },
+        "private": true
+      },
+      "expected": []
+    }
+  ]
+}

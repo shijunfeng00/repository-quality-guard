@@ -1,0 +1,70 @@
+{
+  "cases": [
+    {
+      "case_id": "worktree-add-valid-case",
+      "mode": "add",
+      "staged": false,
+      "expected": [
+        [
+          "tests/test_contract.py",
+          "BoundCase",
+          "ADDED"
+        ]
+      ]
+    },
+    {
+      "case_id": "index-add-valid-case",
+      "mode": "add",
+      "staged": true,
+      "expected": [
+        [
+          "tests/test_contract.py",
+          "BoundCase",
+          "ADDED"
+        ]
+      ]
+    },
+    {
+      "case_id": "modify-authenticated-class",
+      "mode": "modify",
+      "staged": false,
+      "expected": [
+        [
+          "tests/test_contract.py",
+          "BoundCase",
+          "MODIFIED"
+        ]
+      ]
+    },
+    {
+      "case_id": "rename-preserves-identity",
+      "mode": "rename",
+      "staged": false,
+      "expected": []
+    },
+    {
+      "case_id": "delete-retired-case",
+      "mode": "delete",
+      "staged": false,
+      "expected": [
+        [
+          "tests/test_contract.py",
+          "BoundCase",
+          "REMOVED"
+        ]
+      ]
+    },
+    {
+      "case_id": "unrelated-testcase-is-not-owned",
+      "mode": "unrelated",
+      "staged": false,
+      "expected": []
+    },
+    {
+      "case_id": "shadowed-import-is-not-authenticated",
+      "mode": "shadow",
+      "staged": false,
+      "expected": []
+    }
+  ]
+}

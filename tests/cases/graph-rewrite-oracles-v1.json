@@ -1,0 +1,100 @@
+{
+  "cases": [
+    {
+      "case_id": "direct-receiver-dispatch-tp",
+      "pair": "dispatch",
+      "polarity": "TP",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self):\n        return self.task()\n",
+      "expected": [
+        [
+          "DIRECT_CALL",
+          "flow.Worker.run",
+          "flow.Worker.task",
+          "flow.py",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "local-binding-rename-preserves-call",
+      "pair": "dispatch",
+      "polarity": "TP",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self):\n        result = self.task()\n        return result\n",
+      "expected": [
+        [
+          "DIRECT_CALL",
+          "flow.Worker.run",
+          "flow.Worker.task",
+          "flow.py",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "method-reference-not-call-tn",
+      "pair": "dispatch",
+      "polarity": "TN",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self):\n        return self.task\n",
+      "expected": [
+        [
+          "CALLABLE_REFERENCE",
+          "flow.Worker.run",
+          "flow.Worker.task",
+          "flow.py",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "unreachable-member-no-call-tn",
+      "pair": "dispatch",
+      "polarity": "TN",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self):\n        return 7\n",
+      "expected": []
+    },
+    {
+      "case_id": "callback-registration-not-dispatch",
+      "pair": "callback",
+      "polarity": "TP",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self, registrar):\n        return registrar(self.task)\n",
+      "expected": [
+        [
+          "CALLBACK_REGISTRATION",
+          "flow.Worker.run",
+          "flow.Worker.task",
+          "flow.py",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "callback-no-registration-tn",
+      "pair": "callback",
+      "polarity": "TN",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self, registrar):\n        return registrar(5)\n",
+      "expected": []
+    },
+    {
+      "case_id": "distinct-target-direct-call-tp",
+      "pair": "target",
+      "polarity": "TP",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self):\n        return self.other()\n    def other(self):\n        return 2\n",
+      "expected": [
+        [
+          "DIRECT_CALL",
+          "flow.Worker.run",
+          "flow.Worker.other",
+          "flow.py",
+          5
+        ]
+      ]
+    },
+    {
+      "case_id": "distinct-target-unreferenced-tn",
+      "pair": "target",
+      "polarity": "TN",
+      "source": "class Worker:\n    def task(self):\n        return 1\n    def run(self):\n        return 42\n    def other(self):\n        return 2\n",
+      "expected": []
+    }
+  ]
+}

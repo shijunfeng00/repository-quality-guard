@@ -1,0 +1,1028 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "b25-qg149-private_class_reexport_through_init_is_critical",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/_implementation.py": "class _Engine: pass\n",
+        "pkg/__init__.py": "from ._implementation import _Engine as Engine\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {
+            "local_name": "Engine"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-private_module_reexport_through_init_is_critical",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/__init__.py": "from . import _implementation as implementation\n",
+        "pkg/_implementation.py": "VALUE = 3\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-public_import_through_init_is_not_private",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/__init__.py": "from .service import Service as ExportedService\n",
+        "pkg/service.py": "class Service: pass\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-qg149-parent_private_member_is_forbidden_via_self_or_super",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/base.py": "class Base:\n    def _secret(self): pass\n",
+        "pkg/derived.py": "from .base import Base\nclass Derived(Base):\n    def use(self):\n        self._secret()\n        super()._secret()\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {
+            "inherited_private": true
+          }
+        },
+        {
+          "severity": "critical",
+          "evidence": {
+            "super_access": true
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-same_class_private_and_explicit_private_override_are_allowed",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/base.py": "class Base:\n    def _secret(self): pass\n    def own(self): self._secret()\n",
+        "pkg/derived.py": "from .base import Base\nclass Derived(Base):\n    def _secret(self): return 1\n    def own(self): return self._secret()\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-qg149-multilevel_inheritance_private_member_is_blocked",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/model.py": "class Base:\n    def _secret(self): pass\nclass Middle(Base):\n    pass\nclass Leaf(Middle):\n    def run(self): self._secret()\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {
+            "inherited_private": true
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-typed_other_instance_of_same_class_is_legal",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/model.py": "class Model:\n    def __init__(self): self._value = 1\n    def compare(self, other: 'Model'): return other._value\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-qg149-untyped_other_instance_is_not_assumed_same_owner",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/model.py": "class Model:\n    def __init__(self): self._value = 1\n    def compare(self, other): return other._value\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-inherited_private_field_not_method_only",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/model.py": "class Base:\n    def __init__(self): self._state = 1\nclass Child(Base):\n    def work(self): return self._state\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {
+            "inherited_private": true
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-private_module_attribute_remains_blocked",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/one.py": "def _operation(): pass\n",
+        "pkg/two.py": "from . import one\none._operation()\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-tests_are_warning_not_critical",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/_core.py": "class _Engine: pass\n",
+        "tests/test_core.py": "from pkg._core import _Engine\n"
+      },
+      "expected": [
+        {
+          "severity": "warning",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-dunder_private_export_is_critical",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/api.py": "def _secret(): pass\n__all__ = ['_secret']\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {
+            "export": "__all__"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-module_private_class_cannot_be_publicly_aliased",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/api.py": "class _Engine: pass\nEngine = _Engine\n"
+      },
+      "expected": [
+        {
+          "severity": "critical",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg149-dunder_protocol_is_not_private",
+      "kind": "scanner",
+      "rule": "QG149",
+      "sources": {
+        "pkg/one.py": "class C:\n    def __init__(self): pass\n    def __iter__(self): return iter(())\n",
+        "pkg/two.py": "from .one import C\nC().__iter__()\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-flow-constructor_always_assigns_before_later_method",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class Result:\n    def __init__(actual, flag):\n        if flag:\n            actual.payload = 1\n        else:\n            actual.payload = 2\n    def read(actual):\n        return actual.payload\n"
+      },
+      "expected": [
+        {
+          "verdict": "MUST_AT_READ",
+          "witness_lines": [
+            4,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-partial_ctor_branch_unproven_no_missing_bug",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class Result:\n    def __init__(actual, flag):\n        if flag:\n            actual.payload = 1\n    def read(actual):\n        return actual.payload\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-unknown_call_delete_and_loop_kill_must",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref):\n        ref.value = 1\n    def use(ref, fn):\n        a = ref.value\n        fn(ref)\n        b = ref.value\n        ref.value = 2\n        del ref.value\n        c = ref.value\n        ref.value = 3\n        for _ in (): pass\n        return ref.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        },
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        },
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        },
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-unsupported_exception_and_inheritance_do_not_fake_must",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class Base:\n    def __init__(ref):\n        ref.value = 1\nclass Derived(Base):\n    def read(ref):\n        return ref.value\nclass Plain:\n    def __init__(ref):\n        try:\n            ref.value = 1\n        except Exception:\n            pass\n    def read(ref):\n        return ref.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        },
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-annotation_without_assignment_is_not_initialized",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref):\n        ref.value: int\n    def use(ref):\n        return ref.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-delayed_closure_reads_are_not_must_at_creation",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def run(ref):\n        ref.value = 1\n        return lambda: ref.value\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-flow-constructor_callback_before_assignment_cannot_certify_later_reads",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref, callback):\n        callback(ref)\n        ref.value = 1\n    def use(ref):\n        return ref.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-local_alias_remains_safe_but_global_publication_kills-1",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(self):\n        self.field = 1\n    def inspect(self):\n        local = self\n        again = local\n        return self.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "MUST_AT_READ",
+          "witness_lines": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-local_alias_remains_safe_but_global_publication_kills-2",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(self):\n        self.field = 1\n    def inspect(self):\n        global exported\n        local = self\n        again = local\n        exported = again\n        return self.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-receiver_passed_to_unknown_callee_cannot_be_repaired_by_local_write",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def invoke(obj, callback):\n        obj.state = 1\n        callback(obj)\n        obj.state = 2\n        return obj.state\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-other_method_can_delete_constructor_field_before_read",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref):\n        ref.field = 1\n    def forget(ref):\n        del ref.field\n    def observe(ref):\n        return ref.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-local_container_not_global_but_global_container_publication_kills-1",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def run(this):\n        this.value = 1\n        container = [this]\n        return this.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "MUST_AT_READ"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-local_container_not_global_but_global_container_publication_kills-2",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def run(this):\n        global registry\n        this.value = 1\n        container = [this]\n        registry = container\n        return this.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-name_independence_for_alias_transfer_and_escape-1",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def run(ref):\n        ref.value = 1\n        alias = ref\n        callback(alias)\n        return ref.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-name_independence_for_alias_transfer_and_escape-2",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def run(entry):\n        entry.value = 1\n        different = entry\n        callback(different)\n        return entry.value\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-constructor_can_publish_self_before_assigning_field",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(obj):\n        global registry\n        registry = obj\n        obj.field = 1\n    def read(obj):\n        return obj.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-sibling_alias_delete_and_augassign_invalidate_constructor_seed-1",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref):\n        ref.field = 1\n    def mutate(ref):\n        a = ref\n        del a.field\n    def read(ref):\n        return ref.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-sibling_alias_delete_and_augassign_invalidate_constructor_seed-2",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref):\n        ref.field = 1\n    def mutate(ref):\n        a = ref\n        a.field += 1\n    def read(ref):\n        return ref.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-flow-sibling_callback_receiving_alias_invalidates_constructor_seed",
+      "kind": "field",
+      "sources": {
+        "pkg/thing.py": "class A:\n    def __init__(ref):\n        ref.field = 1\n    def publish(ref, fn):\n        transfer = ref\n        fn(transfer)\n    def read(ref):\n        return ref.field\n"
+      },
+      "expected": [
+        {
+          "verdict": "UNKNOWN",
+          "witness_lines": []
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg209-unique_module_function_without_optional_compiler",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "writer.py": "def produce(first, second, *, enabled):\n    return first\n",
+        "reader.py": "from writer import produce as deliver\nimport writer as module\none = deliver(1, 2)\ntwo = module.produce(1, 2, enabled=True)\n"
+      },
+      "expected": [
+        {
+          "path": "reader.py",
+          "line": 3,
+          "evidence": {
+            "callee_path": "writer.py",
+            "dispatch": "OPEN_WORLD"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg209-direct_local_missing_required_argument_and_default_positive",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "module.py": "def merge(left, right, tail=0):\n    return left\nok = merge(1, 2)\nfail = merge(1)\n"
+      },
+      "expected": [
+        {
+          "path": "module.py",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "case_id": "b25-qg209-decorator_rebinding_shadow_and_dynamic_star_remain_unknown",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "module.py": "def other(value):\n    return value\n@other\ndef wrapped(left, right):\n    return left\nwrapped(1)\ndef rebound(left, right):\n    return left\nrebound = other\nrebound(1)\ndef spread(left, right):\n    return left\nspread(*[1])\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-qg209-import_shadowed_inside_nested_function_not_certified",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "supplier.py": "def deliver(one, two):\n    return one\n",
+        "other.py": "def deliver(one):\n    return one\n",
+        "consumer.py": "from supplier import deliver\ndef work():\n    from other import deliver\n    return deliver(1)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-qg209-no_source_proof_from_kwargs_or_methods",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "module.py": "def send(left, right):\n    return left\nsend(*(1,))\nsend(**{'left': 1})\nclass Sender:\n    def send(self, left, right): return left\nsender = Sender()\nsender.send(1)\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-relative-import-read",
+      "kind": "typed",
+      "sources": {
+        "pkg/schema.py": "from typing import TypedDict\nclass Payload(TypedDict, total=False):\n    value: int\n",
+        "pkg/user.py": "from .schema import Payload as Alias\ndef consumer(x: Alias):\n    return x[\"value\"]\n"
+      },
+      "expected": [
+        {
+          "schema_symbol_id": "pkg.schema.Payload",
+          "field": "value",
+          "required": false,
+          "consumer_symbol_id": "pkg.user.consumer",
+          "guard_observation": "NONE"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-typed-presence-guard",
+      "kind": "typed",
+      "sources": {
+        "schema.py": "from typing import TypedDict\nclass P(TypedDict, total=False):\n    v: int\ndef f(x: P):\n    if \"v\" in x:\n        return x[\"v\"]\n    return 0\n"
+      },
+      "expected": [
+        {
+          "field": "v",
+          "guard_observation": "KEY_PRESENT_BRANCH",
+          "guard_line": 5,
+          "capability": "SOURCE_BOUND_CONSUMER_OPEN_CFG_AND_RUNTIME"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-typed-fake-schema",
+      "kind": "typed",
+      "sources": {
+        "fake.py": "class TypedDict: pass\nclass P(TypedDict):\n    v: int\ndef f(x: P):\n    return x[\"v\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-rebound-consumer",
+      "kind": "typed",
+      "sources": {
+        "t.py": "from typing import TypedDict\nclass P(TypedDict):\n    v: int\ndef f(x: P):\n    x = external()\n    return x[\"v\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-dynamic-or-unknown-field",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    v: int\ndef f(x: P, key):\n    return x[key], x[\"missing\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-nested-and-lambda",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    v: int\ndef f(x: P):\n    def inner():\n        return x[\"v\"]\n    return lambda: x[\"v\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-import-rebound",
+      "kind": "typed",
+      "sources": {
+        "pkg/schema.py": "from typing import TypedDict\nclass P(TypedDict):\n    v: int\n",
+        "pkg/use.py": "from .schema import P\nP = arbitrary\ndef f(x: P):\n    return x[\"v\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-competing-import",
+      "kind": "typed",
+      "sources": {
+        "pkg/schema.py": "from typing import TypedDict\nclass P(TypedDict):\n    v: int\n",
+        "pkg/use.py": "from .schema import P\nimport external as P\ndef f(x: P):\n    return x[\"v\"]\n"
+      },
+      "expected": []
+    },
+    {
+      "case_id": "b25-typed-fake-isinstance",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    v: int\ndef isinstance(*a):\n    return True\ndef f(x: P):\n    if isinstance(x[\"v\"], int):\n        return x[\"v\"]\n"
+      },
+      "expected": [
+        {
+          "guard_observation": "NONE",
+          "field": "v"
+        },
+        {
+          "guard_observation": "NONE",
+          "field": "v"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-typed-naming-get_value",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    get_value: str\ndef check(x: P):\n    return x[\"get_value\"]\n"
+      },
+      "expected": [
+        {
+          "field": "get_value",
+          "required": true,
+          "observation": "DIRECT_SUBSCRIPT_READ"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-typed-naming-set_value",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    set_value: str\ndef check(x: P):\n    return x[\"set_value\"]\n"
+      },
+      "expected": [
+        {
+          "field": "set_value",
+          "required": true,
+          "observation": "DIRECT_SUBSCRIPT_READ"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-typed-naming-queue",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    queue: str\ndef check(x: P):\n    return x[\"queue\"]\n"
+      },
+      "expected": [
+        {
+          "field": "queue",
+          "required": true,
+          "observation": "DIRECT_SUBSCRIPT_READ"
+        }
+      ]
+    },
+    {
+      "case_id": "b25-typed-naming-mutable",
+      "kind": "typed",
+      "sources": {
+        "test.py": "from typing import TypedDict\nclass P(TypedDict):\n    mutable: str\ndef check(x: P):\n    return x[\"mutable\"]\n"
+      },
+      "expected": [
+        {
+          "field": "mutable",
+          "required": true,
+          "observation": "DIRECT_SUBSCRIPT_READ"
+        }
+      ]
+    },
+    {
+      "case_id": "b70-qg209-cross-file-two-import-forms",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "producer.py": "def transmit(left, right):\n    return left, right\n",
+        "consumer.py": "from producer import transmit as deliver\nimport producer as module\none = deliver(1)\ntwo = module.transmit(1)\n"
+      },
+      "expected": [
+        {
+          "path": "consumer.py",
+          "line": 3,
+          "evidence": {
+            "dispatch": "OPEN_WORLD",
+            "callee_path": "producer.py"
+          }
+        },
+        {
+          "path": "consumer.py",
+          "line": 4,
+          "evidence": {
+            "dispatch": "OPEN_WORLD",
+            "callee_path": "producer.py"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "b70-qg209-dynamic-module-getattr-open-world",
+      "kind": "scanner",
+      "rule": "QG209",
+      "sources": {
+        "producer.py": "from typing import Callable\ndef __getattr__(name: str) -> Callable[[int, int], int]:\n    return lambda x, y: x + y\n",
+        "consumer.py": "from producer import dynamic\nimport producer as module\nfirst = dynamic(1)\nsecond = module.dynamic(1)\n"
+      },
+      "expected": []
+    }
+  ],
+  "review": {
+    "decisions": [
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_dunder_private_export_is_critical",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_dunder_protocol_is_not_private",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_inherited_private_field_not_method_only",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_module_private_class_cannot_be_publicly_aliased",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_multilevel_inheritance_private_member_is_blocked",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_parent_private_member_is_forbidden_via_self_or_super",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_private_class_reexport_through_init_is_critical",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_private_module_attribute_remains_blocked",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_private_module_reexport_through_init_is_critical",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_public_import_through_init_is_not_private",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_same_class_private_and_explicit_private_override_are_allowed",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_tests_are_warning_not_critical",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_typed_other_instance_of_same_class_is_legal",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_strict_private_ownership.py",
+        "test": "test_untyped_other_instance_is_not_assumed_same_owner",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_annotation_without_assignment_is_not_initialized",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_constructor_always_assigns_before_later_method",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_constructor_callback_before_assignment_cannot_certify_later_reads",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_constructor_can_publish_self_before_assigning_field",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_delayed_closure_reads_are_not_must_at_creation",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_local_alias_remains_safe_but_global_publication_kills",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_local_container_not_global_but_global_container_publication_kills",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_name_independence_for_alias_transfer_and_escape",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_other_method_can_delete_constructor_field_before_read",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_partial_ctor_branch_unproven_no_missing_bug",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_receiver_passed_to_unknown_callee_cannot_be_repaired_by_local_write",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_sibling_alias_delete_and_augassign_invalidate_constructor_seed",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_sibling_callback_receiving_alias_invalidates_constructor_seed",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_unknown_call_delete_and_loop_kill_must",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r2_field_must_flow.py",
+        "test": "test_unsupported_exception_and_inheritance_do_not_fake_must",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r1_source_autodiscovery.py",
+        "test": "test_decorator_rebinding_shadow_and_dynamic_star_remain_unknown",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r1_source_autodiscovery.py",
+        "test": "test_direct_local_missing_required_argument_and_default_positive",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r1_source_autodiscovery.py",
+        "test": "test_import_shadowed_inside_nested_function_not_certified",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r1_source_autodiscovery.py",
+        "test": "test_no_source_proof_from_kwargs_or_methods",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r1_source_autodiscovery.py",
+        "test": "test_unique_module_function_without_optional_compiler",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_competing_import_cannot_certify_schema",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_dynamic_subscript_or_unknown_field_not_invented",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_fake_builtin_named_isinstance_cannot_certify_type_validation",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_fake_schema_and_rebinding_rejected",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_if_membership_guard_observation_is_not_must",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_imported_schema_rebind_rejected",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_method_name_and_field_name_do_not_set_semantics",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_nested_function_and_lambda_dont_steal_receiver",
+        "decision": "REWRITE",
+        "basis": "Executable frozen product finding or public normalized topology oracle",
+        "old_case_replaced": true
+      },
+      {
+        "file": "test_r3_consumer_binding.py",
+        "test": "test_relative_import_and_key_read_are_source_bound",
+        "decision": "KEEP",
+        "basis": "Additional public behavior not yet covered by new Cases",
+        "old_case_replaced": false
+      }
+    ],
+    "old_reviewed": 43,
+    "old_rewritten": 42,
+    "old_kept": 1
+  }
+}

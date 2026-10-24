@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .core_rule_contract import CoreQualityRule
+
 import ast
 from dataclasses import dataclass
 
@@ -15,651 +17,47 @@ from .project_profiles import (
 )
 
 
+from .project_mapping_analysis import MappingShape, ReturnMappingAnalyzer
+
+
 @dataclass(slots=True, frozen=True)
-class _MappingShape:
-    """保存静态推断得到的映射键集合及完整性。"""
+class FrozenSSERuleContext:
+    """Hold the frozen SSE contract alongside its scanned source snapshot.
 
-    keys: frozenset[str] = frozenset()
-    complete: bool = False
-
-    def merge(self, other: _MappingShape) -> _MappingShape:
-        """
-        合并两个可能来自不同返回路径的映射形态。
-
-        Args:
-            other: 另一条返回或产出路径。
-
-        Returns:
-            键集合取并集、完整性取逻辑与的新形态。
-        """
-        return _MappingShape(self.keys | other.keys, self.complete and other.complete)
-
-
-class _ReturnMappingAnalyzer:
-    """
-    对单个 Python 文件执行有限的类内返回映射键分析。
-
-    分析器只解析字典字面量、局部变量赋值和 ``self.method()`` 调用链，
-    不尝试执行源码，也不会把无法证明的动态键臆测为固定契约。
+    The optional AST map lets QG148 reuse parsed target modules while checking
+    the frozen event names, payload keys and event-emission declarations.
     """
 
-    def __init__(
-        self,
-        path: str,
-        source: str,
-        tree: ast.Module | None = None,
-        state_contract: StableMappingContract | None = None,
-    ) -> None:
-        """初始化返回映射分析器。
+    contract: FrozenSSEProtocolContract
+    target_sources: dict[str, str]
+    target_trees: dict[str, ast.Module] | None = None
 
-        Args:
-            path: Python 文件路径。
-            source: 对应 Git 快照源码。
-            tree: 可选的已解析 AST；存在时直接复用。
-            state_contract: 可选的 Profile 状态映射契约。
 
-        Returns:
-            None。
-        """
-        self.path = path
-        self.tree = tree or ast.parse(source, filename=path, type_comments=True)
-        nodes = tuple(ast.walk(self.tree))
-        self.callables = self._collect_callables(self.tree)
-        self.state_contract = state_contract
-        if state_contract is not None and state_contract.state_type:
-            defaults = self._string_defaults(nodes)
-            state_names = self._state_names(
-                nodes,
-                state_contract.state_type,
-                state_contract.state_conventional_names,
-            )
-            expressions = self._state_key_expressions(
-                nodes, path, state_names, state_contract
-            )
-            keys = self._static_string_keys(expressions, defaults)
-            state_defined = any(
-                isinstance(node, ast.ClassDef)
-                and node.name == state_contract.state_type
-                for node in self.tree.body
-            )
-            self.state_shape = _MappingShape(frozenset(keys), state_defined)
-        else:
-            self.state_shape = _MappingShape()
+@dataclass(slots=True, frozen=True)
+class CallableCompatibilityContext:
+    """Bind a declared callable API to the already collected target symbols.
 
-    @staticmethod
-    def _state_names(
-        nodes: tuple[ast.AST, ...],
-        state_type: str,
-        conventional_names: tuple[str, ...],
-    ) -> set[str]:
-        """收集可静态证明为 Profile state 实例的局部名称。
+    QG147 compares the Profile's required signature with the canonical interface
+    catalog rather than reparsing or guessing an implementation name.
+    """
 
-        Args:
-            nodes: 当前 Python 文件预展开的 AST 节点。
+    contract: CallableContract
+    symbols: dict[str, InterfaceSymbol]
 
-        Returns:
-            构造赋值、类型注解及约定名称形成的状态接收者集合。
-        """
-        names = set(conventional_names)
-        for node in nodes:
-            if isinstance(node, (ast.Assign, ast.AnnAssign)):
-                value = node.value
-                targets = (
-                    node.targets if isinstance(node, ast.Assign) else [node.target]
-                )
-                if isinstance(value, ast.Call):
-                    leaf = (
-                        value.func.id
-                        if isinstance(value.func, ast.Name)
-                        else value.func.attr
-                        if isinstance(value.func, ast.Attribute)
-                        else ""
-                    )
-                    if leaf == state_type:
-                        names.update(
-                            target.id
-                            for target in targets
-                            if isinstance(target, ast.Name)
-                        )
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            arguments = [
-                *node.args.posonlyargs,
-                *node.args.args,
-                *node.args.kwonlyargs,
-            ]
-            names.update(
-                argument.arg
-                for argument in arguments
-                if argument.annotation is not None
-                and ast.unparse(argument.annotation).strip("'\"").endswith(state_type)
-            )
-        return names
 
-    @staticmethod
-    def _string_defaults(nodes: tuple[ast.AST, ...]) -> dict[str, str]:
-        """收集函数参数中可用于解析状态键的字符串默认值。
+@dataclass(slots=True, frozen=True)
+class ProjectDeltaRuleContext:
+    """Provide corresponding Git snapshots for route and header delta checks.
 
-        Args:
-            nodes: 当前 Python 文件预展开的 AST 节点。
+    The contract selects the paths and the policy; optional AST maps let QG151
+    and QG152 derive comparable public protocol shapes from each revision.
+    """
 
-        Returns:
-            参数名到字符串默认值的映射。
-        """
-        defaults: dict[str, str] = {}
-        for node in nodes:
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            positional = [*node.args.posonlyargs, *node.args.args]
-            arguments = (
-                positional[-len(node.args.defaults) :] if node.args.defaults else ()
-            )
-            defaults.update(
-                {
-                    argument.arg: default.value
-                    for argument, default in zip(
-                        arguments, node.args.defaults, strict=True
-                    )
-                    if isinstance(default, ast.Constant)
-                    and isinstance(default.value, str)
-                }
-            )
-            defaults.update(
-                {
-                    argument.arg: default.value
-                    for argument, default in zip(
-                        node.args.kwonlyargs,
-                        node.args.kw_defaults,
-                        strict=True,
-                    )
-                    if isinstance(default, ast.Constant)
-                    and isinstance(default.value, str)
-                }
-            )
-        return defaults
-
-    @classmethod
-    def _state_key_expressions(
-        cls,
-        nodes: tuple[ast.AST, ...],
-        path: str,
-        state_names: set[str],
-        contract: StableMappingContract,
-    ) -> list[ast.expr]:
-        """收集 Profile state 构造、写入和可见性声明中的键表达式。
-
-        Args:
-            nodes: 当前 Python 文件预展开的 AST 节点。
-            path: 当前源码相对路径。
-            state_names: 已证明的状态变量名称。
-
-        Returns:
-            后续可做静态字符串求值的键表达式列表。
-        """
-        expressions: list[ast.expr] = []
-        writer_methods = set(contract.state_writer_methods)
-        key_writer_methods = set(contract.state_key_writer_methods)
-        constructor_fields = set(contract.state_constructor_fields)
-        excluded_keywords = {*contract.state_constructor_excluded_keywords, None}
-        source_suffix = contract.state_source_suffix
-        state_type = contract.state_type
-        is_state_source = bool(source_suffix and path.endswith(source_suffix))
-        for node in nodes:
-            if not isinstance(node, ast.Call):
-                match node:
-                    case ast.Assign(targets=targets) if is_state_source:
-                        pass
-                    case (
-                        ast.AnnAssign(target=target) | ast.AugAssign(target=target)
-                    ) if is_state_source:
-                        targets = [target]
-                    case _:
-                        continue
-                expressions.extend(
-                    target.slice
-                    for target in targets
-                    if isinstance(target, ast.Subscript)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id == "self"
-                )
-                continue
-            match node.func:
-                case ast.Name(id=leaf) | ast.Attribute(attr=leaf):
-                    pass
-                case _:
-                    leaf = ""
-            if leaf == state_type:
-                expressions.extend(node.args[:1])
-                expressions.extend(
-                    keyword.value
-                    if keyword.arg in constructor_fields
-                    else ast.Constant(keyword.arg)
-                    for keyword in node.keywords
-                    if keyword.arg not in excluded_keywords
-                )
-            expressions.extend(
-                cls._state_writer_keys(
-                    node,
-                    state_names,
-                    writer_methods,
-                    key_writer_methods,
-                    is_state_source,
-                )
-            )
-            match node.func:
-                case ast.Attribute(value=ast.Call(), attr="__init__") if (
-                    is_state_source
-                ):
-                    expressions.extend(
-                        ast.Constant(keyword.arg)
-                        for keyword in node.keywords
-                        if keyword.arg is not None
-                    )
-        return expressions
-
-    @staticmethod
-    def _state_writer_keys(
-        node: ast.Call,
-        state_names: set[str],
-        writer_methods: set[str],
-        key_writer_methods: set[str],
-        is_state_source: bool,
-    ) -> tuple[ast.expr, ...]:
-        """按 Profile 写入口的接收者与参数协议提取状态键。
-
-        显式 key 参数只属于单键写入口；映射写入口始终使用首个位置参数。
-        """
-        if not isinstance(node.func, ast.Attribute):
-            return ()
-        leaf = node.func.attr
-        if leaf not in writer_methods:
-            return ()
-        match node.func.value:
-            case ast.Name(id=name):
-                is_state = name in state_names or (name == "self" and is_state_source)
-            case ast.Attribute(attr=name):
-                is_state = name in state_names
-            case _:
-                is_state = False
-        if not is_state:
-            return ()
-        positional_key = node.args[0] if node.args else None
-        if leaf in key_writer_methods:
-            positional_key = next(
-                (keyword.value for keyword in node.keywords if keyword.arg == "key"),
-                positional_key,
-            )
-        return () if positional_key is None else (positional_key,)
-
-    @staticmethod
-    def _static_string_keys(
-        expressions: list[ast.expr],
-        defaults: dict[str, str],
-    ) -> set[str]:
-        """把状态键表达式收敛为可静态证明的字符串集合。
-
-        Args:
-            expressions: Profile state 键候选表达式。
-            defaults: 参数名到字符串默认值的映射。
-
-        Returns:
-            只包含常量、容器键和可完全求值 f-string 的键集合。
-        """
-        keys: set[str] = set()
-        pending = list(expressions)
-        while pending:
-            expression = pending.pop()
-            match expression:
-                case ast.Constant(value=str() as value):
-                    keys.add(value)
-                    continue
-                case ast.Name(id=name) if name in defaults:
-                    keys.add(defaults[name])
-                    continue
-                case ast.Dict(keys=dict_keys):
-                    pending.extend(key for key in dict_keys if key is not None)
-                    continue
-                case (
-                    ast.List(elts=elements)
-                    | ast.Tuple(elts=elements)
-                    | ast.Set(elts=elements)
-                ):
-                    pending.extend(elements)
-                    continue
-                case ast.JoinedStr():
-                    pass
-                case _:
-                    continue
-            parts: list[str] = []
-            for part in expression.values:
-                match part:
-                    case ast.Constant(value=str() as value):
-                        parts.append(value)
-                    case ast.FormattedValue(value=ast.Name(id=name)) if (
-                        name in defaults
-                    ):
-                        parts.append(defaults[name])
-                    case _:
-                        break
-            else:
-                keys.add("".join(parts))
-        return keys
-
-    @staticmethod
-    def _collect_callables(
-        tree: ast.Module,
-    ) -> tuple[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef], ...]:
-        """收集可被稳定契约查询的模块顶层函数和类直接成员。"""
-        callables: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                callables.append((node.name, node))
-                continue
-            if not isinstance(node, ast.ClassDef):
-                continue
-            callables.extend(
-                (f"{node.name}.{child.name}", child)
-                for child in node.body
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
-            )
-        return tuple(callables)
-
-    def analyze(self, qualname: str, channel: str) -> _MappingShape:
-        """分析指定函数或方法的映射结构。
-
-        Args:
-            qualname: 模块内函数或类方法的限定名。
-            channel: 待分析的输出通道，例如 return、yield 或 state_keys。
-
-        Returns:
-            当前调用路径可静态确定的键集合及动态形状标记。
-        """
-        if channel == "state_keys":
-            return self.state_shape
-        node = self._find_callable(qualname)
-        if node is None:
-            return _MappingShape()
-        return self._analyze_callable(qualname, node, channel, set())
-
-    def _find_callable(
-        self, qualname: str
-    ) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
-        """按限定名查询当前 AST 声明；未声明是稳定契约分析的合法结果。"""
-        for callable_name, node in self.callables:
-            if callable_name == qualname:
-                return node
-        return None
-
-    def _analyze_callable(
-        self,
-        qualname: str,
-        node: ast.FunctionDef | ast.AsyncFunctionDef,
-        channel: str,
-        stack: set[tuple[str, str]],
-    ) -> _MappingShape:
-        """分析一个调用节点并阻止递归调用环。"""
-        identity = (qualname, channel)
-        if identity in stack:
-            return _MappingShape()
-        stack = {*stack, identity}
-        environments: dict[str, _MappingShape] = {}
-        outputs: list[_MappingShape] = []
-        self._walk_statements(
-            node.body, qualname, channel, stack, environments, outputs
-        )
-        if not outputs:
-            return _MappingShape()
-        shape = outputs[0]
-        for item in outputs[1:]:
-            shape = shape.merge(item)
-        return shape
-
-    def _walk_statements(
-        self,
-        statements: list[ast.stmt],
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-        environment: dict[str, _MappingShape],
-        outputs: list[_MappingShape],
-    ) -> None:
-        """按源码顺序近似传播局部变量映射形态。"""
-        for statement in statements:
-            if isinstance(
-                statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ):
-                continue
-            if self._record_assignment(
-                statement,
-                qualname,
-                channel,
-                stack,
-                environment,
-                outputs,
-            ):
-                continue
-            if self._record_output(
-                statement,
-                qualname,
-                channel,
-                stack,
-                environment,
-                outputs,
-            ):
-                continue
-            self._walk_control_flow(
-                statement,
-                qualname,
-                channel,
-                stack,
-                environment,
-                outputs,
-            )
-
-    def _record_assignment(
-        self,
-        statement: ast.stmt,
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-        environment: dict[str, _MappingShape],
-        outputs: list[_MappingShape],
-    ) -> bool:
-        """处理赋值和循环目标的映射形态传播。"""
-        if isinstance(statement, ast.Assign):
-            shape = self._expression_shape(
-                statement.value, qualname, channel, stack, environment
-            )
-            for target in statement.targets:
-                self._update_environment(target, shape, environment)
-            return True
-        if isinstance(statement, ast.AnnAssign) and statement.value is not None:
-            self._update_environment(
-                statement.target,
-                self._expression_shape(
-                    statement.value, qualname, channel, stack, environment
-                ),
-                environment,
-            )
-            return True
-        if not isinstance(statement, (ast.For, ast.AsyncFor)):
-            return False
-        iterator_shape = self._expression_shape(
-            statement.iter,
-            qualname,
-            "yield",
-            stack,
-            environment,
-        )
-        nested = dict(environment)
-        self._update_environment(statement.target, iterator_shape, nested)
-        self._walk_statements(statement.body, qualname, channel, stack, nested, outputs)
-        self._walk_statements(
-            statement.orelse, qualname, channel, stack, nested, outputs
-        )
-        return True
-
-    def _record_output(
-        self,
-        statement: ast.stmt,
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-        environment: dict[str, _MappingShape],
-        outputs: list[_MappingShape],
-    ) -> bool:
-        """收集当前通道的 return、yield 和 yield from。"""
-        expression: ast.expr | None = None
-        if isinstance(statement, ast.Return) and channel == "return":
-            expression = statement.value
-        elif (
-            isinstance(statement, ast.Expr)
-            and isinstance(statement.value, (ast.Yield, ast.YieldFrom))
-            and channel == "yield"
-        ):
-            expression = statement.value.value
-        else:
-            return False
-        outputs.append(
-            self._expression_shape(expression, qualname, channel, stack, environment)
-        )
-        return True
-
-    def _walk_control_flow(
-        self,
-        statement: ast.stmt,
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-        environment: dict[str, _MappingShape],
-        outputs: list[_MappingShape],
-    ) -> None:
-        """递归处理可能包含返回或产出语句的控制流分支。"""
-        branches: list[list[ast.stmt]] = []
-        if isinstance(statement, (ast.If, ast.While)):
-            branches.extend((statement.body, statement.orelse))
-        elif isinstance(statement, (ast.With, ast.AsyncWith)):
-            branches.append(statement.body)
-        elif isinstance(statement, (ast.Try, ast.TryStar)):
-            branches.extend((statement.body, statement.orelse, statement.finalbody))
-            branches.extend(handler.body for handler in statement.handlers)
-        elif isinstance(statement, ast.Match):
-            branches.extend(case.body for case in statement.cases)
-        for branch in branches:
-            self._walk_statements(
-                branch,
-                qualname,
-                channel,
-                stack,
-                dict(environment),
-                outputs,
-            )
-
-    def _expression_shape(
-        self,
-        expression: ast.expr | None,
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-        environment: dict[str, _MappingShape],
-    ) -> _MappingShape:
-        """解析一个表达式可能形成的映射键。"""
-        match expression:
-            case ast.Dict():
-                return self._dict_shape(
-                    expression, qualname, channel, stack, environment
-                )
-            case ast.Name(id=name) if name in environment:
-                return environment[name]
-            case ast.IfExp(body=body, orelse=orelse):
-                return self._expression_shape(
-                    body, qualname, channel, stack, environment
-                ).merge(
-                    self._expression_shape(
-                        orelse,
-                        qualname,
-                        channel,
-                        stack,
-                        environment,
-                    )
-                )
-            case ast.Call():
-                return self._call_expression_shape(expression, qualname, channel, stack)
-            case ast.BinOp(left=left, op=ast.BitOr(), right=right):
-                return self._expression_shape(
-                    left, qualname, channel, stack, environment
-                ).merge(
-                    self._expression_shape(
-                        right,
-                        qualname,
-                        channel,
-                        stack,
-                        environment,
-                    )
-                )
-            case _:
-                return _MappingShape()
-
-    def _call_expression_shape(
-        self,
-        expression: ast.Call,
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-    ) -> _MappingShape:
-        """解析同一类内 ``self.method()`` 或 ``cls.method()`` 的映射形态。"""
-        if not isinstance(expression.func, ast.Attribute):
-            return _MappingShape()
-        receiver = expression.func.value
-        if not isinstance(receiver, ast.Name) or receiver.id not in {"self", "cls"}:
-            return _MappingShape()
-        owner, separator, _ = qualname.rpartition(".")
-        target = (
-            f"{owner}.{expression.func.attr}" if separator else expression.func.attr
-        )
-        node = self._find_callable(target)
-        if node is None:
-            return _MappingShape()
-        return self._analyze_callable(target, node, channel, stack)
-
-    def _dict_shape(
-        self,
-        expression: ast.Dict,
-        qualname: str,
-        channel: str,
-        stack: set[tuple[str, str]],
-        environment: dict[str, _MappingShape],
-    ) -> _MappingShape:
-        """解析字典字面量及其 ``**mapping`` 展开键。"""
-        keys: set[str] = set()
-        complete = True
-        for key, value in zip(expression.keys, expression.values, strict=True):
-            if key is None:
-                nested = self._expression_shape(
-                    value, qualname, channel, stack, environment
-                )
-                keys.update(nested.keys)
-                complete = complete and nested.complete
-            elif isinstance(key, ast.Constant) and isinstance(key.value, str):
-                keys.add(key.value)
-            else:
-                complete = False
-        return _MappingShape(frozenset(keys), complete)
-
-    @staticmethod
-    def _update_environment(
-        target: ast.expr,
-        shape: _MappingShape,
-        environment: dict[str, _MappingShape],
-    ) -> None:
-        """把推断形态绑定到简单名称或解包目标。"""
-        if isinstance(target, ast.Name):
-            environment[target.id] = shape
-        elif isinstance(target, (ast.Tuple, ast.List)):
-            for element in target.elts:
-                _ReturnMappingAnalyzer._update_environment(
-                    element, _MappingShape(), environment
-                )
+    contract: RouteContract | HeaderContract
+    base_sources: dict[str, str]
+    target_sources: dict[str, str]
+    base_trees: dict[str, ast.Module] | None = None
+    target_trees: dict[str, ast.Module] | None = None
 
 
 def validate_project_contracts(
@@ -698,15 +96,16 @@ def validate_project_contracts(
             )
         )
     for contract in profile.callable_contracts:
-        finding = _callable_contract_finding(contract, target_symbols)
+        results = CallableCompatibilityRule().evaluate(
+            CallableCompatibilityContext(contract, target_symbols)
+        )
+        finding = results[0] if results else None
         if finding is not None:
             findings.append(finding)
     for contract in profile.frozen_sse_contracts:
         findings.extend(
-            _frozen_sse_contract_findings(
-                contract,
-                target_sources,
-                target_trees=target_trees,
+            FrozenSSEContractRule().evaluate(
+                FrozenSSERuleContext(contract, target_sources, target_trees)
             )
         )
     for contract in profile.sse_contracts:
@@ -769,50 +168,143 @@ def _mapping_contract_findings(
     if error_finding is not None:
         return [error_finding]
 
-    if contract.frozen:
-        expected = set(contract.keys)
-        added = sorted(target.keys - expected)
-        removed = sorted(expected - target.keys) if target.complete else []
-        if not added and not removed and target.keys:
-            return []
-        if target.keys:
-            details = [
-                *(["新增键: " + ", ".join(added)] if added else []),
-                *(["缺失键: " + ", ".join(removed)] if removed else []),
+    context = MappingShapeRuleContext(contract, target, base)
+    if contract.frozen or contract.relative_code == "QG146":
+        return MappingContractRule().evaluate(context)
+    if contract.relative_code == "QG182":
+        return ProtocolMappingDeltaRule().evaluate(context)
+    return _relative_mapping_findings(context)
+
+
+@dataclass(slots=True, frozen=True)
+class MappingShapeRuleContext:
+    """Represent one mapping protocol with before/after producer shapes.
+
+    The frozen or relative mapping contract specifies protected keys; the
+    inferred shapes retain whether unknown keys prevented a closed-world proof.
+    """
+
+    contract: StableMappingContract
+    target: MappingShape
+    base: MappingShape
+
+
+class MappingContractRule(CoreQualityRule[MappingShapeRuleContext]):
+    """Enforce QG146 frozen mapping keys from statically supported producers.
+
+    Compare an exact frozen key set when return shapes are closed; preserve a
+    conditional-review Finding rather than claim missing keys for unknown shapes.
+    """
+
+    code = "QG146"
+
+    def evaluate(self, context: MappingShapeRuleContext) -> list[Finding]:
+        """Check frozen or default relative mapping keys without executing source.
+
+        Args:
+            context: Profile-declared key obligations and independently inferred
+                current and Git baseline mapping shapes, including completeness.
+
+        Returns:
+            QG146 Findings for provable added or missing frozen keys; uncertain
+            shapes are reported as conditional evidence rather than invented losses.
+        """
+        contract, target, base = context.contract, context.target, context.base
+        if contract.frozen:
+            expected = set(contract.keys)
+            added = sorted(target.keys - expected)
+            removed = sorted(expected - target.keys) if target.complete else []
+            if not added and not removed and target.keys:
+                return []
+            if target.keys:
+                details = [
+                    *(["新增键: " + ", ".join(added)] if added else []),
+                    *(["缺失键: " + ", ".join(removed)] if removed else []),
+                ]
+                message = f"`{contract.qualname}` 改变了冻结返回映射协议；" + "；".join(
+                    details
+                )
+                severity = "error"
+                confidence = "high"
+            else:
+                message = f"无法静态确认 `{contract.qualname}` 的冻结映射键契约。"
+                severity = "warning"
+                confidence = "medium"
+            return [
+                Finding(
+                    code="QG146",
+                    severity=severity,
+                    confidence=confidence,
+                    path=contract.path,
+                    line=1,
+                    column=1,
+                    symbol=contract.qualname,
+                    message=message,
+                    suggestion="冻结协议只能通过显式版本升级修改，并必须同步全部调用方和协议文档。",
+                    evidence={
+                        "mode": "frozen",
+                        "channel": contract.channel,
+                        "expected_keys": sorted(expected),
+                        "base_keys": sorted(base.keys),
+                        "target_keys": sorted(target.keys),
+                        "target_complete": target.complete,
+                        "added_keys": added,
+                        "removed_keys": removed,
+                    },
+                )
             ]
-            message = f"`{contract.qualname}` 改变了冻结返回映射协议；" + "；".join(
-                details
-            )
-            severity = "error"
-            confidence = "high"
-        else:
-            message = f"无法静态确认 `{contract.qualname}` 的冻结映射键契约。"
-            severity = "warning"
-            confidence = "medium"
+
+        if contract.relative_code != self.code:
+            raise ValueError("QG146 relative mapping contract has unexpected rule code")
+        added = sorted(target.keys - base.keys)
+        removed = (
+            sorted(base.keys - target.keys)
+            if target.complete or contract.channel == "state_keys"
+            else []
+        )
+        if not added and not removed:
+            return []
+        details = [
+            *(["新增键: " + ", ".join(added)] if added else []),
+            *(["删除键: " + ", ".join(removed)] if removed else []),
+        ]
+        complete = base.complete and target.complete
         return [
             Finding(
-                code="QG146",
-                severity=severity,
-                confidence=confidence,
+                code=contract.relative_code,
+                severity=contract.relative_severity,
+                confidence="high" if complete else "medium",
                 path=contract.path,
                 line=1,
                 column=1,
                 symbol=contract.qualname,
-                message=message,
-                suggestion="冻结协议只能通过显式版本升级修改，并必须同步全部调用方和协议文档。",
+                message=(
+                    f"`{contract.qualname}` 的核心协议键相对所选 Git 基线发生变化；"
+                    + "；".join(details)
+                ),
+                suggestion=(
+                    "必须证明该变化绝对不可绕过，并同步全部生产方、消费者、Prompt/协议文档与回归测试；"
+                    "不得以临时便利、兼容猜测或未来可能使用作为理由。"
+                ),
                 evidence={
-                    "mode": "frozen",
+                    "mode": "relative",
                     "channel": contract.channel,
-                    "expected_keys": sorted(expected),
                     "base_keys": sorted(base.keys),
                     "target_keys": sorted(target.keys),
+                    "base_complete": base.complete,
                     "target_complete": target.complete,
                     "added_keys": added,
                     "removed_keys": removed,
+                    "protocol_kind": contract.review_kind,
+                    "qg179_exempt": contract.relative_code == "QG182",
                 },
             )
         ]
 
+
+def _relative_mapping_findings(context: MappingShapeRuleContext) -> list[Finding]:
+    """Keep the alternate Profile-code route on the exact shared mapped facts."""
+    contract, target, base = context.contract, context.target, context.base
     added = sorted(target.keys - base.keys)
     removed = (
         sorted(base.keys - target.keys)
@@ -859,15 +351,87 @@ def _mapping_contract_findings(
     ]
 
 
+class ProtocolMappingDeltaRule(CoreQualityRule[MappingShapeRuleContext]):
+    """Compare Profile-owned state/return protocol keys under QG182.
+
+    Unlike QG146 frozen contracts, this rule reports additions and removals
+    relative to the Git baseline and respects incomplete dynamic return shapes.
+    """
+
+    code = "QG182"
+
+    def evaluate(self, context: MappingShapeRuleContext) -> list[Finding]:
+        """Report changes in a declared relative mapping protocol.
+
+        Args:
+            context: QG182 nonfrozen contract with current and baseline key sets;
+                state_keys allows removals even without return-shape closure.
+
+        Returns:
+            QG182 Findings describing added or removed protocol keys, or an
+            empty list when the observed contract is unchanged.
+
+        Raises:
+            ValueError: The caller supplied a frozen or non-QG182 contract.
+        """
+        if context.contract.relative_code != self.code or context.contract.frozen:
+            raise ValueError("QG182 requires a relative protocol mapping contract")
+        contract, target, base = context.contract, context.target, context.base
+        added = sorted(target.keys - base.keys)
+        removed = (
+            sorted(base.keys - target.keys)
+            if target.complete or contract.channel == "state_keys"
+            else []
+        )
+        if not added and not removed:
+            return []
+        details = [
+            *(["新增键: " + ", ".join(added)] if added else []),
+            *(["删除键: " + ", ".join(removed)] if removed else []),
+        ]
+        complete = base.complete and target.complete
+        return [
+            Finding(
+                code=contract.relative_code,
+                severity=contract.relative_severity,
+                confidence="high" if complete else "medium",
+                path=contract.path,
+                line=1,
+                column=1,
+                symbol=contract.qualname,
+                message=(
+                    f"`{contract.qualname}` 的核心协议键相对所选 Git 基线发生变化；"
+                    + "；".join(details)
+                ),
+                suggestion=(
+                    "必须证明该变化绝对不可绕过，并同步全部生产方、消费者、Prompt/协议文档与回归测试；"
+                    "不得以临时便利、兼容猜测或未来可能使用作为理由。"
+                ),
+                evidence={
+                    "mode": "relative",
+                    "channel": contract.channel,
+                    "base_keys": sorted(base.keys),
+                    "target_keys": sorted(target.keys),
+                    "base_complete": base.complete,
+                    "target_complete": target.complete,
+                    "added_keys": added,
+                    "removed_keys": removed,
+                    "protocol_kind": contract.review_kind,
+                    "qg179_exempt": contract.relative_code == "QG182",
+                },
+            )
+        ]
+
+
 def _analyze_state_keys_contract(
     contract: StableMappingContract,
     base_sources: dict[str, str],
     target_sources: dict[str, str],
     base_trees: dict[str, ast.Module] | None,
     target_trees: dict[str, ast.Module] | None,
-) -> tuple[_MappingShape, _MappingShape, None]:
+) -> tuple[MappingShape, MappingShape, None]:
     """分析跨文件聚合的 Profile state 键集合契约。"""
-    shapes: list[_MappingShape] = []
+    shapes: list[MappingShape] = []
     for sources, trees in (
         (target_sources, target_trees),
         (base_sources, base_trees),
@@ -878,7 +442,7 @@ def _analyze_state_keys_contract(
         for path, item_source in sources.items():
             try:
                 tree = trees[path] if trees is not None and path in trees else None
-                shape = _ReturnMappingAnalyzer(
+                shape = ReturnMappingAnalyzer(
                     path, item_source, tree, state_contract=contract
                 ).analyze(contract.qualname, "state_keys")
             except SyntaxError:
@@ -886,7 +450,7 @@ def _analyze_state_keys_contract(
                 continue
             keys.update(shape.keys)
             found = found or shape.complete
-        shapes.append(_MappingShape(frozenset(keys), complete and found))
+        shapes.append(MappingShape(frozenset(keys), complete and found))
     return shapes[0], shapes[1], None
 
 
@@ -896,7 +460,7 @@ def _analyze_fixed_mapping_contract(
     target_sources: dict[str, str],
     base_trees: dict[str, ast.Module] | None,
     target_trees: dict[str, ast.Module] | None,
-) -> tuple[_MappingShape, _MappingShape, Finding | None]:
+) -> tuple[MappingShape, MappingShape, Finding | None]:
     """解析单文件固定映射契约在基准和当前工作区中的键形态。"""
     source = target_sources[contract.path] if contract.path in target_sources else None
     if source is None:
@@ -917,9 +481,9 @@ def _analyze_fixed_mapping_contract(
                 "qg179_exempt": contract.relative_code == "QG182",
             },
         )
-        return _MappingShape(), _MappingShape(), finding
+        return MappingShape(), MappingShape(), finding
     try:
-        target = _ReturnMappingAnalyzer(
+        target = ReturnMappingAnalyzer(
             contract.path,
             source,
             target_trees[contract.path]
@@ -930,7 +494,7 @@ def _analyze_fixed_mapping_contract(
             contract.channel,
         )
         if contract.path in base_sources:
-            base = _ReturnMappingAnalyzer(
+            base = ReturnMappingAnalyzer(
                 contract.path,
                 base_sources[contract.path],
                 base_trees[contract.path]
@@ -938,7 +502,7 @@ def _analyze_fixed_mapping_contract(
                 else None,
             ).analyze(contract.qualname, contract.channel)
         else:
-            base = _MappingShape()
+            base = MappingShape()
     except SyntaxError as error:
         finding = Finding(
             code="QG146" if contract.frozen else contract.relative_code,
@@ -950,7 +514,7 @@ def _analyze_fixed_mapping_contract(
             symbol=contract.qualname,
             message=f"无法解析稳定返回契约 `{contract.qualname}`：{error.msg}",
         )
-        return _MappingShape(), _MappingShape(), finding
+        return MappingShape(), MappingShape(), finding
     return target, base, None
 
 
@@ -1132,66 +696,6 @@ class _FrozenSSEAnalyzer:
                 if isinstance(key, ast.Constant) and isinstance(key.value, str)
             }
         return set()
-
-
-def _frozen_sse_contract_findings(
-    contract: FrozenSSEProtocolContract,
-    target_sources: dict[str, str],
-    target_trees: dict[str, ast.Module] | None = None,
-) -> list[Finding]:
-    """校验显式冻结的 SSE 外部事件协议。"""
-    source = target_sources.get(contract.path)
-    if source is None:
-        return [
-            Finding(
-                code="QG148",
-                severity="error",
-                confidence="high",
-                path=contract.path,
-                line=1,
-                column=1,
-                symbol=contract.class_name,
-                message="冻结 SSE 协议实现文件已不存在。",
-                suggestion="恢复 SSE 对外协议实现，或进行显式版本升级并同步全部调用方。",
-            )
-        ]
-    try:
-        analyzer = _FrozenSSEAnalyzer(
-            contract.path,
-            source,
-            contract,
-            target_trees[contract.path]
-            if target_trees is not None and contract.path in target_trees
-            else None,
-        )
-    except SyntaxError as error:
-        return [
-            Finding(
-                code="QG148",
-                severity="error",
-                confidence="high",
-                path=contract.path,
-                line=error.lineno or 1,
-                column=error.offset or 1,
-                symbol=contract.class_name,
-                message=f"无法解析冻结 SSE 协议：{error.msg}",
-            )
-        ]
-    if analyzer.class_node is None:
-        return [
-            Finding(
-                code="QG148",
-                severity="error",
-                confidence="high",
-                path=contract.path,
-                line=1,
-                column=1,
-                symbol=contract.class_name,
-                message=f"冻结 SSE 协议类 `{contract.class_name}` 已不存在。",
-            )
-        ]
-    finding = _sse_protocol_finding(contract, analyzer)
-    return [] if finding is None else [finding]
 
 
 def _sse_protocol_finding(
@@ -1376,44 +880,12 @@ def _route_contract_findings(
     base_trees: dict[str, ast.Module] | None = None,
     target_trees: dict[str, ast.Module] | None = None,
 ) -> list[Finding]:
-    """Document _route_contract_findings for quality guard coverage."""
-    base: dict[str, dict[str, str]] = {}
-    target: dict[str, dict[str, str]] = {}
-    for path in contract.paths:
-        base.update(
-            _extract_routes(
-                path,
-                base_sources[path] if path in base_sources else "",
-                base_trees[path]
-                if base_trees is not None and path in base_trees
-                else None,
-            )
+    """Preserve this established entrypoint via its owning Core rule."""
+    return RouteDeltaRule().evaluate(
+        ProjectDeltaRuleContext(
+            contract, base_sources, target_sources, base_trees, target_trees
         )
-        target.update(
-            _extract_routes(
-                path,
-                target_sources[path] if path in target_sources else "",
-                target_trees[path]
-                if target_trees is not None and path in target_trees
-                else None,
-            )
-        )
-    if base == target:
-        return []
-    return [
-        Finding(
-            code="QG151",
-            severity="warning",
-            confidence="high",
-            path=contract.paths[0] if contract.paths else "",
-            line=1,
-            column=1,
-            symbol=contract.name,
-            message=f"{contract.name} 路由接口相对所选 Git 基线发生变化。",
-            suggestion="确认 HTTP 方法、路径、endpoint 名称和响应形态变化已同步调用方、文档和兼容层。",
-            evidence=_shape_delta(base, target),
-        )
-    ]
+    )
 
 
 def _header_contract_findings(
@@ -1423,40 +895,12 @@ def _header_contract_findings(
     base_trees: dict[str, ast.Module] | None = None,
     target_trees: dict[str, ast.Module] | None = None,
 ) -> list[Finding]:
-    """Document _header_contract_findings for quality guard coverage."""
-    base_sets: dict[str, set[str]] = {"read": set(), "write": set(), "filter": set()}
-    target_sets: dict[str, set[str]] = {"read": set(), "write": set(), "filter": set()}
-    for path in contract.paths:
-        for key, values in _extract_headers(
-            base_sources[path] if path in base_sources else "",
-            base_trees[path] if base_trees is not None and path in base_trees else None,
-        ).items():
-            base_sets[key].update(values)
-        for key, values in _extract_headers(
-            target_sources[path] if path in target_sources else "",
-            target_trees[path]
-            if target_trees is not None and path in target_trees
-            else None,
-        ).items():
-            target_sets[key].update(values)
-    base = {key: sorted(values) for key, values in base_sets.items() if values}
-    target = {key: sorted(values) for key, values in target_sets.items() if values}
-    if base == target:
-        return []
-    return [
-        Finding(
-            code="QG152",
-            severity="warning",
-            confidence="medium",
-            path=contract.paths[0] if contract.paths else "",
-            line=1,
-            column=1,
-            symbol=contract.name,
-            message=f"{contract.name} Header 边界相对所选 Git 基线发生变化。",
-            suggestion="确认新增、删除或过滤的 Header 不会破坏 OpenAI 兼容客户端、反向代理和调度路由。",
-            evidence=_shape_delta(base, target),
+    """Preserve this established entrypoint via its owning Core rule."""
+    return HeaderDeltaRule().evaluate(
+        ProjectDeltaRuleContext(
+            contract, base_sources, target_sources, base_trees, target_trees
         )
-    ]
+    )
 
 
 def _extract_routes(
@@ -1662,71 +1106,302 @@ def _shape_delta(before: dict, after: dict) -> dict[str, object]:
     }
 
 
-def _callable_contract_finding(
-    contract: CallableContract,
-    symbols: dict[str, InterfaceSymbol],
-) -> Finding | None:
-    """检查框架适配入口的最小签名契约。"""
-    symbol = next(
-        (
-            item
-            for item in symbols.values()
-            if item.path == contract.path
-            and item.qualname == contract.qualname
-            and item.kind in {"function", "method"}
-            and item.variant == 0
-        ),
-        None,
-    )
-    problems: list[str] = []
-    if symbol is None:
-        problems.append("接口不存在")
-    else:
-        actual_parameters = tuple(
-            (item.name, item.kind, item.has_default) for item in symbol.parameters
-        )
-        if actual_parameters != contract.parameters:
-            expected_names = ", ".join(name for name, _, _ in contract.parameters)
-            actual_names = ", ".join(name for name, _, _ in actual_parameters)
-            problems.append(
-                f"参数名称、种类或默认值契约不一致（期望: {expected_names}；实际: {actual_names}）"
+class FrozenSSEContractRule(CoreQualityRule[FrozenSSERuleContext]):
+    """Validate an immutable Server-Sent Events protocol under QG148.
+
+    Use source-bound event shape analysis; absent files, unparseable modules and
+    removed emission fields are represented as reviewable contract violations.
+    """
+
+    code = "QG148"
+
+    def evaluate(self, context: FrozenSSERuleContext) -> list[Finding]:
+        """Compare an SSE implementation to the Profile's frozen event contract.
+
+        Args:
+            context: Frozen event/payload requirements, target source map and
+                optional previously parsed target modules.
+
+        Returns:
+            A QG148 Finding for missing/unparseable implementation or an observed
+            frozen event discrepancy, otherwise an empty list.
+        """
+        contract = context.contract
+        target_sources = context.target_sources
+        target_trees = context.target_trees
+        source = target_sources.get(contract.path)
+        if source is None:
+            return [
+                Finding(
+                    code="QG148",
+                    severity="error",
+                    confidence="high",
+                    path=contract.path,
+                    line=1,
+                    column=1,
+                    symbol=contract.class_name,
+                    message="冻结 SSE 协议实现文件已不存在。",
+                    suggestion="恢复 SSE 对外协议实现，或进行显式版本升级并同步全部调用方。",
+                )
+            ]
+        try:
+            analyzer = _FrozenSSEAnalyzer(
+                contract.path,
+                source,
+                contract,
+                target_trees[contract.path]
+                if target_trees is not None and contract.path in target_trees
+                else None,
             )
-        if contract.is_async is not None and symbol.is_async != contract.is_async:
-            problems.append("同步/异步形态不一致")
-        for marker_group in contract.return_markers:
-            alternatives = marker_group.split("|")
-            if not any(marker in symbol.return_type for marker in alternatives):
-                problems.append(f"返回类型缺少 {marker_group}")
-        decorator_leaves = {
-            item.split("(", 1)[0].rsplit(".", 1)[-1] for item in symbol.decorators
+        except SyntaxError as error:
+            return [
+                Finding(
+                    code="QG148",
+                    severity="error",
+                    confidence="high",
+                    path=contract.path,
+                    line=error.lineno or 1,
+                    column=error.offset or 1,
+                    symbol=contract.class_name,
+                    message=f"无法解析冻结 SSE 协议：{error.msg}",
+                )
+            ]
+        if analyzer.class_node is None:
+            return [
+                Finding(
+                    code="QG148",
+                    severity="error",
+                    confidence="high",
+                    path=contract.path,
+                    line=1,
+                    column=1,
+                    symbol=contract.class_name,
+                    message=f"冻结 SSE 协议类 `{contract.class_name}` 已不存在。",
+                )
+            ]
+        finding = _sse_protocol_finding(contract, analyzer)
+        return [] if finding is None else [finding]
+
+
+class RouteDeltaRule(CoreQualityRule[ProjectDeltaRuleContext]):
+    """Detect changes in Profile-owned route interfaces under QG151.
+
+    Extract path/method/endpoint shapes from both Git snapshots and report only
+    differing public routes; unavailable paths yield empty route shapes.
+    """
+
+    code = "QG151"
+
+    def evaluate(self, context: ProjectDeltaRuleContext) -> list[Finding]:
+        """Compare route declarations in frozen base and target source maps.
+
+        Args:
+            context: RouteContract declaring relevant paths plus corresponding
+                source maps and optional AST caches.
+
+        Returns:
+            A QG151 warning documenting changed route shape and before/after
+            evidence, or an empty list when their extracted routes match.
+        """
+        contract = context.contract
+        base_sources = context.base_sources
+        target_sources = context.target_sources
+        base_trees = context.base_trees
+        target_trees = context.target_trees
+        base: dict[str, dict[str, str]] = {}
+        target: dict[str, dict[str, str]] = {}
+        for path in contract.paths:
+            base.update(
+                _extract_routes(
+                    path,
+                    base_sources[path] if path in base_sources else "",
+                    base_trees[path]
+                    if base_trees is not None and path in base_trees
+                    else None,
+                )
+            )
+            target.update(
+                _extract_routes(
+                    path,
+                    target_sources[path] if path in target_sources else "",
+                    target_trees[path]
+                    if target_trees is not None and path in target_trees
+                    else None,
+                )
+            )
+        if base == target:
+            return []
+        return [
+            Finding(
+                code="QG151",
+                severity="warning",
+                confidence="high",
+                path=contract.paths[0] if contract.paths else "",
+                line=1,
+                column=1,
+                symbol=contract.name,
+                message=f"{contract.name} 路由接口相对所选 Git 基线发生变化。",
+                suggestion="确认 HTTP 方法、路径、endpoint 名称和响应形态变化已同步调用方、文档和兼容层。",
+                evidence=_shape_delta(base, target),
+            )
+        ]
+
+
+class HeaderDeltaRule(CoreQualityRule[ProjectDeltaRuleContext]):
+    """Compare HTTP Header read/write/filter behavior under QG152.
+
+    A changed boundary is reported as a relative protocol warning; collecting
+    source facts does not imply a particular client actually broke.
+    """
+
+    code = "QG152"
+
+    def evaluate(self, context: ProjectDeltaRuleContext) -> list[Finding]:
+        """Collect and compare Header operations for declared Profile paths.
+
+        Args:
+            context: HeaderContract and the Git base/current source snapshots,
+                optionally with precomputed module ASTs.
+
+        Returns:
+            A QG152 warning with the added/removed/modified Header operation
+            sets, or an empty list when observable operations match.
+        """
+        contract = context.contract
+        base_sources = context.base_sources
+        target_sources = context.target_sources
+        base_trees = context.base_trees
+        target_trees = context.target_trees
+        base_sets: dict[str, set[str]] = {
+            "read": set(),
+            "write": set(),
+            "filter": set(),
         }
-        missing_decorators = sorted(set(contract.decorators) - decorator_leaves)
-        if missing_decorators:
-            problems.append("缺少装饰器: " + ", ".join(missing_decorators))
-    if not problems:
-        return None
-    return Finding(
-        code="QG147",
-        severity="error",
-        confidence="high",
-        path=contract.path,
-        line=1 if symbol is None else symbol.line,
-        column=1,
-        symbol=contract.qualname,
-        message=f"框架适配接口 `{contract.qualname}` 不再满足固定兼容契约："
-        + "；".join(problems),
-        suggestion="保持适配层入口与目标框架的参数种类、默认值、异步形态和返回对象约定一致。",
-        evidence={
-            "expected_parameters": [
-                {"name": name, "kind": kind, "has_default": has_default}
-                for name, kind, has_default in contract.parameters
-            ],
-            "actual_parameters": (
-                [] if symbol is None else [item.to_dict() for item in symbol.parameters]
+        target_sets: dict[str, set[str]] = {
+            "read": set(),
+            "write": set(),
+            "filter": set(),
+        }
+        for path in contract.paths:
+            for key, values in _extract_headers(
+                base_sources[path] if path in base_sources else "",
+                base_trees[path]
+                if base_trees is not None and path in base_trees
+                else None,
+            ).items():
+                base_sets[key].update(values)
+            for key, values in _extract_headers(
+                target_sources[path] if path in target_sources else "",
+                target_trees[path]
+                if target_trees is not None and path in target_trees
+                else None,
+            ).items():
+                target_sets[key].update(values)
+        base = {key: sorted(values) for key, values in base_sets.items() if values}
+        target = {key: sorted(values) for key, values in target_sets.items() if values}
+        if base == target:
+            return []
+        return [
+            Finding(
+                code="QG152",
+                severity="warning",
+                confidence="medium",
+                path=contract.paths[0] if contract.paths else "",
+                line=1,
+                column=1,
+                symbol=contract.name,
+                message=f"{contract.name} Header 边界相对所选 Git 基线发生变化。",
+                suggestion="确认新增、删除或过滤的 Header 不会破坏 OpenAI 兼容客户端、反向代理和调度路由。",
+                evidence=_shape_delta(base, target),
+            )
+        ]
+
+
+class CallableCompatibilityRule(CoreQualityRule[CallableCompatibilityContext]):
+    """Check callable API compatibility against the Profile under QG147.
+
+    Resolve the exact module path, qualified symbol, and primary variant before
+    comparing parameter names, kinds, defaults and required signature clauses.
+    """
+
+    code = "QG147"
+
+    def evaluate(self, context: CallableCompatibilityContext) -> list[Finding]:
+        """Validate a framework adaptation entry point without reflection.
+
+        Args:
+            context: Required CallableContract and scanned target interface symbols;
+                only matching path/qualname and variant zero are considered.
+
+        Returns:
+            QG147 Findings when the callable is absent or its parameter contract
+            differs; no Finding when its declared public signature matches.
+        """
+        contract = context.contract
+        symbols = context.symbols
+        symbol = next(
+            (
+                item
+                for item in symbols.values()
+                if item.path == contract.path
+                and item.qualname == contract.qualname
+                and item.kind in {"function", "method"}
+                and item.variant == 0
             ),
-            "expected_return_markers": list(contract.return_markers),
-            "actual_return_type": "" if symbol is None else symbol.return_type,
-            "expected_async": contract.is_async,
-            "actual_async": None if symbol is None else symbol.is_async,
-        },
-    )
+            None,
+        )
+        problems: list[str] = []
+        if symbol is None:
+            problems.append("接口不存在")
+        else:
+            actual_parameters = tuple(
+                (item.name, item.kind, item.has_default) for item in symbol.parameters
+            )
+            if actual_parameters != contract.parameters:
+                expected_names = ", ".join(name for name, _, _ in contract.parameters)
+                actual_names = ", ".join(name for name, _, _ in actual_parameters)
+                problems.append(
+                    f"参数名称、种类或默认值契约不一致（期望: {expected_names}；实际: {actual_names}）"
+                )
+            if contract.is_async is not None and symbol.is_async != contract.is_async:
+                problems.append("同步/异步形态不一致")
+            for marker_group in contract.return_markers:
+                alternatives = marker_group.split("|")
+                if not any(marker in symbol.return_type for marker in alternatives):
+                    problems.append(f"返回类型缺少 {marker_group}")
+            decorator_leaves = {
+                item.split("(", 1)[0].rsplit(".", 1)[-1] for item in symbol.decorators
+            }
+            missing_decorators = sorted(set(contract.decorators) - decorator_leaves)
+            if missing_decorators:
+                problems.append("缺少装饰器: " + ", ".join(missing_decorators))
+        if not problems:
+            return []
+        finding = Finding(
+            code="QG147",
+            severity="error",
+            confidence="high",
+            path=contract.path,
+            line=1 if symbol is None else symbol.line,
+            column=1,
+            symbol=contract.qualname,
+            message=f"框架适配接口 `{contract.qualname}` 不再满足固定兼容契约："
+            + "；".join(problems),
+            suggestion="保持适配层入口与目标框架的参数种类、默认值、异步形态和返回对象约定一致。",
+            evidence={
+                "expected_parameters": [
+                    {"name": name, "kind": kind, "has_default": has_default}
+                    for name, kind, has_default in contract.parameters
+                ],
+                "actual_parameters": (
+                    []
+                    if symbol is None
+                    else [item.to_dict() for item in symbol.parameters]
+                ),
+                "expected_return_markers": list(contract.return_markers),
+                "actual_return_type": "" if symbol is None else symbol.return_type,
+                "expected_async": contract.is_async,
+                "actual_async": None if symbol is None else symbol.is_async,
+            },
+        )
+        return [finding]

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from fnmatch import fnmatch
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import GuardConfig, is_test_path
+from .core_rule_contract import CoreQualityRule
 from .model import Finding
 from .topology_facts import RepositoryTopology, SymbolFact, UsageEdge, UsageKind
-from .topology_policy import (
-    ephemeral_helper_candidate,
-    symbol_usage_evidence,
-)
+from .topology_policy import ephemeral_helper_candidate, symbol_usage_evidence
 
 
+# The rule consumes the normalized topology once; callers retain original source coordinates.
 def _in_scope(
     symbol: SymbolFact,
     config: GuardConfig,
@@ -189,16 +189,58 @@ def single_use_chain_findings(
     Returns:
         One Critical finding for each maximal >=3-helper one-shot chain.
     """
-    eligible = _eligible_helpers(topology, config, paths)
-    findings: list[Finding] = []
-    emitted: set[tuple[str, ...]] = set()
-    for symbol_id in sorted(eligible):
-        result = _maximal_chain(symbol_id, eligible, topology)
-        if result is None:
-            continue
-        caller_id, chain = result
-        if len(chain) < config.single_use_chain_min_helpers or chain in emitted:
-            continue
-        emitted.add(chain)
-        findings.append(_chain_finding(caller_id, chain, eligible, topology))
-    return findings
+    return SingleUseChainRule().evaluate(
+        SingleUseChainContext(root, config, topology, paths)
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class SingleUseChainContext:
+    """Immutable scan inputs for QG168 helper-chain analysis.
+
+    topology supplies resolved high-confidence call edges. config controls
+    helper size and chain length; paths restrict the candidate source set.
+    """
+
+    root: Path
+    config: GuardConfig
+    topology: RepositoryTopology
+    paths: set[str] | None
+
+
+class SingleUseChainRule(CoreQualityRule[SingleUseChainContext]):
+    """Find maximal, single-consumer helper chains with QG168 semantics.
+
+    A helper needs one proven direct caller, a compatible owner and no
+    reference/callback consumers; ambiguous usage never proves a chain.
+    """
+
+    code = "QG168"
+
+    def evaluate(self, context: SingleUseChainContext) -> list[Finding]:
+        """Emit one finding per qualifying maximal direct-call helper chain.
+
+        Only chains meeting the configured minimum are reported, with duplicate
+        helper paths suppressed; graph-uncertain consumers are not eligible.
+
+        Args:
+            context: Normalized source topology and QG168 helper policy.
+
+        Returns:
+            QG168 findings containing the caller, helper sequence and usage
+            evidence, or an empty list when no one-shot chain is provable.
+        """
+        (config, topology, paths) = (context.config, context.topology, context.paths)
+        eligible = _eligible_helpers(topology, config, paths)
+        findings: list[Finding] = []
+        emitted: set[tuple[str, ...]] = set()
+        for symbol_id in sorted(eligible):
+            result = _maximal_chain(symbol_id, eligible, topology)
+            if result is None:
+                continue
+            caller_id, chain = result
+            if len(chain) < config.single_use_chain_min_helpers or chain in emitted:
+                continue
+            emitted.add(chain)
+            findings.append(_chain_finding(caller_id, chain, eligible, topology))
+        return findings

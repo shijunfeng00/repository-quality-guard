@@ -1,0 +1,853 @@
+[
+  {
+    "case_id": "valid",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "oracle-direct",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return add(2, 3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "input-direct",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((add(2,3),), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        8,
+        "CheckCase.get_input_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "equals-direct",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return add(2,3) == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        12,
+        "CheckCase.equals"
+      ]
+    ]
+  },
+  {
+    "case_id": "entry-called",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add(2,3)\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        6,
+        "CheckCase.get_enterpoint"
+      ]
+    ]
+  },
+  {
+    "case_id": "local-alias",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        alias = add\n        return alias(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        11,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "alias-through-getter",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        alias = self.get_enterpoint()\n        return alias(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        11,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "nested-getter",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return self.get_enterpoint()(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "module-alias",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nentry = add\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return entry(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1,
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        4,
+        "unit-test-module"
+      ],
+      [
+        "QG245",
+        11,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "alias-chain-module",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nentry = add\nentry2 = entry\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return entry2(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 2,
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        4,
+        "unit-test-module"
+      ],
+      [
+        "QG240",
+        5,
+        "unit-test-module"
+      ],
+      [
+        "QG245",
+        12,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "local-alias-chain",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        entry = add\n        alias = entry\n        return alias(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        12,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "get-entry-local",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        fn = add\n        return fn\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return add(1,2)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        11,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "shadowed-other-local",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        add = lambda a,b: 5\n        return add(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "shadowed-module",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\ndef add(a,b):\n    return 5\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return add(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        4,
+        "unit-test-module"
+      ]
+    ]
+  },
+  {
+    "case_id": "unused-reference",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        ref = add\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "irrelevant-call",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return str(5)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "local-parameter",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self, add):\n        return add(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "missing-input",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "stateful-valid",
+    "source": "from rqgtest import StatefulTestCase\nfrom example_prod import add\n\nclass CheckCase(StatefulTestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        yield (None, (2,3), {})\n    def get_output_data(self):\n        yield 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "stateful-missing-input",
+    "source": "from rqgtest import StatefulTestCase\nfrom example_prod import add\n\nclass CheckCase(StatefulTestCase):\n    def get_enterpoint(self):\n        return add\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "legacy-instance",
+    "source": "from rqgtest import InstanceTestCase\nfrom example_prod import add\n\nclass CheckCase(InstanceTestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 2
+    },
+    "expected_locations": null,
+    "review_note": "Static negative source fixture only; never imported or executed. InstanceTestCase is intentionally an unrecognized retired-like base; QG240 must reject it rather than treating it as an rqgtest Case."
+  },
+  {
+    "case_id": "legacy-step",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    @property\n    def input_iterator(self):\n        return ()\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "get-entry-lambda",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return lambda x, y: add(x, y)\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return 5\n\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-direct-run",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return TestUnit.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-aliased-import",
+    "source": "from rqgtest import TestCase, TestUnit as Runner\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return Runner.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-module-qualified",
+    "source": "import rqgtest as r\nfrom rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return r.TestUnit.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-local-alias",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        executor = TestUnit\n        return executor.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-shadowed",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        TestUnit = int\n        return TestUnit(5)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-local-fake",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual): return expected == actual\n\nclass TestUnit:\n    pass\n",
+    "expected_codes": {
+      "QG240": 1,
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-creation",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return TestUnit()\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-unused-import",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg242-always-true",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self): return 5\n    def equals(self, expected, actual): return True\n",
+    "expected_codes": {
+      "QG242": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg244-ignores-actual",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self): return 5\n    def equals(self, expected, actual): return expected == expected\n",
+    "expected_codes": {
+      "QG244": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg244-source-shape",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\nimport inspect\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self): return inspect.getsource(add)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG244": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg243-empty-return",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return []\n    def get_output_data(self): return 5\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG243": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg243-empty-iterator",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return iter(())\n    def get_output_data(self): return 5\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG243": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg243-output-empty-valid",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self): return []\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "qg243-multi-input-valid",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return [((2,3), {})]\n    def get_output_data(self): return 5\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-core-module-import",
+    "source": "from rqgtest import TestCase\nfrom rqgtest.core.unit import TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self):\n        return TestUnit.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-core-module-alias",
+    "source": "from rqgtest import TestCase\nimport rqgtest.core.unit as core\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self):\n        return core.TestUnit.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-reflect-literal",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self):\n        return getattr(TestUnit, \"run\")(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG246": 1
+    },
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-different-origin",
+    "source": "from rqgtest import TestCase\nfrom test_helpers import TestUnit\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self):\n        return TestUnit.run(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "testunit-rebound-reflect",
+    "source": "from rqgtest import TestCase, TestUnit\nfrom test_helpers import getattr_other\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2,3), {})\n    def get_output_data(self):\n        getattr = getattr_other\n        return getattr(TestUnit, \"run\")(None)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": null
+  },
+  {
+    "case_id": "alias-local-call",
+    "source": "from rqgtest import TestCase\nfrom prod import target\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return target\n    def get_input_data(self): return ((1,), {})\n    def get_output_data(self):\n        alias = target\n        return alias(1)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        9,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "alias-local-unused",
+    "source": "from rqgtest import TestCase\nfrom prod import target\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return target\n    def get_input_data(self): return ((1,), {})\n    def get_output_data(self):\n        alias = target\n        return 3\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "rebound-local-lambda",
+    "source": "from rqgtest import TestCase\nfrom prod import target\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return target\n    def get_input_data(self): return ((1,), {})\n    def get_output_data(self):\n        target = lambda v: 4\n        return target(1)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        8,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "dynamic-globals-unknown",
+    "source": "from rqgtest import TestCase\nfrom prod import target\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return target\n    def get_input_data(self): return ((1,), {})\n    def get_output_data(self):\n        return globals()[\"target\"](1)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "nested-wrapper-invalid",
+    "source": "from rqgtest import TestCase\nfrom prod import target\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return target\n    def get_input_data(self): return ((1,), {})\n    def get_output_data(self):\n        def helper(): return target(1)\n        return helper()\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1,
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        8,
+        "CheckCase.get_output_data"
+      ],
+      [
+        "QG245",
+        8,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "extra-method",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def extra(self):\n        return 1\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        9,
+        "CheckCase.extra"
+      ]
+    ]
+  },
+  {
+    "case_id": "instance-assignment",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        self.secret = 3\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        8,
+        "CheckCase.get_input_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "nested-def",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        def helper(): return 5\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "lambda-oracle",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return (lambda: 5)()\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "module-variable",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\nconstant = 1\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        3,
+        "unit-test-module"
+      ]
+    ]
+  },
+  {
+    "case_id": "module-func",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\ndef rogue(): return 1\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        3,
+        "unit-test-module"
+      ]
+    ]
+  },
+  {
+    "case_id": "noncase-class",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\nclass Other: pass\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        3,
+        "Other"
+      ]
+    ]
+  },
+  {
+    "case_id": "missing-equals",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": [
+      [
+        "QG241",
+        4,
+        "CheckCase"
+      ]
+    ]
+  },
+  {
+    "case_id": "missing-input",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": [
+      [
+        "QG241",
+        4,
+        "CheckCase"
+      ]
+    ]
+  },
+  {
+    "case_id": "missing-output",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": [
+      [
+        "QG241",
+        4,
+        "CheckCase"
+      ]
+    ]
+  },
+  {
+    "case_id": "missing-entry",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG241": 1
+    },
+    "expected_locations": [
+      [
+        "QG241",
+        4,
+        "CheckCase"
+      ]
+    ]
+  },
+  {
+    "case_id": "always-true",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return True\n",
+    "expected_codes": {
+      "QG242": 1
+    },
+    "expected_locations": [
+      [
+        "QG242",
+        11,
+        "CheckCase"
+      ]
+    ]
+  },
+  {
+    "case_id": "assert-in-equals",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        assert expected == actual\n        return expected == actual\n",
+    "expected_codes": {
+      "QG240": 1
+    },
+    "expected_locations": [
+      [
+        "QG240",
+        12,
+        "assert"
+      ]
+    ]
+  },
+  {
+    "case_id": "empty-input-yield",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return iter(())\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG243": 1
+    },
+    "expected_locations": [
+      [
+        "QG243",
+        7,
+        "CheckCase.get_input_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "output-calls-entry",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return add(2,3)\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "input-calls-entry",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((add(2,3),), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        8,
+        "CheckCase.get_input_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-local-import-same",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        from example_prod import add as imported\n        return imported(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        9,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-local-module-import",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        import example_prod as local_prod\n        return local_prod.add(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        9,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-walrus-certain",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return (alias := add)(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        8,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-straight-alias-chain",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        one = add\n        two = one\n        return two(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        10,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-local-import-input",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        from example_prod import add as a\n        return a(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        9,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-get-entry-alias",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        fn = self.get_enterpoint()\n        return fn(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        9,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-immediate-getter",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return self.get_enterpoint()(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {
+      "QG245": 1
+    },
+    "expected_locations": [
+      [
+        "QG245",
+        8,
+        "CheckCase.get_output_data"
+      ]
+    ]
+  },
+  {
+    "case_id": "qg245-late-assignment-no-fp",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        result = other(2, 3)\n        other = add\n        return result\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-only-unused-local-import",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        from example_prod import add as external\n        return 5\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-local-other-import",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        from other_prod import add as other\n        return other(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-unproven-globals",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        return globals()[\"add\"](2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-conditional-bind-unknown",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        if flag:\n            locally = add\n        return locally(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-local-import-double-unknown",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        from example_prod import add as locally\n        locally = other\n        return locally(2, 3)\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-import-after-call",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        out = imported(2, 3)\n        from example_prod import add as imported\n        return out\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  },
+  {
+    "case_id": "qg245-unused-target-reference",
+    "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self): return add\n    def get_input_data(self): return ((2, 3), {})\n    def get_output_data(self):\n        captured = add\n        return 5\n    def equals(self, expected, actual): return expected == actual\n",
+    "expected_codes": {},
+    "expected_locations": []
+  }
+]

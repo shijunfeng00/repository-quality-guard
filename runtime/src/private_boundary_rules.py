@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from .ast_utils import dotted_name, enclosing_class_name
+from .core_rule_contract import CoreQualityRule
 from .config import is_test_path
 from .model import Finding
 from .policy_common import ParsedModule, all_parameters, direct_body_nodes
@@ -420,7 +421,9 @@ def _invoked_reflection_origins_for_call(
 
 @dataclass(slots=True, frozen=True)
 class _ReflectionCallFacts:
-    """一次反射调用已经解析出的稳定静态事实。"""
+    """一次反射调用已经解析出的稳定静态事实。
+
+    Fields: target, receiver, member_name, private_member, broad_reflection, invoked, receiver_node."""
 
     target: str
     receiver: str
@@ -529,59 +532,75 @@ def _reflection_member_nodes(
     return receiver_node, member_node
 
 
-def _module_constant_findings(parsed: ParsedModule) -> list[Finding]:
-    """检查模块级字面量常量是否使用全大写命名。"""
-    findings: list[Finding] = []
-    assignments: list[tuple[ast.expr, ast.expr]] = []
-    for statement in parsed.tree.body:
-        match statement:
-            case ast.Assign(targets=targets, value=value):
-                assignments.extend((target, value) for target in targets)
-            case ast.AnnAssign(target=target, value=ast.expr() as value):
-                assignments.append((target, value))
-    for target, value in assignments:
-        if not isinstance(target, ast.Name) or UPPERCASE_CONSTANT_PATTERN.match(
-            target.id
-        ):
-            continue
-        if target.id[:2] == target.id[-2:] == "__":
-            continue
-        pending = [value]
-        constant_value = True
-        while pending:
-            candidate = pending.pop()
-            match candidate:
-                case ast.Tuple(elts=elements):
-                    pending.extend(elements)
-                case ast.Constant(value=scalar) if isinstance(
-                    scalar, SCALAR_CONSTANT_TYPES
-                ):
-                    pass
-                case _:
-                    constant_value = False
-                    break
-        if not constant_value:
-            continue
-        findings.append(
-            parsed.facts.make_finding(
-                target,
-                "QG150",
-                f"模块级常量 `{target.id}` 应使用全大写命名。",
-                symbol=(
-                    f"{parsed.facts.module}.{target.id}"
-                    if parsed.facts.module
-                    else target.id
-                ),
-                severity="warning",
-                confidence="high",
-                suggestion=(
-                    "文件级字符串、数值或元组常量使用 REACT_SKILLS_PROMPT "
-                    "这类全大写名称；局部变量放入函数内部。"
-                ),
-                evidence={"name": target.id, "value_kind": type(value).__name__},
+class ModuleConstantNamingRule(CoreQualityRule[ParsedModule]):
+    """Check names of module-level immutable constant assignments.
+
+    QG150 consumes an already parsed module and retains source declaration locations.
+    """
+
+    code = "QG150"
+
+    def evaluate(self, parsed: ParsedModule) -> list[Finding]:
+        """Check parsed module assignments for immutable constants.
+
+        Report each non-uppercase declaration at its original position.
+
+        Args:
+            parsed: ParsedModule input consumed by this detector.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        findings: list[Finding] = []
+        assignments: list[tuple[ast.expr, ast.expr]] = []
+        for statement in parsed.tree.body:
+            match statement:
+                case ast.Assign(targets=targets, value=value):
+                    assignments.extend((target, value) for target in targets)
+                case ast.AnnAssign(target=target, value=ast.expr() as value):
+                    assignments.append((target, value))
+        for target, value in assignments:
+            if not isinstance(target, ast.Name) or UPPERCASE_CONSTANT_PATTERN.match(
+                target.id
+            ):
+                continue
+            if target.id[:2] == target.id[-2:] == "__":
+                continue
+            pending = [value]
+            constant_value = True
+            while pending:
+                candidate = pending.pop()
+                match candidate:
+                    case ast.Tuple(elts=elements):
+                        pending.extend(elements)
+                    case ast.Constant(value=scalar) if isinstance(
+                        scalar, SCALAR_CONSTANT_TYPES
+                    ):
+                        pass
+                    case _:
+                        constant_value = False
+                        break
+            if not constant_value:
+                continue
+            findings.append(
+                parsed.facts.make_finding(
+                    target,
+                    self.code,
+                    f"模块级常量 `{target.id}` 应使用全大写命名。",
+                    symbol=(
+                        f"{parsed.facts.module}.{target.id}"
+                        if parsed.facts.module
+                        else target.id
+                    ),
+                    severity="warning",
+                    confidence="high",
+                    suggestion=(
+                        "文件级字符串、数值或元组常量使用 REACT_SKILLS_PROMPT "
+                        "这类全大写名称；局部变量放入函数内部。"
+                    ),
+                    evidence={"name": target.id, "value_kind": type(value).__name__},
+                )
             )
-        )
-    return findings
+        return findings
 
 
 def _runtime_contract_patch_findings(
@@ -802,114 +821,307 @@ def _lexical_class_id(parsed: ParsedModule, node: ast.AST) -> str:
     return ".".join((parsed.facts.module, *reversed(owners))) if owners else ""
 
 
-def _private_export_findings(
-    parsed: ParsedModule, project_name: str = ""
-) -> list[Finding]:
-    """拒绝把模块的私有定义通过 __all__ 或公开别名发布。"""
-    declared_private = {
-        statement.name
-        for statement in parsed.tree.body
-        if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-        and single_private_name(statement.name)
-    }
-    declared_private.update(
-        target.id
-        for statement in parsed.tree.body
-        if isinstance(statement, (ast.Assign, ast.AnnAssign))
-        for target in (
-            statement.targets
-            if isinstance(statement, ast.Assign)
-            else [statement.target]
-        )
-        if isinstance(target, ast.Name) and single_private_name(target.id)
+@dataclass(frozen=True)
+class PrivateOwnershipContext:
+    """One already-parsed private-boundary event and its shared ownership facts.
+
+    Fields: parsed, node, project_name, ownership, reflection."""
+
+    parsed: ParsedModule
+    node: ast.AST
+    project_name: str
+    ownership: tuple[dict[str, frozenset[str]], dict[str, tuple[str, ...]]] | None = (
+        None
     )
-    findings: list[Finding] = []
-    for statement in parsed.tree.body:
-        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
-            continue
-        targets = (
-            statement.targets
-            if isinstance(statement, ast.Assign)
-            else [statement.target]
-        )
-        if statement.value is None:
-            continue
-        findings.extend(
-            _private_all_exports(parsed, targets, statement.value, project_name)
-        )
-        findings.extend(
-            _private_alias_exports(
-                parsed, statement, targets, declared_private, project_name
+    reflection: _ReflectionCallFacts | None = None
+
+
+class PrivateOwnershipRule(CoreQualityRule[PrivateOwnershipContext]):
+    """QG149 exclusively owns import, member, reflection and export judgments.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG149"
+
+    def evaluate(self, context: PrivateOwnershipContext) -> list[Finding]:
+        """Re-use parser facts while preserving the visitor's discovery order.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        node = context.node
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            return self._import_findings(context.parsed, node, context.project_name)
+        if isinstance(node, ast.Attribute):
+            return self._attribute_findings(
+                context.parsed, node, context.ownership, context.project_name
             )
-        )
-    return findings
-
-
-def _private_all_exports(
-    parsed: ParsedModule, targets: list[ast.expr], value: ast.expr, project_name: str
-) -> list[Finding]:
-    """将 __all__ 中静态可证明的私有导出逐项报告。"""
-    if not any(
-        isinstance(target, ast.Name) and target.id == "__all__" for target in targets
-    ):
+        if isinstance(node, ast.Call) and context.reflection is not None:
+            return self._test_reflection_findings(
+                context.parsed, node, context.reflection, context.project_name
+            )
+        if isinstance(node, ast.Module):
+            return self._export_findings(context.parsed, context.project_name)
         return []
-    if not isinstance(value, (ast.List, ast.Tuple, ast.Set)):
-        return []
-    items = [
-        item
-        for item in value.elts
-        if isinstance(item, ast.Constant)
-        and isinstance(item.value, str)
-        and single_private_name(item.value)
-    ]
-    return [
-        parsed.facts.make_finding(
-            item,
-            "QG149",
-            f"__all__ 不得对外暴露私有符号 `{item.value}`。",
-            symbol=parsed.facts.module,
-            severity="warning"
-            if is_test_path(parsed.facts.path, project_name)
-            else "critical",
-            confidence="high",
-            suggestion="私有符号必须保持模块内部所有权；需要导出的定义须使用公开名称。",
-            evidence={"private_name": item.value, "export": "__all__"},
+
+    def _export_findings(
+        self, parsed: ParsedModule, project_name: str = ""
+    ) -> list[Finding]:
+        """拒绝把模块的私有定义通过 __all__ 或公开别名发布。"""
+        declared_private = {
+            statement.name
+            for statement in parsed.tree.body
+            if isinstance(
+                statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            )
+            and single_private_name(statement.name)
+        }
+        declared_private.update(
+            target.id
+            for statement in parsed.tree.body
+            if isinstance(statement, (ast.Assign, ast.AnnAssign))
+            for target in (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            if isinstance(target, ast.Name) and single_private_name(target.id)
         )
-        for item in items
-    ]
+        findings: list[Finding] = []
+        for statement in parsed.tree.body:
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            if statement.value is None:
+                continue
+            findings.extend(
+                self._all_exports(parsed, targets, statement.value, project_name)
+            )
+            findings.extend(
+                self._alias_exports(
+                    parsed, statement, targets, declared_private, project_name
+                )
+            )
+        return findings
+
+    def _all_exports(
+        self,
+        parsed: ParsedModule,
+        targets: list[ast.expr],
+        value: ast.expr,
+        project_name: str,
+    ) -> list[Finding]:
+        """将 __all__ 中静态可证明的私有导出逐项报告。"""
+        if not any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in targets
+        ):
+            return []
+        if not isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            return []
+        items = [
+            item
+            for item in value.elts
+            if isinstance(item, ast.Constant)
+            and isinstance(item.value, str)
+            and single_private_name(item.value)
+        ]
+        return [
+            parsed.facts.make_finding(
+                item,
+                "QG149",
+                f"__all__ 不得对外暴露私有符号 `{item.value}`。",
+                symbol=parsed.facts.module,
+                severity="warning"
+                if is_test_path(parsed.facts.path, project_name)
+                else "critical",
+                confidence="high",
+                suggestion="私有符号必须保持模块内部所有权；需要导出的定义须使用公开名称。",
+                evidence={"private_name": item.value, "export": "__all__"},
+            )
+            for item in items
+        ]
+
+    def _alias_exports(
+        self,
+        parsed: ParsedModule,
+        statement: ast.Assign | ast.AnnAssign,
+        targets: list[ast.expr],
+        declared_private: set[str],
+        project_name: str,
+    ) -> list[Finding]:
+        """拒绝把同一模块的私有变量或定义直接赋值到公开别名。"""
+        value = statement.value
+        if not isinstance(value, ast.Name) or value.id not in declared_private:
+            return []
+        exported = [
+            target
+            for target in targets
+            if isinstance(target, ast.Name) and not single_private_name(target.id)
+        ]
+        return [
+            parsed.facts.make_finding(
+                statement,
+                "QG149",
+                f"公开别名 `{target.id}` 重导出模块私有定义 `{value.id}`。",
+                symbol=parsed.facts.module,
+                severity="warning"
+                if is_test_path(parsed.facts.path, project_name)
+                else "critical",
+                confidence="high",
+                suggestion="不要为私有定义创建公开别名；确有公开契约需求时应正式公开原始定义。",
+                evidence={"private_name": value.id, "export": target.id},
+            )
+            for target in exported
+        ]
+
+    def _import_findings(
+        self,
+        parsed: ParsedModule,
+        node: ast.Import | ast.ImportFrom,
+        project_name: str = "",
+    ) -> list[Finding]:
+        """检查导入语句是否跨模块依赖单下划线 private 符号。
+
+        Args:
+            parsed: 当前已解析模块及其静态事实。
+            node: 待检查的 import 或 from-import 语句。
+            project_name: Profile 显式声明的非阻断路径归属。
+
+        Returns:
+            当前导入语句产生的 private 边界发现。
+        """
+        findings: list[Finding] = []
+        for alias in node.names:
+            local_name = alias.asname or alias.name.split(".", 1)[0]
+            private_parts = []
+            if isinstance(node, ast.ImportFrom):
+                private_parts.extend(
+                    part
+                    for part in (node.module or "").split(".")
+                    if single_private_name(part)
+                )
+            private_parts.extend(
+                part for part in alias.name.split(".") if single_private_name(part)
+            )
+            if not private_parts:
+                continue
+            test_context = is_test_path(parsed.facts.path, project_name)
+            findings.append(
+                parsed.facts.make_finding(
+                    node,
+                    "QG149",
+                    f"跨模块导入私有符号 `{alias.name}`。",
+                    symbol=parsed.facts.module,
+                    severity="warning" if test_context else "critical",
+                    confidence="high",
+                    suggestion=(
+                        "测试代码仅可为验证内部不变量或回归行为有限访问私有符号，"
+                        "不要为测试新增生产 public API；运行时代码需要正式公开接口。"
+                        if test_context
+                        else "需要被其他模块使用的函数、变量或模块应改为公开名称；"
+                        "不得通过 __init__.py、别名或 __all__ 重导出私有实现。"
+                    ),
+                    evidence={
+                        "private_parts": private_parts,
+                        "local_name": local_name,
+                        "test_context": test_context,
+                    },
+                )
+            )
+        return findings
+
+    def _attribute_findings(
+        self,
+        parsed: ParsedModule,
+        node: ast.Attribute,
+        ownership: tuple[dict[str, frozenset[str]], dict[str, tuple[str, ...]]] | None,
+        project_name: str,
+    ) -> list[Finding]:
+        """Judge private ownership after QG183 dunder policy has been handled."""
+        parents = parsed.parents
+        test_context = is_test_path(parsed.facts.path, project_name)
+        receiver = dotted_name(node.value)
+        current_class = enclosing_class_name(node, parents)
+        if not single_private_name(node.attr):
+            return []
+        allowed, inherited_private, super_access = _private_attribute_allowed(
+            parsed, node, parents, ownership or private_class_ownership([parsed])
+        )
+        if allowed:
+            return []
+        return [
+            parsed.facts.make_finding(
+                node,
+                "QG149",
+                f"外部访问私有成员 `{receiver}.{node.attr}`。",
+                symbol=parsed.facts.module,
+                severity="warning" if test_context else "critical",
+                confidence="high" if receiver else "medium",
+                suggestion=(
+                    "测试代码仅可为验证内部不变量或回归行为有限访问私有成员，"
+                    "优先集中在 Test 类、fixture 或测试模块中，不要为测试新增生产 public API。"
+                    if test_context
+                    else "单下划线方法和变量只能在定义类或模块内部使用；"
+                    "若需要被其他类或模块调用，应移除下划线并把它作为正式公开接口维护。"
+                ),
+                evidence={
+                    "receiver": receiver,
+                    "attribute": node.attr,
+                    "current_class": current_class,
+                    "inherited_private": inherited_private,
+                    "super_access": super_access,
+                    "test_context": test_context,
+                },
+            )
+        ]
+
+    def _test_reflection_findings(
+        self,
+        parsed: ParsedModule,
+        node: ast.Call,
+        facts: _ReflectionCallFacts,
+        project_name: str,
+    ) -> list[Finding]:
+        """Own the QG149 test-only dynamic private-access judgment."""
+        parents = parsed.parents
+        target, receiver, member_name = facts.target, facts.receiver, facts.member_name
+        private_member = facts.private_member
+        current_class = enclosing_class_name(node, parents)
+        allowed_private = receiver in {"self", "cls"} or bool(
+            current_class and receiver == current_class
+        )
+        if not private_member or allowed_private:
+            return []
+        return [
+            parsed.facts.make_finding(
+                node,
+                "QG149",
+                f"测试代码通过 `{target}` 动态访问私有符号 `{receiver}.{member_name}`。",
+                symbol=parsed.facts.module,
+                severity="warning",
+                confidence="high" if receiver else "medium",
+                suggestion="测试代码只可在明确回归场景中有限访问 private；不要新增测试专用 public API。",
+                evidence={
+                    "accessor": target,
+                    "receiver": receiver,
+                    "private_name": member_name,
+                    "current_class": current_class,
+                    "test_context": True,
+                    "reflection": True,
+                },
+            )
+        ]
 
 
-def _private_alias_exports(
-    parsed: ParsedModule,
-    statement: ast.Assign | ast.AnnAssign,
-    targets: list[ast.expr],
-    declared_private: set[str],
-    project_name: str,
-) -> list[Finding]:
-    """拒绝把同一模块的私有变量或定义直接赋值到公开别名。"""
-    value = statement.value
-    if not isinstance(value, ast.Name) or value.id not in declared_private:
-        return []
-    exported = [
-        target
-        for target in targets
-        if isinstance(target, ast.Name) and not single_private_name(target.id)
-    ]
-    return [
-        parsed.facts.make_finding(
-            statement,
-            "QG149",
-            f"公开别名 `{target.id}` 重导出模块私有定义 `{value.id}`。",
-            symbol=parsed.facts.module,
-            severity="warning"
-            if is_test_path(parsed.facts.path, project_name)
-            else "critical",
-            confidence="high",
-            suggestion="不要为私有定义创建公开别名；确有公开契约需求时应正式公开原始定义。",
-            evidence={"private_name": value.id, "export": target.id},
-        )
-        for target in exported
-    ]
+# One stateless rule instance shared across the whole scanner and legacy entry points.
+PRIVATE_OWNERSHIP_RULE = PrivateOwnershipRule()
 
 
 def check_private_boundary_rules(
@@ -948,7 +1160,11 @@ def check_private_boundary_rules(
                 _runtime_contract_patch_findings(parsed, node, patch_owners)
             )
         if isinstance(node, (ast.Import, ast.ImportFrom)):
-            findings.extend(check_private_import(parsed, node, project_name))
+            findings.extend(
+                PRIVATE_OWNERSHIP_RULE.evaluate(
+                    PrivateOwnershipContext(parsed, node, project_name)
+                )
+            )
             continue
         finding = None
         if isinstance(node, ast.Attribute):
@@ -969,63 +1185,32 @@ def check_private_boundary_rules(
         if finding is not None:
             findings.append(finding)
 
-    findings.extend(_module_constant_findings(parsed))
-    findings.extend(_private_export_findings(parsed, project_name))
+    findings.extend(ModuleConstantNamingRule().evaluate(parsed))
+    findings.extend(
+        PRIVATE_OWNERSHIP_RULE.evaluate(
+            PrivateOwnershipContext(parsed, parsed.tree, project_name)
+        )
+    )
     return findings
 
 
 def check_private_import(
     parsed: ParsedModule, node: ast.Import | ast.ImportFrom, project_name: str = ""
 ) -> list[Finding]:
-    """检查导入语句是否跨模块依赖单下划线 private 符号。
+    """Check an import node for illegal cross-owner private references.
 
     Args:
-        parsed: 当前已解析模块及其静态事实。
-        node: 待检查的 import 或 from-import 语句。
-        project_name: Profile 显式声明的非阻断路径归属。
+        parsed: Module AST and source identity of the importing module.
+        node: The concrete import or from-import AST node to classify.
+        project_name: Optional Profile project identity for ownership evidence.
 
     Returns:
-        当前导入语句产生的 private 边界发现。
+        QG149 Findings from the sole private-ownership evaluator; references
+        within a proven shared owner are accepted.
     """
-    findings: list[Finding] = []
-    for alias in node.names:
-        local_name = alias.asname or alias.name.split(".", 1)[0]
-        private_parts = []
-        if isinstance(node, ast.ImportFrom):
-            private_parts.extend(
-                part
-                for part in (node.module or "").split(".")
-                if single_private_name(part)
-            )
-        private_parts.extend(
-            part for part in alias.name.split(".") if single_private_name(part)
-        )
-        if not private_parts:
-            continue
-        test_context = is_test_path(parsed.facts.path, project_name)
-        findings.append(
-            parsed.facts.make_finding(
-                node,
-                "QG149",
-                f"跨模块导入私有符号 `{alias.name}`。",
-                symbol=parsed.facts.module,
-                severity="warning" if test_context else "critical",
-                confidence="high",
-                suggestion=(
-                    "测试代码仅可为验证内部不变量或回归行为有限访问私有符号，"
-                    "不要为测试新增生产 public API；运行时代码需要正式公开接口。"
-                    if test_context
-                    else "需要被其他模块使用的函数、变量或模块应改为公开名称；"
-                    "不得通过 __init__.py、别名或 __all__ 重导出私有实现。"
-                ),
-                evidence={
-                    "private_parts": private_parts,
-                    "local_name": local_name,
-                    "test_context": test_context,
-                },
-            )
-        )
-    return findings
+    return PRIVATE_OWNERSHIP_RULE.evaluate(
+        PrivateOwnershipContext(parsed, node, project_name)
+    )
 
 
 def _same_class_typed_receiver(
@@ -1112,7 +1297,6 @@ def check_private_attribute_access(
     receiver = dotted_name(node.value)
     if receiver == "os" and node.attr == "_exit":
         return None
-    current_class = enclosing_class_name(node, parents)
     if node.attr in REFLECTION_DUNDER_ATTRIBUTES:
         parent = parents.get(node)
         if isinstance(parent, ast.Call) and parent.func is node:
@@ -1137,36 +1321,10 @@ def check_private_attribute_access(
                 "test_context": False,
             },
         )
-    if not single_private_name(node.attr):
-        return None
-    allowed, inherited_private, super_access = _private_attribute_allowed(
-        parsed, node, parents, ownership or private_class_ownership([parsed])
+    results = PRIVATE_OWNERSHIP_RULE.evaluate(
+        PrivateOwnershipContext(parsed, node, project_name, ownership)
     )
-    if allowed:
-        return None
-    return parsed.facts.make_finding(
-        node,
-        "QG149",
-        f"外部访问私有成员 `{receiver}.{node.attr}`。",
-        symbol=parsed.facts.module,
-        severity="warning" if test_context else "critical",
-        confidence="high" if receiver else "medium",
-        suggestion=(
-            "测试代码仅可为验证内部不变量或回归行为有限访问私有成员，"
-            "优先集中在 Test 类、fixture 或测试模块中，不要为测试新增生产 public API。"
-            if test_context
-            else "单下划线方法和变量只能在定义类或模块内部使用；"
-            "若需要被其他类或模块调用，应移除下划线并把它作为正式公开接口维护。"
-        ),
-        evidence={
-            "receiver": receiver,
-            "attribute": node.attr,
-            "current_class": current_class,
-            "inherited_private": inherited_private,
-            "super_access": super_access,
-            "test_context": test_context,
-        },
-    )
+    return results[0] if results else None
 
 
 def _is_frozen_dataclass_init_assignment(
@@ -1274,7 +1432,6 @@ def check_dynamic_private_access(
     target = facts.target
     receiver = facts.receiver
     member_name = facts.member_name
-    private_member = facts.private_member
     if _is_frozen_dataclass_init_assignment(
         node,
         parents,
@@ -1284,30 +1441,11 @@ def check_dynamic_private_access(
     ):
         return None
     test_context = is_test_path(parsed.facts.path, project_name)
-    current_class = enclosing_class_name(node, parents)
-    allowed_private = receiver in {"self", "cls"} or bool(
-        current_class and receiver == current_class
-    )
     if test_context:
-        if not private_member or allowed_private:
-            return None
-        return parsed.facts.make_finding(
-            node,
-            "QG149",
-            f"测试代码通过 `{target}` 动态访问私有符号 `{receiver}.{member_name}`。",
-            symbol=parsed.facts.module,
-            severity="warning",
-            confidence="high" if receiver else "medium",
-            suggestion="测试代码只可在明确回归场景中有限访问 private；不要新增测试专用 public API。",
-            evidence={
-                "accessor": target,
-                "receiver": receiver,
-                "private_name": member_name,
-                "current_class": current_class,
-                "test_context": True,
-                "reflection": True,
-            },
+        results = PRIVATE_OWNERSHIP_RULE.evaluate(
+            PrivateOwnershipContext(parsed, node, project_name, reflection=facts)
         )
+        return results[0] if results else None
 
     return _production_reflection_finding(
         parsed, node, parents, facts, fixed_names_by_scope, patch_owners
@@ -1329,10 +1467,6 @@ def _production_reflection_finding(
     """
     target = facts.target
     receiver = facts.receiver
-    member_name = facts.member_name
-    private_member = facts.private_member
-    broad_reflection = facts.broad_reflection
-    invoked = facts.invoked
     receiver_node = facts.receiver_node
     receiver_root = receiver.partition(".")[0]
     scope_names: set[str] = set()
@@ -1357,31 +1491,44 @@ def _production_reflection_finding(
             )
         )
     )
-    variants = (
-        (patch_owner, "QG186", f"生产代码通过 `{target}` 在运行时修改类或模块契约。"),
-        (
-            private_member,
-            "QG183",
-            f"生产代码通过反射访问 private 成员 `{receiver}.{member_name}`。",
-        ),
-        (invoked, "QG183", f"生产代码通过 `{target}` 动态取得并调用成员。"),
-        (
-            broad_reflection,
-            "QG183",
-            f"生产代码使用 `{target}` 枚举或绕过静态成员契约。",
-        ),
-        (
-            statically_typed,
-            "QG184",
-            f"生产代码对静态契约对象使用 `{target}` 动态探测或修改成员。",
-        ),
+    context = ProductionReflectionContext(
+        parsed,
+        node,
+        facts,
+        statically_typed,
+        patch_owner,
     )
-    selected = next(
-        ((code, message) for enabled, code, message in variants if enabled), None
-    )
-    if selected is None:
-        return None
-    code, message = selected
+    for rule in (
+        RuntimeContractPatchRule(),
+        PrivateReflectionRule(),
+        TypedReflectionRule(),
+    ):
+        findings = rule.evaluate(context)
+        if findings:
+            return findings[0]
+    return None
+
+
+@dataclass(frozen=True)
+class ProductionReflectionContext:
+    """Once-resolved reflection target, owner and lexical type evidence.
+
+    Fields: parsed, node, reflection, statically_typed, patch_owner."""
+
+    parsed: ParsedModule
+    node: ast.Call
+    reflection: _ReflectionCallFacts
+    statically_typed: bool
+    patch_owner: bool
+
+
+def _reflection_finding(
+    context: ProductionReflectionContext,
+    code: str,
+    message: str,
+) -> Finding:
+    """Render the unchanged observable envelope shared by reflection owners."""
+    parsed, node, facts = context.parsed, context.node, context.reflection
     is_critical = code != "QG184"
     return parsed.facts.make_finding(
         node,
@@ -1390,7 +1537,10 @@ def _production_reflection_finding(
         symbol=parsed.facts.module,
         severity="critical" if is_critical else "error",
         confidence="high"
-        if member_name or invoked or broad_reflection or statically_typed
+        if facts.member_name
+        or facts.invoked
+        or facts.broad_reflection
+        or context.statically_typed
         else "medium",
         suggestion=(
             "运行时改类/模块契约、反射调用和 private 反射不可解释保留；"
@@ -1400,17 +1550,97 @@ def _production_reflection_finding(
             "或用 Protocol、联合类型和显式 Optional 契约表达可选性。"
         ),
         evidence={
-            "accessor": target,
-            "receiver": receiver,
-            "member_name": member_name,
-            "private_member": private_member,
-            "invoked": invoked,
-            "broad_reflection": broad_reflection,
-            "statically_typed": statically_typed,
-            "runtime_contract_patch": patch_owner,
+            "accessor": facts.target,
+            "receiver": facts.receiver,
+            "member_name": facts.member_name,
+            "private_member": facts.private_member,
+            "invoked": facts.invoked,
+            "broad_reflection": facts.broad_reflection,
+            "statically_typed": context.statically_typed,
+            "runtime_contract_patch": context.patch_owner,
             "test_context": False,
         },
     )
+
+
+class RuntimeContractPatchRule(CoreQualityRule[ProductionReflectionContext]):
+    """QG186 owns proven runtime modification of a class/module contract.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG186"
+
+    def evaluate(self, context: ProductionReflectionContext) -> list[Finding]:
+        """Evaluate QG186 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        if not context.patch_owner:
+            return []
+        target = context.reflection.target
+        return [
+            _reflection_finding(
+                context,
+                self.code,
+                f"生产代码通过 `{target}` 在运行时修改类或模块契约。",
+            )
+        ]
+
+
+class PrivateReflectionRule(CoreQualityRule[ProductionReflectionContext]):
+    """QG183 owns private, invoked and broad reflection under one priority.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG183"
+
+    def evaluate(self, context: ProductionReflectionContext) -> list[Finding]:
+        """Evaluate QG183 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.reflection
+        if facts.private_member:
+            message = f"生产代码通过反射访问 private 成员 `{facts.receiver}.{facts.member_name}`。"
+        elif facts.invoked:
+            message = f"生产代码通过 `{facts.target}` 动态取得并调用成员。"
+        elif facts.broad_reflection:
+            message = f"生产代码使用 `{facts.target}` 枚举或绕过静态成员契约。"
+        else:
+            return []
+        return [_reflection_finding(context, self.code, message)]
+
+
+class TypedReflectionRule(CoreQualityRule[ProductionReflectionContext]):
+    """QG184 owns reflection on an explicitly constrained receiver.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG184"
+
+    def evaluate(self, context: ProductionReflectionContext) -> list[Finding]:
+        """Evaluate QG184 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        if not context.statically_typed:
+            return []
+        return [
+            _reflection_finding(
+                context,
+                self.code,
+                f"生产代码对静态契约对象使用 `{context.reflection.target}` 动态探测或修改成员。",
+            )
+        ]
 
 
 def single_private_name(name: str) -> bool:

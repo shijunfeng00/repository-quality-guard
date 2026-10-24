@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from .audit_target import (
     apply_audit_mode,
     git_stdout,
 )
+from .baseline_parallel import GitBaselineTask
 from .analysis_snapshot import (
     RepositoryAnalysisSnapshot,
     directory_analysis_snapshot,
@@ -40,8 +42,18 @@ from .config import GuardConfig, is_test_path
 from .fallback_laundering import fallback_laundering_findings
 from .integrity import INTEGRITY_RULE_CODE, verify_release_integrity
 from .interface_diff import GitWorktreeInterfaceComparator, PythonInterfaceExtractor
+from .interface_policy_rules import (
+    InterfaceChangeReviewRule,
+    InterfaceDefinitionGrowthRule,
+    InterfaceGrowthContext,
+)
 from .interface_visibility import filter_interface_symbols, resolve_import_aliases
 from .multilang import multilang_findings
+from .baseline_regression_rules import (
+    DocstringRegressionRule,
+    QualityFingerprintRegressionRule,
+    QualityRegressionContext,
+)
 from .model import (
     Finding,
     InterfaceChange,
@@ -79,7 +91,8 @@ from .relation_graph import (
 )
 from .python_dependency_facts import StaticPythonDependencyResolver
 from .ruff_runner import RuffRunner
-from .scanner import RepositoryScanner
+from .scanner import RepositoryScanner, snapshot_only_rule_findings
+from .scoped_rule_policy import ScopedRuleMatcher
 from .semantic_heuristic_candidates import semantic_heuristic_candidate_findings
 from .semantic_review import annotate_semantic_review, semantic_review_key
 
@@ -103,7 +116,8 @@ def _filter_test_quality_findings(
             fnmatch(Path(item.path).as_posix().lstrip("./"), pattern)
             for pattern in passthrough_patterns
         )
-        or item.code in {"QG000", "QG149"}
+        or item.code
+        in {"QG000", "QG149", "QG240", "QG241", "QG242", "QG243", "QG244", "QG245", "QG246"}
         or item.source in {"ruff", "integration"}
     ]
 
@@ -223,7 +237,13 @@ def _apply_focus(report: ScanReport, target: AuditTarget) -> ScanReport:
     return report
 
 
-def _apply_rule_level(item: Finding, config: GuardConfig) -> Finding | None:
+def _apply_rule_level(
+    item: Finding,
+    config: GuardConfig,
+    matcher: ScopedRuleMatcher | None = None,
+    disabled: frozenset[str] | None = None,
+    levels: Mapping[str, str] | None = None,
+) -> Finding | None:
     """Apply one declarative Profile rule level without changing core rule ownership.
 
     ``SEMANTIC`` remains an Info finding but is forced into the semantic-review
@@ -231,10 +251,15 @@ def _apply_rule_level(item: Finding, config: GuardConfig) -> Finding | None:
     independent absolute-blocker marker; this preserves the historical meaning
     that Critical is baseline-aware while Blocker is not.
     """
-    if item.code in frozenset(config.disabled_rules):
+    disabled_codes = (
+        disabled if disabled is not None else frozenset(config.disabled_rules)
+    )
+    if item.code in disabled_codes or (
+        matcher is not None and matcher.matches(item.code, item.path, item.line)
+    ):
         return None
-    levels = dict(config.profile_rule_levels)
-    level = levels.get(item.code)
+    rule_levels = levels if levels is not None else dict(config.profile_rule_levels)
+    level = rule_levels.get(item.code)
     if not level:
         return item
     evidence = dict(item.evidence)
@@ -254,16 +279,25 @@ def _apply_rule_level(item: Finding, config: GuardConfig) -> Finding | None:
 
 def _apply_profile_rule_policy(report: ScanReport, config: GuardConfig) -> None:
     """Apply declarative disable/level policy before baseline and static gating."""
+    matcher = (
+        ScopedRuleMatcher(report.root, config.profile_scoped_rule_disables)
+        if config.profile_scoped_rule_disables
+        else None
+    )
+    disabled = frozenset(config.disabled_rules)
+    levels = dict(config.profile_rule_levels)
     report.findings = [
         mapped
         for item in report.findings
-        if (mapped := _apply_rule_level(item, config)) is not None
+        if (mapped := _apply_rule_level(item, config, matcher, disabled, levels))
+        is not None
     ]
     if report.interface_diff is not None:
         contract_findings = tuple(
             mapped
             for item in report.interface_diff.contract_findings
-            if (mapped := _apply_rule_level(item, config)) is not None
+            if (mapped := _apply_rule_level(item, config, matcher, disabled, levels))
+            is not None
         )
         report.interface_diff = replace(
             report.interface_diff,
@@ -308,17 +342,19 @@ def _profile_custom_findings(
         return []
     findings: list[Finding] = []
     disabled = frozenset(ctx.config.disabled_rules)
+    scoped = {item.code for item in ctx.config.profile_scoped_rule_disables}
     for rule_cls in profile.custom_rules:
         rule = rule_cls()
         code = profile.rule_codes.get(rule.key)
         if not code:
             raise ValueError(f"custom rule {rule.key!r} has no frozen QG code")
-        if code in disabled:
+        if code in disabled or code in scoped:
             if not rule.suppressible:
                 raise ValueError(
                     f"custom rule {rule.key!r} ({code}) is not suppressible"
                 )
-            continue
+            if code in disabled:
+                continue
         for item in rule.evaluate(ctx):
             if not isinstance(item, Finding):
                 raise TypeError(f"custom rule {rule.key!r} must yield Finding objects")
@@ -418,10 +454,23 @@ def _baseline_target(target: AuditTarget, baseline_root: Path) -> AuditTarget:
 _BASELINE_CACHE_SCHEMA = "repository-quality-guard/baseline-cache-v3"
 
 
-def _baseline_cache_path(
+def baseline_cache_path(
     target: AuditTarget, config: GuardConfig, revision: str
 ) -> Path | None:
-    """返回不可变 Git revision 质量基线的安全缓存路径。"""
+    """Key immutable baseline cache entries by revision, policy and scan scope.
+
+    A resolved Git commit, release seal, target root, effective GuardConfig and
+    focused paths all contribute to the cache identity; unknown refs bypass it.
+
+    Args:
+        target: Repository and optional focus paths for the baseline scan.
+        config: Effective policy whose findings are preserved in the cache.
+        revision: Git revision to resolve to an immutable commit object.
+
+    Returns:
+        Content-addressed baseline cache path, or None when Git cannot
+        resolve revision to a commit.
+    """
     resolved_revision = git_stdout(
         target.root, ("rev-parse", "--verify", f"{revision}^{{commit}}")
     )
@@ -488,10 +537,21 @@ def _baseline_from_payload(payload: dict[str, object]) -> QualityBaseline:
     )
 
 
-def _load_baseline_cache(
+def load_baseline_cache(
     path: Path | None,
 ) -> tuple[QualityBaseline, QualityBaseline] | None:
-    """读取不可变 Git 基线缓存；缺失或版本过期时重新计算。"""
+    """Read a previously frozen pair of production and test baselines.
+
+    The cache stores two independently classified QualityBaseline records;
+    absent files or an older payload schema are cache misses, not findings.
+
+    Args:
+        path: Cache file selected from the revision/policy fingerprint, or
+            None for an uncacheable revision.
+
+    Returns:
+        Production and test baselines on a valid cache hit; otherwise None.
+    """
     if path is None or not path.is_file():
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -528,6 +588,7 @@ def _compute_git_baseline(
     config: GuardConfig,
     revision: str,
     profile: ProjectProfile | None = None,
+    revision_snapshot: RepositoryAnalysisSnapshot | None = None,
 ) -> tuple[QualityBaseline, QualityBaseline]:
     """重新计算指定 Git revision 的生产代码与测试代码质量基线。
 
@@ -562,16 +623,27 @@ def _compute_git_baseline(
         baseline_target = _baseline_target(target, baseline_root)
         production_config = config.with_overrides(include_tests=False)
         test_config = config.with_overrides(include_tests=True)
-        baseline_analysis = directory_analysis_snapshot(baseline_root, config)
+        # The same Git revision was already parsed for interface and relation
+        # comparison in scan_target. Rebind only the physical repository root:
+        # the immutable source/AST units belong to the identical Git archive.
+        # Direct baseline callers still parse the extracted directory normally.
+        if revision_snapshot is not None:
+            if revision_snapshot.label != revision:
+                raise RuntimeError("Git baseline snapshot revision mismatch")
+            baseline_analysis = replace(revision_snapshot, root=baseline_root)
+        else:
+            baseline_analysis = directory_analysis_snapshot(baseline_root, config)
         baseline_topology = normalized_topology(
             RepositoryRelationGraph(baseline_analysis),
             StaticPythonDependencyResolver.from_environment(),
         )
+        shared_snapshot_findings = snapshot_only_rule_findings(baseline_analysis)
         production_scanner = RepositoryScanner(
             baseline_root,
             production_config,
             baseline_analysis,
             baseline_topology,
+            shared_snapshot_findings,
         )
         production_report = production_scanner.scan()
         baseline_architecture_findings = single_use_chain_findings(
@@ -630,6 +702,7 @@ def _compute_git_baseline(
             baseline_root,
             test_config,
             baseline_analysis,
+            shared_snapshot_findings=shared_snapshot_findings,
         )
         test_files = {
             path
@@ -717,18 +790,35 @@ def _compute_git_baseline(
         )
 
 
-def _scan_git_baseline(
+def scan_git_baseline(
     target: AuditTarget,
     config: GuardConfig,
     revision: str,
     profile: ProjectProfile | None = None,
+    revision_snapshot: RepositoryAnalysisSnapshot | None = None,
 ) -> tuple[QualityBaseline, QualityBaseline]:
-    """读取不可变 Git 基线缓存，未命中时完整计算并原子保存。"""
-    cache_path = _baseline_cache_path(target, config, revision)
-    cached = _load_baseline_cache(cache_path)
+    """Produce both baseline ledgers for one immutable Git revision.
+
+    Preserve the production/test distinction and reuse a compatible cache;
+    on a miss, scan the frozen source and atomically write the resulting pair.
+
+    Args:
+        target: Repository whose revision is being compared to the worktree.
+        config: Effective scan policy for the frozen revision.
+        revision: Commit-ish to resolve and label both baseline ledgers.
+        profile: Optional resolved project Profile for the baseline scan.
+        revision_snapshot: Optional prebuilt immutable AST/source snapshot.
+
+    Returns:
+        A tuple of production and test QualityBaseline records.
+    """
+    cache_path = baseline_cache_path(target, config, revision)
+    cached = load_baseline_cache(cache_path)
     if cached is not None:
         return cached
-    production, test = _compute_git_baseline(target, config, revision, profile)
+    production, test = _compute_git_baseline(
+        target, config, revision, profile, revision_snapshot
+    )
     _write_baseline_cache(cache_path, production, test)
     return production, test
 
@@ -780,59 +870,6 @@ def _annotate_interface_changes(
         else:
             annotated.append(original)
     return replace(interface_diff, changes=tuple(annotated))
-
-
-def _interface_policy_finding(change: InterfaceChange) -> Finding:
-    """把一条新增或存量接口声明变化转换为 QG180。"""
-    symbol = change.after or change.before
-    is_addition = change.change == "added"
-    policy = change.details.get("interface_policy", {})
-    promoted_from = policy.get("visibility_promotion_from", "")
-    property_added = bool(policy.get("property_added"))
-    property_changed = bool(policy.get("property_decorator_changed"))
-    changed_fields = "、".join(sorted(change.details)) or "声明"
-    message = f"存量 `{change.kind}` 接口 `{change.symbol}` 的声明发生变化：{changed_fields}。"
-    if "parameters" in change.details:
-        message = f"存量 `{change.kind}` 接口 `{change.symbol}` 的参数列表发生变化。"
-    if property_changed:
-        message = f"存量接口 `{change.symbol}` 的 property/装饰器形态发生变化。"
-    if is_addition:
-        message = f"新增生产 `{change.kind}` 接口 `{change.symbol}`，必须完成减法审判。"
-    if property_added:
-        message = f"新增生产 property 接口 `{change.symbol}`，必须完成接口必要性审判。"
-    if promoted_from:
-        message = (
-            f"生产接口 `{promoted_from}` 被提升为 public `{change.symbol}`，"
-            "属于函数权限与接口契约变更。"
-        )
-    return Finding(
-        code="QG180",
-        severity="warning",
-        confidence="high",
-        path=change.path,
-        line=symbol.line if symbol is not None else 1,
-        column=1,
-        symbol=change.symbol,
-        message=message,
-        suggestion=(
-            "先尝试删除、内联、合并或复用；保留时必须逐项证明绝对必要性、"
-            "不可替代性、唯一职责、调用链和新鲜验证。private→public 与 @property "
-            "不能用‘方便调用’解释。"
-            if is_addition
-            else "逐项证明为何绝对不能保持原接口，核对全部调用方、兼容性、"
-            "README/Prompt/配置与测试，并给出不可替代方案和新鲜验证。"
-        ),
-        evidence={
-            "interface_change": change.change,
-            "interface_kind": change.kind,
-            "details": change.details,
-            "visibility_promotion_from": promoted_from,
-            "property_added": property_added,
-            "property_decorator_changed": property_changed,
-            "qg179_exempt": True,
-            "governed_by": "QG181" if is_addition else "report-interface-review",
-        },
-    )
 
 
 def _run_interface_diff(
@@ -898,44 +935,15 @@ def _run_interface_diff(
         if change.change == "modified" and change.kind in _INTERFACE_DEFINITION_KINDS
     ]
     policy_findings = [
-        _interface_policy_finding(change)
+        finding
         for change in (*added, *interface_review_changes)
+        for finding in InterfaceChangeReviewRule().evaluate(change)
     ]
-    interface_net = len(added) - len(removed)
-    if interface_net > 0:
-        first = added[0]
-        first_symbol = first.after or first.before
-        policy_findings.append(
-            Finding(
-                code="QG181",
-                severity="warning",
-                confidence="high",
-                path=first.path,
-                line=first_symbol.line if first_symbol is not None else 1,
-                column=1,
-                symbol="repository.interface_definition_balance",
-                message=(
-                    "生产函数/方法/类净增加，触发接口膨胀人工复核："
-                    f"新增 {len(added)}，删除 {len(removed)}，净额 +{interface_net}。"
-                ),
-                suggestion=(
-                    "优先继续删除、内联、合并或复用；确需保留时必须逐项完成必要性审判，"
-                    "并由用户人工确认后再决定是否提交。删除项无需解释删除理由。"
-                ),
-                evidence={
-                    "added": [
-                        f"{item.kind}:{item.path}:{item.symbol}" for item in added
-                    ],
-                    "removed": [
-                        f"{item.kind}:{item.path}:{item.symbol}" for item in removed
-                    ],
-                    "added_count": len(added),
-                    "removed_count": len(removed),
-                    "net": interface_net,
-                    "qg179_exempt": True,
-                },
-            )
+    policy_findings.extend(
+        InterfaceDefinitionGrowthRule().evaluate(
+            InterfaceGrowthContext(tuple(added), tuple(removed))
         )
+    )
     return replace(
         interface_diff,
         contract_findings=(*interface_diff.contract_findings, *policy_findings),
@@ -1076,194 +1084,35 @@ def integrity_gate() -> int | None:
 
 
 def _append_docstring_regression_finding(report: ScanReport) -> None:
-    """在当前树新增未记录 docstring 的定义时追加聚合 Critical。
-
-    覆盖门禁比较缺失 docstring 的稳定问题指纹，而不是覆盖率百分比。删除
-    已记录 helper、缩短仍然准确的 docstring 或改变统计分母都不会构成回归；
-    docstring 结构完整性仍由 QG028/QG030 等逐定义规则独立审计。
-
-    Args:
-        report: 已完成当前代码与 Git 基线扫描的生产报告。
-
-    Returns:
-        None。
-    """
-    baseline = report.baseline
-    if baseline is None:
-        return
-    baseline_missing = {
-        fingerprint
-        for fingerprint in baseline.finding_severities
-        if ":QG027:" in fingerprint
-    }
-    current_missing = {
-        finding.fingerprint: finding
-        for finding in report.findings
-        if finding.code == "QG027"
-    }
-    introduced = sorted(set(current_missing) - baseline_missing)
-    if not introduced:
-        return
-    introduced_findings = [current_missing[fingerprint] for fingerprint in introduced]
-    symbols = [
-        finding.symbol or f"{finding.path}:{finding.line}"
-        for finding in introduced_findings
-    ]
-    report.findings.append(
-        Finding(
-            code="QG169",
-            severity="critical",
-            confidence="high",
-            path=".",
-            line=1,
-            column=1,
-            symbol="repository.missing_docstrings",
-            message=(
-                f"相对 Git 基线 `{baseline.revision}` 新增 "
-                f"{len(introduced_findings)} 个缺失 docstring 的生产定义。"
-            ),
-            suggestion=(
-                "为新增缺失定义补充准确 docstring，或删除不必要定义。覆盖率百分比仅展示，"
-                "不得通过扩写无关 docstring 抵消缺失对象。"
-            ),
-            evidence={
-                "baseline_revision": baseline.revision,
-                "introduced_missing_count": len(introduced_findings),
-                "introduced_missing_symbols": symbols,
-                "introduced_missing_fingerprints": introduced,
-                "baseline_coverage_percent": baseline.docstring_coverage,
-                "current_coverage_percent": report.docstring_coverage,
-                "coverage_percent_is_informational": True,
-            },
+    """Delegate QG169 baseline evaluation to its sole rule owner."""
+    findings = DocstringRegressionRule().evaluate(report)
+    if findings:
+        report.findings.extend(findings)
+        report.findings.sort(
+            key=lambda item: (
+                -SEVERITY_RANK[item.severity],
+                item.path,
+                item.line,
+                item.code,
+            )
         )
-    )
-    report.findings.sort(
-        key=lambda item: (
-            -SEVERITY_RANK[item.severity],
-            item.path,
-            item.line,
-            item.code,
-        )
-    )
 
 
 def _append_quality_count_regression_finding(report: ScanReport) -> None:
-    """逐项拒绝相对 Git 基线新增或升级的三档问题。
-
-    历史问题的删除或降级只作为债务削减事实记录，绝不能抵消本轮新增问题。
-    QG180/QG181 和项目核心协议 QG182 属于接口专用账本，由接口净额或
-    修改说明语义门禁独立裁决，避免与 QG179 对同一接口变化重复计罪。
-    """
-    baseline = report.baseline
-    if baseline is None:
-        return
-    severities = ("critical", "error", "warning")
-    current_counts = dict.fromkeys(severities, 0)
-    current_findings: dict[str, Finding] = {}
-    for finding in report.findings:
-        if any(
-            (
-                finding.code.startswith("QG98"),
-                finding.code == "QG179",
-                finding.code in _INTERFACE_POLICY_CODES,
-                finding.evidence.get("qg179_exempt") is True,
-                finding.severity not in current_counts,
-            )
-        ):
-            continue
-        current_counts[finding.severity] += 1
-        current_findings[finding.fingerprint] = finding
-    report.quality_count_deltas = {
-        severity: current_counts[severity] - baseline.summary[severity]
-        for severity in severities
-    }
-
-    introduced: list[Finding] = []
-    worsened: list[tuple[Finding, str]] = []
-    rank = {"warning": 1, "error": 2, "critical": 3}
-    for fingerprint, finding in current_findings.items():
-        previous = baseline.finding_severities.get(fingerprint)
-        if previous is None:
-            introduced.append(finding)
-        elif rank[finding.severity] > rank[previous]:
-            worsened.append((finding, previous))
-    if all((not introduced, not worsened)):
-        return
-
-    introduced_counts = dict.fromkeys(severities, 0)
-    worsened_counts = dict.fromkeys(severities, 0)
-    for finding in introduced:
-        introduced_counts[finding.severity] += 1
-    for finding, _previous in worsened:
-        worsened_counts[finding.severity] += 1
-    detail_parts = []
-    for severity in severities:
-        count = introduced_counts[severity]
-        upgraded = worsened_counts[severity]
-        if any((count, upgraded)):
-            detail_parts.append(
-                f"{severity.upper()} 新增 {count}、升级至该档 {upgraded}"
-            )
-    report.findings.append(
-        Finding(
-            code="QG179",
-            severity="critical",
-            confidence="high",
-            path=".",
-            line=1,
-            column=1,
-            symbol="repository.quality_fingerprint_regression",
-            message=(
-                f"相对 Git 基线 `{baseline.revision}` 检测到不可抵消的新增或升级问题："
-                + "；".join(detail_parts)
-                + "。历史债务减少不抵消本轮回归。"
-            ),
-            suggestion=(
-                "本门禁不可由修改说明或历史债务削减豁免。必须删除、修复或回退每一项"
-                " INTRODUCED/WORSENED 问题后重新扫描。"
-            ),
-            evidence={
-                "comparison_mode": report.comparison_mode,
-                "comparison_target": report.comparison_target,
-                "baseline_counts": {
-                    severity: baseline.summary[severity] for severity in severities
-                },
-                "current_counts": current_counts,
-                "raw_count_delta": dict(report.quality_count_deltas),
-                "introduced": [
-                    {
-                        "fingerprint": finding.fingerprint,
-                        "code": finding.code,
-                        "severity": finding.severity,
-                        "path": finding.path,
-                        "line": finding.line,
-                        "symbol": finding.symbol,
-                    }
-                    for finding in introduced
-                ],
-                "worsened": [
-                    {
-                        "fingerprint": finding.fingerprint,
-                        "code": finding.code,
-                        "baseline_severity": previous,
-                        "current_severity": finding.severity,
-                        "path": finding.path,
-                        "line": finding.line,
-                        "symbol": finding.symbol,
-                    }
-                    for finding, previous in worsened
-                ],
-            },
-        )
+    """Delegate QG179 baseline evaluation to its sole rule owner."""
+    findings = QualityFingerprintRegressionRule().evaluate(
+        QualityRegressionContext(report, _INTERFACE_POLICY_CODES)
     )
-    report.findings.sort(
-        key=lambda item: (
-            -SEVERITY_RANK[item.severity],
-            item.path,
-            item.line,
-            item.code,
+    if findings:
+        report.findings.extend(findings)
+        report.findings.sort(
+            key=lambda item: (
+                -SEVERITY_RANK[item.severity],
+                item.path,
+                item.line,
+                item.code,
+            )
         )
-    )
 
 
 def _apply_git_quality_baseline(
@@ -1272,11 +1121,15 @@ def _apply_git_quality_baseline(
     revision: str,
     report: ScanReport,
     profile: ProjectProfile | None = None,
+    revision_snapshot: RepositoryAnalysisSnapshot | None = None,
+    baseline_task: GitBaselineTask | None = None,
 ) -> None:
     """扫描并应用生产/测试 Git 质量基线及不可豁免退化门禁。"""
     try:
-        production_baseline, test_baseline = _scan_git_baseline(
-            target, config, revision, profile
+        production_baseline, test_baseline = (
+            baseline_task.result(revision)
+            if baseline_task is not None
+            else scan_git_baseline(target, config, revision, profile, revision_snapshot)
         )
     except RuntimeError as error:
         report.baseline_error = str(error)
@@ -1287,8 +1140,9 @@ def _apply_git_quality_baseline(
     _append_quality_count_regression_finding(report)
 
 
-def scan_target(
+def _scan_target_impl(
     args: argparse.Namespace,
+    baseline_task: GitBaselineTask,
 ) -> tuple[AuditTarget, ScanReport, InterfaceDiffReport]:
     """
     执行目标解析、生产/测试分账扫描、Git 差分、Ruff 与基线计算。
@@ -1316,8 +1170,31 @@ def scan_target(
         selection = _profile_selection(target.root, scan_args.profile)
     scan_args.profile = selection.reference
     profile = get_project_profile(scan_args.profile)
+    if target.git_enabled and scan_args.staged:
+        staged_config = subprocess.run(
+            ["git", "show", ":pyproject.toml"],
+            cwd=target.root,
+            capture_output=True,
+            check=False,
+        )
+        if staged_config.returncode == 0:
+            with tempfile.TemporaryDirectory(prefix="rqg-staged-config-") as config_dir:
+                (Path(config_dir) / "pyproject.toml").write_bytes(staged_config.stdout)
+                source_config = GuardConfig.load(Path(config_dir))
+        else:
+            indexed_files = subprocess.run(
+                ["git", "ls-files", "--cached", "--", "pyproject.toml"],
+                cwd=target.root,
+                capture_output=True,
+                check=False,
+            )
+            if indexed_files.returncode != 0 or indexed_files.stdout.strip():
+                raise RuntimeError("无法读取已暂存的 pyproject.toml 配置")
+            source_config = GuardConfig()
+    else:
+        source_config = GuardConfig.load(target.root)
     base_config = apply_project_profile(
-        GuardConfig.load(target.root),
+        source_config,
         scan_args.profile,
         selection_source=selection.source,
     )
@@ -1335,11 +1212,26 @@ def scan_target(
         if target.git_enabled
         else None
     )
+    if target.git_enabled and base_analysis is not None:
+        baseline_task.start(
+            target,
+            base_config,
+            scan_args.diff_base,
+            scan_args.profile or "",
+            base_analysis,
+            cached=load_baseline_cache(
+                baseline_cache_path(target, base_config, scan_args.diff_base)
+            ),
+        )
     comparison_analysis = (
         index_analysis_snapshot(target.root, base_config)
         if target.git_enabled and scan_args.staged
         else current_analysis
     )
+    # The staged target is the INDEX, including its test source.  A working
+    # tree scan here would silently approve an invalid staged test when the
+    # corresponding file has already been fixed but not re-staged.
+    active_analysis = comparison_analysis
     interface_diff = _run_interface_diff(
         target,
         base_config,
@@ -1349,7 +1241,7 @@ def scan_target(
         profile=profile,
     )
 
-    current_relation_graph = RepositoryRelationGraph(current_analysis)
+    current_relation_graph = RepositoryRelationGraph(active_analysis)
     production_topology = normalized_topology(
         current_relation_graph, StaticPythonDependencyResolver.from_environment()
     )
@@ -1376,17 +1268,19 @@ def scan_target(
         production_topology = replace(
             production_topology,
             compiler_diagnostics=r2_initialization_observations(
-                current_analysis,
+                active_analysis,
                 checker["observations"],
                 production_topology,
                 provider_identity=provider_identity,
             ),
         )
+    shared_snapshot_findings = snapshot_only_rule_findings(active_analysis)
     production_scanner = RepositoryScanner(
         target.root,
         production_config,
-        current_analysis,
+        active_analysis,
         production_topology,
+        shared_snapshot_findings,
     )
     selected_files = (
         set(target.focus_files)
@@ -1409,7 +1303,7 @@ def scan_target(
         merge_findings(
             report,
             r1_bound_call_findings(
-                current_analysis, witnesses, provider_identity=provider_identity
+                active_analysis, witnesses, provider_identity=provider_identity
             ),
         )
     report.interface_diff = interface_diff
@@ -1445,7 +1339,11 @@ def scan_target(
     )
 
     test_scanner = RepositoryScanner(
-        target.root, test_config, current_analysis, production_topology
+        target.root,
+        test_config,
+        active_analysis,
+        production_topology,
+        shared_snapshot_findings,
     )
     test_files = {
         path
@@ -1501,11 +1399,6 @@ def scan_target(
                         if profile is not None
                         else ()
                     ),
-                    authorization_path=(
-                        profile.semantic_authorization_path
-                        if profile is not None
-                        else ""
-                    ),
                     target_analysis=comparison_analysis,
                 )
             )
@@ -1533,12 +1426,63 @@ def scan_target(
         interface_diff,
     )
 
-    ruff_runner = RuffRunner(
-        target.root,
-        cache_root=_cache_root(),
-        environment=os.environ,
-    )
-    ruff_findings = ruff_runner.run(check_format=True)
+    # Ruff must analyze the same Git INDEX revision as the AST scanner.  A
+    # working-tree Ruff invocation here can silently approve an invalid
+    # staged file or reject an unstaged edit that is not part of the change.
+    if scan_args.staged:
+        with tempfile.TemporaryDirectory(prefix="rqg-ruff-index-") as index_dir:
+            checkout = subprocess.run(
+                ["git", "checkout-index", "--all", f"--prefix={index_dir}/"],
+                cwd=target.root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
+                check=False,
+            )
+            if checkout.returncode != 0:
+                raise RuntimeError(
+                    "Git INDEX Ruff 快照构建失败: "
+                    + (checkout.stderr.strip() or f"exit={checkout.returncode}")
+                )
+            index_root = Path(index_dir)
+            git_dir = subprocess.run(
+                ["git", "rev-parse", "--absolute-git-dir"],
+                cwd=target.root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
+                check=False,
+            )
+            if git_dir.returncode != 0:
+                raise RuntimeError(
+                    "无法解析 staged 快照的 Git metadata: " + git_dir.stderr.strip()
+                )
+            (index_root / ".git").write_text(
+                f"gitdir: {git_dir.stdout.strip()}\n", encoding="utf-8"
+            )
+            ruff_findings = RuffRunner(
+                index_root, cache_root=_cache_root(), environment=os.environ
+            ).run(check_format=True)
+            identity_findings = release_identity_findings(index_root, production_config)
+            custom_findings = _profile_custom_findings(
+                profile,
+                RuleContext(
+                    root=index_root,
+                    config=production_config,
+                    analysis=comparison_analysis,
+                    base_analysis=base_analysis,
+                    interface_diff=interface_diff,
+                    diff_base=scan_args.diff_base,
+                    staged=True,
+                ),
+            )
+    else:
+        ruff_findings = RuffRunner(
+            target.root, cache_root=_cache_root(), environment=os.environ
+        ).run(check_format=True)
+        identity_findings = release_identity_findings(target.root, production_config)
     merge_findings(
         report,
         (
@@ -1562,22 +1506,22 @@ def scan_target(
     )
     merge_findings(report, language_findings)
     report.multilang_summary = language_summary
-    identity_findings = release_identity_findings(target.root, production_config)
     # QG203/QG205 are semantic candidates regardless of whether the evidence
     # lives in production code, tests, fixtures or configuration.
     merge_findings(report, identity_findings)
-    custom_findings = _profile_custom_findings(
-        profile,
-        RuleContext(
-            root=target.root,
-            config=production_config,
-            analysis=comparison_analysis,
-            base_analysis=base_analysis,
-            interface_diff=interface_diff,
-            diff_base=scan_args.diff_base,
-            staged=scan_args.staged,
-        ),
-    )
+    if not scan_args.staged:
+        custom_findings = _profile_custom_findings(
+            profile,
+            RuleContext(
+                root=target.root,
+                config=production_config,
+                analysis=comparison_analysis,
+                base_analysis=base_analysis,
+                interface_diff=interface_diff,
+                diff_base=scan_args.diff_base,
+                staged=scan_args.staged,
+            ),
+        )
     merge_findings(
         report,
         (
@@ -1610,9 +1554,33 @@ def scan_target(
 
     if target.git_enabled:
         _apply_git_quality_baseline(
-            target, base_config, scan_args.diff_base, report, profile
+            target,
+            base_config,
+            scan_args.diff_base,
+            report,
+            profile,
+            base_analysis,
+            baseline_task=baseline_task,
         )
     return target, report, interface_diff
+
+
+def scan_target(
+    args: argparse.Namespace,
+) -> tuple[AuditTarget, ScanReport, InterfaceDiffReport]:
+    """Scan the requested repository while owning the baseline child lifetime.
+
+    A context-managed GitBaselineTask overlaps frozen baseline analysis with
+    the current scan, then cleans up the child even on scanner failure.
+
+    Args:
+        args: Parsed CLI scan arguments, including diff base and Profile.
+
+    Returns:
+        Resolved AuditTarget, completed ScanReport and interface delta report.
+    """
+    with GitBaselineTask() as baseline_task:
+        return _scan_target_impl(args, baseline_task)
 
 
 def _review_required_notice(

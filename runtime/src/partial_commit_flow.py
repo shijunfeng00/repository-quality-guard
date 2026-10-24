@@ -11,6 +11,7 @@ import ast
 import hashlib
 
 from .analysis_snapshot import RepositoryAnalysisSnapshot
+from .core_rule_contract import CoreQualityRule
 from .model import Finding
 
 
@@ -132,111 +133,138 @@ def _returns_without_reraise(handler: ast.ExceptHandler) -> bool:
     )
 
 
+class PartialCommitRule(CoreQualityRule[RepositoryAnalysisSnapshot]):
+    """Detect QG213 potentially non-atomic state writes before swallowed errors.
+
+    Walk frozen AST statements in lexical order and preserve exact code-site
+    evidence only when a handler returns without re-raising or rollback.
+    """
+
+    code = "QG213"
+
+    def evaluate(self, snapshot: RepositoryAnalysisSnapshot) -> list[Finding]:
+        """Emit conditional R3 witnesses from the frozen source, not runtime guesses.
+
+        Args:
+            snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+
+        Returns:
+            Conditional risks where separately proven writes can leave state partially committed."""
+        findings: list[Finding] = []
+        for path in snapshot.paths:
+            unit = snapshot.units[path]
+            if unit.tree is None:
+                continue
+            # A locally shadowed set()/dict() call has no certified built-in type.
+            if any(
+                isinstance(part, ast.Name)
+                and isinstance(part.ctx, (ast.Store, ast.Del))
+                and part.id in {"set", "dict"}
+                or isinstance(
+                    part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                )
+                and part.name in {"set", "dict"}
+                or isinstance(part, ast.arg)
+                and part.arg in {"set", "dict"}
+                or isinstance(part, (ast.Import, ast.ImportFrom))
+                and any(alias.asname in {"set", "dict"} for alias in part.names)
+                for part in ast.walk(unit.tree)
+            ):
+                continue
+            source_hash = hashlib.sha256(unit.source.encode()).hexdigest()
+            for cls in unit.tree.body:
+                if not isinstance(cls, ast.ClassDef):
+                    continue
+                fields = _initial_fields(cls)
+                if not fields:
+                    continue
+                for method in cls.body:
+                    if (
+                        not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        or not method.args.args
+                    ):
+                        continue
+                    receiver = method.args.args[0].arg
+                    for stmt in method.body:
+                        if not isinstance(stmt, ast.Try):
+                            continue
+                        broad = [
+                            handler
+                            for handler in stmt.handlers
+                            if handler.type is None
+                            or isinstance(handler.type, ast.Name)
+                            and handler.type.id in {"Exception", "BaseException"}
+                        ]
+                        if not any(
+                            _returns_without_reraise(handler) for handler in broad
+                        ):
+                            continue
+                        prior: tuple[ast.stmt, str, str] | None = None
+                        for body_stmt in stmt.body:
+                            mutation = _mutating_step(body_stmt, receiver, fields)
+                            if mutation is None:
+                                # Only certify contiguous authored state mutations,
+                                # not flow through a branch, with, or callback.
+                                prior = None
+                                continue
+                            field, operation = mutation
+                            if prior is not None and prior[1] != field:
+                                first, first_field, first_op = prior
+                                if any(
+                                    _handler_may_compensate(
+                                        handler, receiver, {first_field, field}
+                                    )
+                                    for handler in broad
+                                    if _returns_without_reraise(handler)
+                                ):
+                                    break
+                                findings.append(
+                                    Finding(
+                                        code="QG213",
+                                        severity="warning",
+                                        confidence="medium",
+                                        path=path,
+                                        line=body_stmt.lineno,
+                                        column=body_stmt.col_offset + 1,
+                                        symbol=f"{cls.name}.{method.name}",
+                                        message="已知容器状态先后变更处于同一异常转结果路径，可能留下部分提交。",
+                                        suggestion="核查第二次变更失败时第一项状态是否需回滚或合并为不可分割事务；有意允许部分提交时记录不变量。",
+                                        evidence={
+                                            "source_sha256": source_hash,
+                                            "receiver": receiver,
+                                            "first_field": first_field,
+                                            "first_operation": first_op,
+                                            "first_line": first.lineno,
+                                            "second_field": field,
+                                            "second_operation": operation,
+                                            "second_line": body_stmt.lineno,
+                                            "handler_lines": [
+                                                h.lineno
+                                                for h in broad
+                                                if _returns_without_reraise(h)
+                                            ],
+                                            "capability": "SOURCE_BOUND_PARTIAL_COMMIT_OPEN_RUNTIME",
+                                            "status": "CONDITIONAL_REVIEW_NOT_CONFIRMED_FAILURE",
+                                        },
+                                        source="source-bound-r3",
+                                    )
+                                )
+                                break
+                            prior = (body_stmt, field, operation)
+        return findings
+
+
 def partial_commit_findings(
     snapshot: RepositoryAnalysisSnapshot,
 ) -> tuple[Finding, ...]:
-    """Emit conditional R3 witnesses from the frozen source, not runtime guesses.
+    """Evaluate partial-commit risks over an existing source snapshot.
 
     Args:
-        snapshot: Frozen parsed source and module units used to reconstruct lexical obligations.
+        snapshot: Parsed Git worktree source and stable paths, shared with
+            other R3 source-bound rules.
 
     Returns:
-        Conditional risks where separately proven writes can leave state partially committed."""
-    findings: list[Finding] = []
-    for path in snapshot.paths:
-        unit = snapshot.units[path]
-        if unit.tree is None:
-            continue
-        # A locally shadowed set()/dict() call has no certified built-in type.
-        if any(
-            isinstance(part, ast.Name)
-            and isinstance(part.ctx, (ast.Store, ast.Del))
-            and part.id in {"set", "dict"}
-            or isinstance(part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            and part.name in {"set", "dict"}
-            or isinstance(part, ast.arg)
-            and part.arg in {"set", "dict"}
-            or isinstance(part, (ast.Import, ast.ImportFrom))
-            and any(alias.asname in {"set", "dict"} for alias in part.names)
-            for part in ast.walk(unit.tree)
-        ):
-            continue
-        source_hash = hashlib.sha256(unit.source.encode()).hexdigest()
-        for cls in unit.tree.body:
-            if not isinstance(cls, ast.ClassDef):
-                continue
-            fields = _initial_fields(cls)
-            if not fields:
-                continue
-            for method in cls.body:
-                if (
-                    not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    or not method.args.args
-                ):
-                    continue
-                receiver = method.args.args[0].arg
-                for stmt in method.body:
-                    if not isinstance(stmt, ast.Try):
-                        continue
-                    broad = [
-                        handler
-                        for handler in stmt.handlers
-                        if handler.type is None
-                        or isinstance(handler.type, ast.Name)
-                        and handler.type.id in {"Exception", "BaseException"}
-                    ]
-                    if not any(_returns_without_reraise(handler) for handler in broad):
-                        continue
-                    prior: tuple[ast.stmt, str, str] | None = None
-                    for body_stmt in stmt.body:
-                        mutation = _mutating_step(body_stmt, receiver, fields)
-                        if mutation is None:
-                            # Only certify contiguous authored state mutations,
-                            # not flow through a branch, with, or callback.
-                            prior = None
-                            continue
-                        field, operation = mutation
-                        if prior is not None and prior[1] != field:
-                            first, first_field, first_op = prior
-                            if any(
-                                _handler_may_compensate(
-                                    handler, receiver, {first_field, field}
-                                )
-                                for handler in broad
-                                if _returns_without_reraise(handler)
-                            ):
-                                break
-                            findings.append(
-                                Finding(
-                                    code="QG213",
-                                    severity="warning",
-                                    confidence="medium",
-                                    path=path,
-                                    line=body_stmt.lineno,
-                                    column=body_stmt.col_offset + 1,
-                                    symbol=f"{cls.name}.{method.name}",
-                                    message="已知容器状态先后变更处于同一异常转结果路径，可能留下部分提交。",
-                                    suggestion="核查第二次变更失败时第一项状态是否需回滚或合并为不可分割事务；有意允许部分提交时记录不变量。",
-                                    evidence={
-                                        "source_sha256": source_hash,
-                                        "receiver": receiver,
-                                        "first_field": first_field,
-                                        "first_operation": first_op,
-                                        "first_line": first.lineno,
-                                        "second_field": field,
-                                        "second_operation": operation,
-                                        "second_line": body_stmt.lineno,
-                                        "handler_lines": [
-                                            h.lineno
-                                            for h in broad
-                                            if _returns_without_reraise(h)
-                                        ],
-                                        "capability": "SOURCE_BOUND_PARTIAL_COMMIT_OPEN_RUNTIME",
-                                        "status": "CONDITIONAL_REVIEW_NOT_CONFIRMED_FAILURE",
-                                    },
-                                    source="source-bound-r3",
-                                )
-                            )
-                            break
-                        prior = (body_stmt, field, operation)
-    return tuple(findings)
+        Ordered QG213 conditional-review Findings for state writes that could
+        survive a swallowed failure; no findings for safe or unknown patterns.
+    """
+    return tuple(PartialCommitRule().evaluate(snapshot))

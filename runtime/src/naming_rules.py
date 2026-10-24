@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
+from .core_rule_contract import CoreQualityRule
 from .facts import ModuleFacts
 from .model import Finding
 
@@ -198,66 +199,127 @@ class _NamingVisitor(ast.NodeVisitor):
         self.names.append(_NameLocation(name, line, column, context, symbol))
 
 
+@dataclass(slots=True, frozen=True)
+class NamingRuleContext:
+    """Share one AST naming walk between distinct naming policies.
+
+    Fields:
+        module: Source file identity and configuration for finding attribution.
+        visitor: Collected declaration and spelling candidates with source offsets."""
+
+    module: ModuleFacts
+    visitor: _NamingVisitor
+
+
+class LegacyVocabularyRule(CoreQualityRule[NamingRuleContext]):
+    """QG159: reject legacy vocabulary in declared identifiers using collected names.
+
+    The visitor provides source locations and naming context, preserving a
+    common evidence basis for different naming policies."""
+
+    code = "QG159"
+
+    def evaluate(self, context: NamingRuleContext) -> list[Finding]:
+        """Convert confirmed legacy-vocabulary candidates to QG159 findings.
+
+        Args:
+            context: Source module and naming visitor with classified declarations.
+
+        Returns:
+            Critical findings at each matching identifier declaration."""
+        facts = context.module
+        visitor = context.visitor
+        return [
+            Finding(
+                code="QG159",
+                severity="critical",
+                confidence="high",
+                path=str(facts.path),
+                line=item.line,
+                column=item.column,
+                message=(
+                    f"{item.context} 名称 `{item.name}` 偏离仓库统一词汇，"
+                    f"新代码应使用 `{LEGACY_NAMES[item.name]}`。"
+                ),
+                suggestion=(
+                    "在本次触达范围内统一命名并同步上下游；公共接口迁移必须作为显式接口变更，"
+                    "不能只改一侧或保留长期同义别名。"
+                ),
+                symbol=item.symbol,
+                evidence={
+                    "name": item.name,
+                    "preferred": LEGACY_NAMES[item.name],
+                    "scope": item.symbol,
+                    "exact_match_only": True,
+                },
+            )
+            for item in visitor.names
+        ]
+
+
+class VagueNormalizationNameRule(CoreQualityRule[NamingRuleContext]):
+    """QG160: flag normalization terminology unsupported by the operation's meaning.
+
+    The scanner distinguishes actual mathematical normalization from vague
+    use of normalize for unrelated data transformations."""
+
+    code = "QG160"
+
+    def evaluate(self, context: NamingRuleContext) -> list[Finding]:
+        """Report identifier candidates misusing mathematical normalization wording.
+
+        Args:
+            context: Scoped naming candidates and their source locations.
+
+        Returns:
+            QG160 findings for candidates without normalization semantics."""
+        facts = context.module
+        visitor = context.visitor
+        return [
+            Finding(
+                code="QG160",
+                severity="critical",
+                confidence="high",
+                path=str(facts.path),
+                line=item.line,
+                column=item.column,
+                message=f"函数 `{item.name}` 滥用 normalize，名称无法证明其执行数学归一化。",
+                suggestion=(
+                    "按真实职责改用 parse/validate/coerce/canonicalize/sanitize/resolve/build/"
+                    "serialize/extract 等精确动词；只有向量、矩阵、概率、分数、张量等"
+                    "数学归一化才保留 normalize。"
+                ),
+                symbol=item.name,
+                evidence={
+                    "name": item.name,
+                    "allowed_mathematical_suffixes": sorted(
+                        MATHEMATICAL_NORMALIZE_SUFFIXES
+                    ),
+                },
+            )
+            for item in visitor.normalize_functions
+        ]
+
+
+_NAMING_RULES: tuple[CoreQualityRule[NamingRuleContext], ...] = (
+    LegacyVocabularyRule(),
+    VagueNormalizationNameRule(),
+)
+
+
 def check_naming_rules(facts: ModuleFacts, tree: ast.Module) -> list[Finding]:
-    """检查仓库统一词汇和模糊 normalize 命名。
+    """Visit a module's declarations once and dispatch reusable naming rules.
 
     Args:
-        facts: 当前模块源码事实。
-        tree: 当前模块 AST。
+        facts: Source module used for Finding identity and location.
+        tree: Parsed module AST whose names are collected by _NamingVisitor.
 
     Returns:
-        命名规范发现列表。
-    """
+        Combined naming-policy findings from the registered independent owners."""
     visitor = _NamingVisitor()
     visitor.visit(tree)
-    findings = [
-        Finding(
-            code="QG159",
-            severity="critical",
-            confidence="high",
-            path=str(facts.path),
-            line=item.line,
-            column=item.column,
-            message=(
-                f"{item.context} 名称 `{item.name}` 偏离仓库统一词汇，"
-                f"新代码应使用 `{LEGACY_NAMES[item.name]}`。"
-            ),
-            suggestion=(
-                "在本次触达范围内统一命名并同步上下游；公共接口迁移必须作为显式接口变更，"
-                "不能只改一侧或保留长期同义别名。"
-            ),
-            symbol=item.symbol,
-            evidence={
-                "name": item.name,
-                "preferred": LEGACY_NAMES[item.name],
-                "scope": item.symbol,
-                "exact_match_only": True,
-            },
-        )
-        for item in visitor.names
-    ]
-    findings.extend(
-        Finding(
-            code="QG160",
-            severity="critical",
-            confidence="high",
-            path=str(facts.path),
-            line=item.line,
-            column=item.column,
-            message=f"函数 `{item.name}` 滥用 normalize，名称无法证明其执行数学归一化。",
-            suggestion=(
-                "按真实职责改用 parse/validate/coerce/canonicalize/sanitize/resolve/build/"
-                "serialize/extract 等精确动词；只有向量、矩阵、概率、分数、张量等"
-                "数学归一化才保留 normalize。"
-            ),
-            symbol=item.name,
-            evidence={
-                "name": item.name,
-                "allowed_mathematical_suffixes": sorted(
-                    MATHEMATICAL_NORMALIZE_SUFFIXES
-                ),
-            },
-        )
-        for item in visitor.normalize_functions
-    )
+    context = NamingRuleContext(facts, visitor)
+    findings: list[Finding] = []
+    for rule in _NAMING_RULES:
+        findings.extend(rule.evaluate(context))
     return findings

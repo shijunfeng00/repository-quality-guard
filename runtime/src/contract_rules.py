@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
+from dataclasses import dataclass
 
 from .ast_utils import dotted_name
+from .core_rule_contract import CoreQualityRule
 from .facts import ModuleFacts
 from .model import Finding
 from .policy_common import (
@@ -190,22 +192,97 @@ def check_contract_rules(
     return findings
 
 
+@dataclass(slots=True, frozen=True)
+class RequiredMappingDefaultContext:
+    """A required formal mapping and its direct AST expression.
+
+    Fields: module, qualname, item, required."""
+
+    module: ModuleFacts
+    qualname: str
+    item: ast.AST
+    required: frozenset[str]
+
+
+class RequiredMappingDefaultRule(CoreQualityRule[RequiredMappingDefaultContext]):
+    """QG066: required concrete dictionary may not be replaced by empty fallback.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG066"
+
+    def evaluate(self, context: RequiredMappingDefaultContext) -> list[Finding]:
+        """Evaluate QG066 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.module
+        item = context.item
+        qualname = context.qualname
+        required = context.required
+        findings: list[Finding] = []
+        if not (
+            isinstance(item, ast.BoolOp)
+            and isinstance(item.op, ast.Or)
+            and len(item.values) == 2
+            and isinstance(item.values[0], ast.Name)
+            and item.values[0].id in required
+            and isinstance(item.values[1], ast.Dict)
+            and not item.values[1].keys
+        ):
+            return findings
+        name = item.values[0].id
+        findings.append(
+            facts.make_finding(
+                item,
+                "QG066",
+                f"必需字典参数 `{name}` 被 `or {{}}` 静默转换为可用空结构。",
+                symbol=qualname,
+                severity="warning",
+                confidence="high",
+                suggestion="保留必需输入的非空契约；不合法输入应在边界显式拒绝。",
+                evidence={
+                    "parameter": name,
+                    "annotation": "dict",
+                    "classification": "PROVEN_REQUIRED_CONTRACT",
+                },
+            )
+        )
+        return findings
+
+
 def check_required_mapping_default_rules(
     facts: ModuleFacts,
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     nodes: list[ast.AST],
     qualname: str,
 ) -> list[Finding]:
-    """Detect a required concrete mapping silently accepting ``None`` as empty.
+    """Flag default-to-empty expressions on required mapping parameters.
 
-    Only a real, unshadowed ``dict`` formal without a default is sufficient
-    evidence. Optional/untyped inputs, fields, aliases and name-only guesses
-    intentionally stay outside this bounded rule.
+    Derive required mapping parameters from actual annotations, defaults, and
+    scope rebinding evidence. Reuse that fact when visiting each expression so
+    an optional mapping or shadowed type binding cannot become QG066.
+
+    Args:
+        facts: Parsed module and its source-bound Finding constructor.
+        function: Owning function whose parameter contract is inspected.
+        nodes: Expressions from the current function body to classify.
+        qualname: Stable source qualification used in emitted evidence.
+
+    Returns:
+        QG066 findings for proven required mappings silently coalesced with
+        empty dictionaries, or an empty list when no expression qualifies.
     """
     positional = (*function.args.posonlyargs, *function.args.args)
-    defaulted = {arg.arg for arg in positional[len(positional) - len(function.args.defaults):]}
+    defaulted = {
+        arg.arg for arg in positional[len(positional) - len(function.args.defaults) :]
+    }
     defaulted.update(
-        arg.arg for arg, default in zip(function.args.kwonlyargs, function.args.kw_defaults)
+        arg.arg
+        for arg, default in zip(function.args.kwonlyargs, function.args.kw_defaults)
         if default is not None
     )
     required = {
@@ -217,58 +294,53 @@ def check_required_mapping_default_rules(
         and _builtin_type_unshadowed(facts, function, "dict")
         and not _scope_rebinds(function, arg.arg)
     }
+    rule = RequiredMappingDefaultRule()
     findings: list[Finding] = []
     for item in nodes:
-        if not (
-            isinstance(item, ast.BoolOp) and isinstance(item.op, ast.Or)
-            and len(item.values) == 2
-            and isinstance(item.values[0], ast.Name)
-            and item.values[0].id in required
-            and isinstance(item.values[1], ast.Dict)
-            and not item.values[1].keys
-        ):
-            continue
-        name = item.values[0].id
-        findings.append(
-            facts.make_finding(
-                item,
-                "QG066",
-                f"必需字典参数 `{name}` 被 `or {{}}` 静默转换为可用空结构。",
-                symbol=qualname,
-                severity="warning",
-                confidence="high",
-                suggestion="保留必需输入的非空契约；不合法输入应在边界显式拒绝。",
-                evidence={"parameter": name, "annotation": "dict", "classification": "PROVEN_REQUIRED_CONTRACT"},
+        findings.extend(
+            rule.evaluate(
+                RequiredMappingDefaultContext(
+                    facts, qualname, item, frozenset(required)
+                )
             )
         )
     return findings
 
 
-def check_type_probe_rules(
-    facts: ModuleFacts,
-    function: ast.FunctionDef | ast.AsyncFunctionDef,
-    nodes: list[ast.AST],
-    qualname: str,
-) -> list[Finding]:
-    """
-    检查内部对象类型猜测和临时容器包装。
+@dataclass(slots=True, frozen=True)
+class TypeProbeRuleContext:
+    """Shared module, parameters, and lexical node for independently owned QGs.
 
-    Args:
-        facts: 当前模块静态事实。
-        function: 当前函数定义。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+    Fields: module, function, item, qualname, parameter_annotations."""
 
-    Returns:
-        类型猜测相关发现列表。
-    """
-    parameter_annotations = {
-        argument.arg: argument.annotation
-        for argument in all_parameters(function)
-        if argument.annotation is not None
-    }
-    findings: list[Finding] = []
-    for item in nodes:
+    module: ModuleFacts
+    function: ast.FunctionDef | ast.AsyncFunctionDef
+    item: ast.AST
+    qualname: str
+    parameter_annotations: dict[str, ast.expr]
+
+
+class ProvenTypeMismatchRule(CoreQualityRule[TypeProbeRuleContext]):
+    """QG060: reject source-proven disjoint runtime type discrimination.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG060"
+
+    def evaluate(self, context: TypeProbeRuleContext) -> list[Finding]:
+        """Evaluate QG060 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.module
+        function = context.function
+        item = context.item
+        qualname = context.qualname
+        parameter_annotations = context.parameter_annotations
+        findings: list[Finding] = []
         if (
             isinstance(item, ast.Call)
             and call_name(item) == "isinstance"
@@ -285,7 +357,7 @@ def check_type_probe_rules(
                     "Union",
                     "Optional",
                 }:
-                    continue
+                    return findings
                 relation, provenance = _type_probe_relation(
                     facts, function, annotation, item.args[1]
                 )
@@ -296,12 +368,12 @@ def check_type_probe_rules(
                 if _verified_registration_guard(
                     facts, function, item, checked, annotation, item.args[1]
                 ):
-                    continue
+                    return findings
                 if relation == "subtype":
                     # A formal descendant of the declared input is a legitimate
                     # type discriminant. Its usefulness belongs to behavioral/
                     # structure review, not an unproven type-contract CRITICAL.
-                    continue
+                    return findings
                 # An UNKNOWN import/hierarchy and an input validation guard are
                 # not evidence that a type probe is a quality defect. Source-
                 # bound, statically disjoint concrete builtins are the only
@@ -310,7 +382,7 @@ def check_type_probe_rules(
                 # because an external DSL subtype could not be resolved.
                 definitive = relation == "disjoint_builtin"
                 if not definitive:
-                    continue
+                    return findings
                 findings.append(
                     facts.make_finding(
                         item,
@@ -336,6 +408,29 @@ def check_type_probe_rules(
                         },
                     )
                 )
+        return findings
+
+
+class ProbeBasedContainerWrappingRule(CoreQualityRule[TypeProbeRuleContext]):
+    """QG061: detect type-probe based temporary collection coercion.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG061"
+
+    def evaluate(self, context: TypeProbeRuleContext) -> list[Finding]:
+        """Evaluate QG061 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        facts = context.module
+        item = context.item
+        qualname = context.qualname
+        parameter_annotations = context.parameter_annotations
+        findings: list[Finding] = []
         if (
             isinstance(item, ast.IfExp)
             and wraps_by_type_probe(item)
@@ -353,6 +448,47 @@ def check_type_probe_rules(
                     suggestion="生产方固定容器类型，消费方直接按契约使用；禁止用 isinstance 三元包装替代正式 schema。",
                 )
             )
+        return findings
+
+
+_TYPE_PROBE_RULES: tuple[CoreQualityRule[TypeProbeRuleContext], ...] = (
+    ProvenTypeMismatchRule(),
+    ProbeBasedContainerWrappingRule(),
+)
+
+
+def check_type_probe_rules(
+    facts: ModuleFacts,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    nodes: list[ast.AST],
+    qualname: str,
+) -> list[Finding]:
+    """Evaluate annotated-parameter type probing across lexical expressions.
+
+    Compute one map of declared parameter annotations, then pass each expression
+    and its owning function to the type-probe rule owners. Unannotated arguments
+    are intentionally absent from that map, not silently assigned a type.
+
+    Args:
+        facts: Module source facts for rule evidence and locations.
+        function: Function that owns the annotated parameters and expression body.
+        nodes: Lexical AST nodes to inspect for type-probe and coercion patterns.
+        qualname: Stable identity of the owning function in emitted findings.
+
+    Returns:
+        Findings accumulated in node/rule order; [] if nothing violates a contract."""
+    parameter_annotations = {
+        argument.arg: argument.annotation
+        for argument in all_parameters(function)
+        if argument.annotation is not None
+    }
+    findings: list[Finding] = []
+    for item in nodes:
+        context = TypeProbeRuleContext(
+            facts, function, item, qualname, parameter_annotations
+        )
+        for rule in _TYPE_PROBE_RULES:
+            findings.extend(rule.evaluate(context))
     return findings
 
 
@@ -786,62 +922,123 @@ def root_annotation_name(annotation: ast.expr | None) -> str:
     return dotted_name(annotation).rsplit(".", 1)[-1]
 
 
+@dataclass(slots=True, frozen=True)
+class LengthContractRuleContext:
+    """Shared lexical facts for independent parallel-length contract rules.
+
+    Fields: module, qualname, item, guards."""
+
+    module: ModuleFacts
+    qualname: str
+    item: ast.AST
+    guards: list[tuple[frozenset[str], int]]
+
+
+class ZipStrictLengthRule(CoreQualityRule[LengthContractRuleContext]):
+    """QG062: identify an unguarded parallel zip without strict semantics.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG062"
+
+    def evaluate(self, context: LengthContractRuleContext) -> list[Finding]:
+        """Evaluate QG062 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        item = context.item
+        if not isinstance(item, ast.Call) or call_name(item) != "zip":
+            return []
+        strict = next(
+            (keyword.value for keyword in item.keywords if keyword.arg == "strict"),
+            None,
+        )
+        argument_names = [dotted_name(argument) for argument in item.args]
+        guarded = zip_arguments_guarded(argument_names, item.lineno, context.guards)
+        if (
+            len(item.args) < MIN_PARALLEL_CONTRACT_ITEMS
+            or (isinstance(strict, ast.Constant) and strict.value is True)
+            or guarded
+        ):
+            return []
+        return [
+            context.module.make_finding(
+                item,
+                self.code,
+                "zip() 未指定 strict=True，长度不一致时可能静默截断。",
+                symbol=context.qualname,
+                severity="info",
+                confidence="medium",
+                suggestion="等长属于契约时使用 strict=True；明确需要最短序列语义时保留并写明。",
+                evidence={"arguments": argument_names},
+            )
+        ]
+
+
+class SilentLengthRepairRule(CoreQualityRule[LengthContractRuleContext]):
+    """QG063: identify length truncation used to hide structural disagreement.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG063"
+
+    def evaluate(self, context: LengthContractRuleContext) -> list[Finding]:
+        """Evaluate QG063 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        if not is_length_repair(context.item):
+            return []
+        return [
+            context.module.make_finding(
+                context.item,
+                self.code,
+                "使用 min(len(...)) 或交叉长度切片静默修复列表长度。",
+                symbol=context.qualname,
+                severity="warning",
+                suggestion="让生产方保证长度关系；非法结构应显式失败。",
+            )
+        ]
+
+
+_LENGTH_CONTRACT_RULES: tuple[CoreQualityRule[LengthContractRuleContext], ...] = (
+    ZipStrictLengthRule(),
+    SilentLengthRepairRule(),
+)
+
+
 def check_length_contract_rules(
     facts: ModuleFacts,
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     nodes: list[ast.AST],
     qualname: str,
 ) -> list[Finding]:
-    """
-    检查静默截断和长度修复。
+    """Check length-dependent operations against explicit equality guards.
+
+    Extract length-equality guards from the containing function once. Each
+    lexical expression is examined with the same guard facts so mismatched
+    sequence accesses are not mistaken for protected operations.
 
     Args:
-        facts: 当前模块静态事实。
-        function: 当前函数定义。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+        facts: Source-bound module and Finding constructor.
+        function: Function in which length guards are evaluated.
+        nodes: Candidate expressions in that function's lexical body.
+        qualname: Symbol used to attribute a violating expression.
 
     Returns:
-        长度契约相关发现列表。
-    """
-    findings: list[Finding] = []
+        Findings from length-contract rule owners in lexical traversal order."""
     guards = equal_length_guards(function)
+    findings: list[Finding] = []
     for item in nodes:
-        if isinstance(item, ast.Call) and call_name(item) == "zip":
-            strict = next(
-                (keyword.value for keyword in item.keywords if keyword.arg == "strict"),
-                None,
-            )
-            argument_names = [dotted_name(argument) for argument in item.args]
-            guarded = zip_arguments_guarded(argument_names, item.lineno, guards)
-            if (
-                len(item.args) >= MIN_PARALLEL_CONTRACT_ITEMS
-                and not (isinstance(strict, ast.Constant) and strict.value is True)
-                and not guarded
-            ):
-                findings.append(
-                    facts.make_finding(
-                        item,
-                        "QG062",
-                        "zip() 未指定 strict=True，长度不一致时可能静默截断。",
-                        symbol=qualname,
-                        severity="info",
-                        confidence="medium",
-                        suggestion="等长属于契约时使用 strict=True；明确需要最短序列语义时保留并写明。",
-                        evidence={"arguments": argument_names},
-                    )
-                )
-        if is_length_repair(item):
-            findings.append(
-                facts.make_finding(
-                    item,
-                    "QG063",
-                    "使用 min(len(...)) 或交叉长度切片静默修复列表长度。",
-                    symbol=qualname,
-                    severity="warning",
-                    suggestion="让生产方保证长度关系；非法结构应显式失败。",
-                )
-            )
+        context = LengthContractRuleContext(facts, qualname, item, guards)
+        for rule in _LENGTH_CONTRACT_RULES:
+            findings.extend(rule.evaluate(context))
     return findings
 
 
@@ -941,39 +1138,113 @@ def zip_arguments_guarded(
     )
 
 
-def check_field_contract_rules(
+@dataclass(slots=True, frozen=True)
+class FieldContractRuleContext:
+    """Reuse one module snapshot and lexical access facts for field contract rules.
+
+    Fields: module, function, nodes, qualname, annotated, accesses."""
+
+    module: ModuleFacts
+    function: ast.FunctionDef | ast.AsyncFunctionDef
+    nodes: list[ast.AST]
+    qualname: str
+    annotated: frozenset[str]
+    accesses: dict[str, set[str]]
+
+
+class FieldAliasCompatibilityRule(CoreQualityRule[FieldContractRuleContext]):
+    """QG064: report multiple legacy field names for one receiver.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG064"
+
+    def evaluate(self, context: FieldContractRuleContext) -> list[Finding]:
+        """Evaluate QG064 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        findings: list[Finding] = []
+        for item in context.nodes:
+            if is_alias_field_compatibility(item):
+                findings.append(
+                    context.module.make_finding(
+                        item,
+                        self.code,
+                        "同一位置兼容多个字段名，形成永久字段别名层。",
+                        symbol=context.qualname,
+                        severity="warning",
+                        suggestion="统一生产方字段并迁移旧数据。",
+                    )
+                )
+        return findings
+
+
+class DualFieldProtocolRule(CoreQualityRule[FieldContractRuleContext]):
+    """QG065: detect incompatible attribute and mapping access to one argument.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG065"
+
+    def evaluate(self, context: FieldContractRuleContext) -> list[Finding]:
+        """Evaluate QG065 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        findings: list[Finding] = []
+        for base, modes in context.accesses.items():
+            if modes == {"mapping", "attribute"} and base in context.annotated:
+                findings.append(
+                    context.module.make_finding(
+                        context.function,
+                        self.code,
+                        f"`{base}` 在同一函数中同时按对象属性和字典结构访问。",
+                        symbol=context.qualname,
+                        severity="warning",
+                        suggestion="固定一种内部协议，不要同时兼容对象与字典。",
+                    )
+                )
+        return findings
+
+
+_FIELD_CONTRACT_RULES: tuple[CoreQualityRule[FieldContractRuleContext], ...] = (
+    FieldAliasCompatibilityRule(),
+    DualFieldProtocolRule(),
+)
+
+
+def field_rule_context(
     facts: ModuleFacts,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
     nodes: list[ast.AST],
     qualname: str,
-) -> list[Finding]:
-    """
-    检查字段别名和对象/字典双协议访问。
+) -> FieldContractRuleContext:
+    """Build one context of annotated parameters and field-access mechanisms.
+
+    The routine distinguishes subscription-based mapping access from attribute
+    access, excluding known mapping protocol methods. The resulting context
+    lets field-contract owners compare the access forms without reparsing AST.
 
     Args:
-        facts: 当前模块静态事实。
-        node: 当前函数定义。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+        facts: Module source facts for evidence and Finding attribution.
+        function: Owner of the parameter annotations used by field rules.
+        nodes: Function-local expressions from which access modes are collected.
+        qualname: Qualified identity of the inspected function.
 
     Returns:
-        字段契约相关发现列表。
-    """
-    annotated = {arg.arg for arg in all_parameters(node) if arg.annotation is not None}
+        FieldContractRuleContext containing frozen parameter and access facts."""
+    annotated = frozenset(
+        arg.arg for arg in all_parameters(function) if arg.annotation is not None
+    )
     accesses: dict[str, set[str]] = defaultdict(set)
-    findings: list[Finding] = []
     for item in nodes:
-        if is_alias_field_compatibility(item):
-            findings.append(
-                facts.make_finding(
-                    item,
-                    "QG064",
-                    "同一位置兼容多个字段名，形成永久字段别名层。",
-                    symbol=qualname,
-                    severity="warning",
-                    suggestion="统一生产方字段并迁移旧数据。",
-                )
-            )
         if isinstance(item, ast.Subscript):
             base = dotted_name(item.value)
             if base:
@@ -984,19 +1255,127 @@ def check_field_contract_rules(
             base = dotted_name(item.value)
             if base:
                 accesses[base].add("attribute")
-    for base, modes in accesses.items():
-        if modes == {"mapping", "attribute"} and base in annotated:
-            findings.append(
-                facts.make_finding(
-                    node,
-                    "QG065",
-                    f"`{base}` 在同一函数中同时按对象属性和字典结构访问。",
-                    symbol=qualname,
-                    severity="warning",
-                    suggestion="固定一种内部协议，不要同时兼容对象与字典。",
-                )
-            )
+    return FieldContractRuleContext(
+        facts, function, nodes, qualname, annotated, accesses
+    )
+
+
+def check_field_contract_rules(
+    facts: ModuleFacts,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    nodes: list[ast.AST],
+    qualname: str,
+) -> list[Finding]:
+    """Evaluate the field-access contract rule family over shared evidence.
+
+    Build one field context and dispatch it to each independent rule owner,
+    preserving the defined order and not attributing any finding to a guessed type.
+
+    Args:
+        facts: Source module containing the candidate function.
+        node: Function whose parameter and field access patterns are inspected.
+        nodes: Lexical AST expressions provided by the caller.
+        qualname: Qualified symbol attached to produced findings.
+
+    Returns:
+        Combined field-contract findings from the registered rule owners."""
+    context = field_rule_context(facts, node, nodes, qualname)
+    findings: list[Finding] = []
+    for rule in _FIELD_CONTRACT_RULES:
+        findings.extend(rule.evaluate(context))
     return findings
+
+
+@dataclass(slots=True, frozen=True)
+class RuntimeContractRuleContext:
+    """Share function parameters and current lexical item across Core rule owners.
+
+    Fields: module, qualname, item, parameters."""
+
+    module: ModuleFacts
+    qualname: str
+    item: ast.AST
+    parameters: frozenset[str]
+
+
+class RuntimeAssertionRule(CoreQualityRule[RuntimeContractRuleContext]):
+    """QG069: classify assertions by whether they guard formal arguments.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG069"
+
+    def evaluate(self, context: RuntimeContractRuleContext) -> list[Finding]:
+        """Evaluate QG069 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        item = context.item
+        if not isinstance(item, ast.Assert):
+            return []
+        referenced = {
+            child.id
+            for child in ast.walk(item.test)
+            if isinstance(child, ast.Name) and child.id in context.parameters
+        }
+        return [
+            context.module.make_finding(
+                item,
+                self.code,
+                (
+                    "使用 assert 校验函数输入或接口契约。"
+                    if referenced
+                    else "使用 assert 表达内部不变量。"
+                ),
+                symbol=context.qualname,
+                severity="warning" if referenced else "info",
+                confidence="high" if referenced else "medium",
+                suggestion="外部输入和运行时契约使用显式异常；assert 仅用于可被优化移除的内部不变量。",
+                evidence={"parameters": sorted(referenced)},
+            )
+        ]
+
+
+class DiscardedImmutableResultRule(CoreQualityRule[RuntimeContractRuleContext]):
+    """QG070: detect ignored return values from provably immutable literals.
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG070"
+
+    def evaluate(self, context: RuntimeContractRuleContext) -> list[Finding]:
+        """Evaluate QG070 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        item = context.item
+        if not (isinstance(item, ast.Expr) and isinstance(item.value, ast.Call)):
+            return []
+        immutable_name = ignored_immutable_result(item.value, context.module)
+        if not immutable_name:
+            return []
+        return [
+            context.module.make_finding(
+                item,
+                self.code,
+                f"调用不可变对象方法 `{immutable_name}` 后丢弃返回值。",
+                symbol=context.qualname,
+                severity="warning",
+                suggestion="接收返回值或删除无效调用。",
+            )
+        ]
+
+
+_RUNTIME_CONTRACT_RULES: tuple[CoreQualityRule[RuntimeContractRuleContext], ...] = (
+    RuntimeAssertionRule(),
+    DiscardedImmutableResultRule(),
+)
 
 
 def check_runtime_contract_rules(
@@ -1005,56 +1384,26 @@ def check_runtime_contract_rules(
     nodes: list[ast.AST],
     qualname: str,
 ) -> list[Finding]:
-    """
-    检查默认值替代、assert 和无效不可变调用。
+    """Inspect lexical runtime operations against declared parameter contracts.
+
+    Parameter names are taken from the function signature; each AST expression
+    is inspected with that same declared-parameter set, so rule owners can
+    distinguish an argument operation from an unrelated local variable.
 
     Args:
-        facts: 当前模块静态事实。
-        function: 当前函数定义。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+        facts: Module facts used for source attribution.
+        function: Declaring function of the runtime parameter set.
+        nodes: Expression sequence scanned for runtime contract violations.
+        qualname: Qualified function name for Finding identities.
 
     Returns:
-        运行时契约相关发现列表。
-    """
-    parameters = {argument.arg for argument in all_parameters(function)}
+        Ordered runtime-contract findings; [] for compliant expressions."""
+    parameters = frozenset(argument.arg for argument in all_parameters(function))
     findings: list[Finding] = []
     for item in nodes:
-        if isinstance(item, ast.Assert):
-            referenced = {
-                child.id
-                for child in ast.walk(item.test)
-                if isinstance(child, ast.Name) and child.id in parameters
-            }
-            findings.append(
-                facts.make_finding(
-                    item,
-                    "QG069",
-                    (
-                        "使用 assert 校验函数输入或接口契约。"
-                        if referenced
-                        else "使用 assert 表达内部不变量。"
-                    ),
-                    symbol=qualname,
-                    severity="warning" if referenced else "info",
-                    confidence="high" if referenced else "medium",
-                    suggestion="外部输入和运行时契约使用显式异常；assert 仅用于可被优化移除的内部不变量。",
-                    evidence={"parameters": sorted(referenced)},
-                )
-            )
-        if isinstance(item, ast.Expr) and isinstance(item.value, ast.Call):
-            immutable_name = ignored_immutable_result(item.value, facts)
-            if immutable_name:
-                findings.append(
-                    facts.make_finding(
-                        item,
-                        "QG070",
-                        f"调用不可变对象方法 `{immutable_name}` 后丢弃返回值。",
-                        symbol=qualname,
-                        severity="warning",
-                        suggestion="接收返回值或删除无效调用。",
-                    )
-                )
+        context = RuntimeContractRuleContext(facts, qualname, item, parameters)
+        for rule in _RUNTIME_CONTRACT_RULES:
+            findings.extend(rule.evaluate(context))
     return findings
 
 
@@ -1212,84 +1561,63 @@ def check_side_effect_rules(
     nodes = direct_body_nodes(node)
     findings: list[Finding] = []
     findings.extend(check_parameter_mutation(facts, node, nodes, qualname))
-    findings.extend(check_exception_flow(facts, nodes, qualname))
+    # One lexical AST fact set, independent rule owners, original per-node order.
+    for item in nodes:
+        if isinstance(item, ast.ExceptHandler):
+            context = FunctionEffectRuleContext(facts, qualname, item)
+            for rule in _EXCEPTION_RULES:
+                findings.extend(rule.evaluate(context))
     if not allow_print:
-        findings.extend(check_print_calls(facts, nodes, qualname))
+        for item in nodes:
+            if isinstance(item, ast.Call):
+                findings.extend(
+                    _PRODUCTION_PRINT_RULE.evaluate(
+                        FunctionEffectRuleContext(facts, qualname, item)
+                    )
+                )
     return findings
 
 
-def _declares_readonly_input(
-    facts: ModuleFacts,
-    function: ast.FunctionDef | ast.AsyncFunctionDef,
-    annotation: ast.expr,
-) -> bool:
-    """Resolve a read-only annotation against a real builtin or stdlib import."""
-    base = annotation.value if isinstance(annotation, ast.Subscript) else annotation
-    name = dotted_name(base)
-    if name in {"tuple", "frozenset"}:
-        return _builtin_type_unshadowed(facts, function, name)
-    leaf = name.rsplit(".", 1)[-1]
-    if leaf not in {"Mapping", "Sequence", "MappingProxyType"}:
-        return False
-    allowed = (
-        {"types.MappingProxyType"}
-        if leaf == "MappingProxyType"
-        else {f"typing.{leaf}", f"collections.abc.{leaf}"}
-    )
-    if "." not in name:
-        return facts.imports.get(name) in allowed and not _scope_rebinds(function, name)
-    prefix = name.rsplit(".", 1)[0]
-    return any(
-        f"{imported}.{leaf}" in allowed
-        for local, imported in facts.imports.items()
-        if local == prefix
-    ) and not _scope_rebinds(function, prefix)
+@dataclass(slots=True, frozen=True)
+class ParameterMutationRuleContext:
+    """One shared fact set for rules auditing formal-parameter mutations.
+
+    Fields: module, function, qualname, declarations."""
+
+    module: ModuleFacts
+    function: ast.FunctionDef | ast.AsyncFunctionDef
+    qualname: str
+    declarations: tuple[ast.Global | ast.Nonlocal, ...]
 
 
-def check_parameter_mutation(
-    facts: ModuleFacts,
-    node: ast.FunctionDef | ast.AsyncFunctionDef,
-    nodes: list[ast.AST],
-    qualname: str,
-) -> list[Finding]:
-    """
-    检查输入参数和跨作用域状态修改。
+class SharedStateMutationRule(CoreQualityRule[ParameterMutationRuleContext]):
+    """QG051: explicit global/nonlocal declarations of shared state.
 
-    Args:
-        facts: 当前模块静态事实。
-        node: 当前函数定义。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
 
-    Returns:
-        参数修改相关发现列表。
-    """
-    parameter_names = {argument.arg for argument in all_parameters(node)}
-    # A direct class-body method's first positional formal may be a receiver.
-    # Without descriptor-binding evidence, even decorated methods cannot
-    # justify classifying this formal as an ordinary external input.
-    if facts.tree is not None and any(
-        isinstance(owner, ast.ClassDef) and node in owner.body
-        for owner in ast.walk(facts.tree)
-    ):
-        positional = (*node.args.posonlyargs, *node.args.args)
-        if positional:
-            parameter_names.discard(positional[0].arg)
-    mutated: set[str] = set()
-    findings: list[Finding] = []
-    for item in nodes:
-        if isinstance(item, (ast.Global, ast.Nonlocal)):
-            is_global = isinstance(item, ast.Global)
+    code = "QG051"
+
+    def evaluate(self, context: ParameterMutationRuleContext) -> list[Finding]:
+        """Return existing shared-state mutation warnings without rewalking AST.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        findings: list[Finding] = []
+        for statement in context.declarations:
+            is_global = isinstance(statement, ast.Global)
             findings.append(
-                facts.make_finding(
-                    item,
-                    "QG051",
+                context.module.make_finding(
+                    statement,
+                    self.code,
                     (
-                        f"`{qualname}` 声明 global 并修改模块共享状态。"
+                        f"`{context.qualname}` 声明 global 并修改模块共享状态。"
                         if is_global
-                        else f"`{qualname}` 声明 nonlocal 并修改闭包状态。"
+                        else f"`{context.qualname}` 声明 nonlocal 并修改闭包状态。"
                     ),
-                    symbol=qualname,
+                    symbol=context.qualname,
                     severity="warning" if is_global else "info",
                     confidence="high" if is_global else "medium",
                     suggestion=(
@@ -1299,147 +1627,160 @@ def check_parameter_mutation(
                     ),
                 )
             )
-        mutated.update(mutated_parameter_names(item, parameter_names))
-    readonly_annotations = {
-        parameter.arg: ast.unparse(parameter.annotation)
-        for parameter in all_parameters(node)
-        if parameter.annotation is not None
-        and _declares_readonly_input(facts, node, parameter.annotation)
-    }
-    for name in sorted(mutated & readonly_annotations.keys()):
-        findings.append(
-            facts.make_finding(
-                node,
-                "QG050",
-                f"`{qualname}` 修改声明为只读的参数 `{name}`。",
-                symbol=qualname,
-                severity="warning",
-                confidence="high",
-                suggestion="遵循显式只读类型契约，避免向入参原位写入。",
-                evidence={"parameter": name, "readonly_annotation": readonly_annotations[name]},
-            )
-        )
-    return findings
+        return findings
 
 
-def check_exception_flow(
-    facts: ModuleFacts, nodes: list[ast.AST], qualname: str
+_CORE_PARAMETER_MUTATION_RULES: tuple[
+    CoreQualityRule[ParameterMutationRuleContext], ...
+] = (SharedStateMutationRule(),)
+
+
+def check_parameter_mutation(
+    facts: ModuleFacts,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    nodes: list[ast.AST],
+    qualname: str,
 ) -> list[Finding]:
-    """
-    检查异常处理后继续执行和异常链丢失。
+    """Detect QG051 mutation hazards involving lexical shared-state declarations.
+
+    Extract global/nonlocal declarations from the supplied function nodes and
+    submit them alongside the parameter list to the dedicated rule owner.
+    A local assignment without a shared-state declaration is not inferred to
+    mutate an outer scope here.
 
     Args:
-        facts: 当前模块静态事实。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+        facts: Source facts and Finding constructor for the owning module.
+        node: Function declaring parameters and possibly shared-state bindings.
+        nodes: Lexical body nodes from which global/nonlocal facts are collected.
+        qualname: Qualified symbol identifying the owner.
 
     Returns:
-        异常流程发现列表。
-    """
+        QG051 findings for evidenced parameter/shared-state mutations."""
+    declarations = tuple(
+        item for item in nodes if isinstance(item, (ast.Global, ast.Nonlocal))
+    )
+    context = ParameterMutationRuleContext(
+        module=facts,
+        function=node,
+        qualname=qualname,
+        declarations=declarations,
+    )
     findings: list[Finding] = []
-    for item in nodes:
-        if not isinstance(item, ast.ExceptHandler):
-            continue
-        if handler_logs_without_raising(item):
-            findings.append(
-                facts.make_finding(
-                    item,
-                    "QG048",
-                    "异常被记录后继续运行，失败状态可能被伪装成成功路径。",
-                    symbol=qualname,
-                    severity="error",
-                    suggestion="重新抛出异常或返回明确失败结构。",
-                )
-            )
-        if translates_exception_without_cause(item):
-            findings.append(
-                facts.make_finding(
-                    item,
-                    "QG049",
-                    "捕获异常后重新包装，但没有使用 `raise ... from error`。",
-                    symbol=qualname,
-                    severity="warning",
-                    suggestion="保留原始异常作为 cause，或不做无价值异常翻译。",
-                )
-            )
+    for rule in _CORE_PARAMETER_MUTATION_RULES:
+        findings.extend(rule.evaluate(context))
     return findings
 
 
-def check_print_calls(
-    facts: ModuleFacts, nodes: list[ast.AST], qualname: str
-) -> list[Finding]:
-    """
-    检查生产函数中的 print() 调用。
+@dataclass(slots=True, frozen=True)
+class FunctionEffectRuleContext:
+    """Shared AST owner, symbol and source facts for individual effect rules.
 
-    Args:
-        facts: 当前模块静态事实。
-        nodes: 当前函数直接拥有的 AST 节点。
-        qualname: 函数限定名称。
+    Fields: module, qualname, item."""
 
-    Returns:
-        print() 调用发现列表。
-    """
-    return [
-        facts.make_finding(
-            item,
-            "QG052",
-            "生产代码中使用 print()，输出无法进入统一日志和 Trace。",
-            symbol=qualname,
-            severity="warning",
-            suggestion="使用项目日志系统并选择正确级别。",
-        )
-        for item in nodes
-        if isinstance(item, ast.Call) and call_name(item) == "print"
-    ]
+    module: ModuleFacts
+    qualname: str
+    item: ast.AST
 
 
-def mutated_parameter_names(node: ast.AST, parameters: set[str]) -> set[str]:
-    """
-    提取单个节点中被原地修改的参数名称。
+class SwallowedLoggedExceptionRule(CoreQualityRule[FunctionEffectRuleContext]):
+    """Detect a logged handler with no visible termination (QG048).
 
-    Args:
-        node: 待检查节点。
-        parameters: 当前函数参数名称集合。
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
 
-    Returns:
-        命中原地修改的参数名称集合。
-    """
-    result: set[str] = set()
-    if isinstance(node, (ast.Assign, ast.AnnAssign)):
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        for target in targets:
-            if not isinstance(target, (ast.Attribute, ast.Subscript)):
-                continue
-            base = mutation_base_name(target)
-            if base in parameters:
-                result.add(base)
-    if isinstance(node, ast.AugAssign):
-        # A bare parameter name is rebound after augmented assignment. Whether
-        # __iadd__ also mutates the caller's object requires a resolved type
-        # and operator implementation; syntax alone cannot prove that effect.
-        # An attribute/subscript target, by contrast, writes through the
-        # original reference and is a valid source-level state-write witness.
-        if isinstance(node.target, (ast.Attribute, ast.Subscript)):
-            base = mutation_base_name(node.target)
-            if base in parameters:
-                result.add(base)
-    return result
+    code = "QG048"
+
+    def evaluate(self, context: FunctionEffectRuleContext) -> list[Finding]:
+        """Evaluate QG048 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        item = context.item
+        if not isinstance(item, ast.ExceptHandler) or not handler_logs_without_raising(
+            item
+        ):
+            return []
+        return [
+            context.module.make_finding(
+                item,
+                self.code,
+                "异常被记录后继续运行，失败状态可能被伪装成成功路径。",
+                symbol=context.qualname,
+                severity="error",
+                suggestion="重新抛出异常或返回明确失败结构。",
+            )
+        ]
 
 
-def mutation_base_name(node: ast.expr) -> str:
-    """
-    提取赋值目标所属的根变量名。
+class MissingExceptionCauseRule(CoreQualityRule[FunctionEffectRuleContext]):
+    """Detect a new exception raised without causal linking (QG049).
 
-    Args:
-        node: 赋值目标表达式。
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
 
-    Returns:
-        根名称；无法确定时返回空字符串。
-    """
-    current: ast.expr = node
-    while isinstance(current, (ast.Attribute, ast.Subscript)):
-        current = current.value
-    return current.id if isinstance(current, ast.Name) else ""
+    code = "QG049"
+
+    def evaluate(self, context: FunctionEffectRuleContext) -> list[Finding]:
+        """Evaluate QG049 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        item = context.item
+        if not isinstance(
+            item, ast.ExceptHandler
+        ) or not translates_exception_without_cause(item):
+            return []
+        return [
+            context.module.make_finding(
+                item,
+                self.code,
+                "捕获异常后重新包装，但没有使用 `raise ... from error`。",
+                symbol=context.qualname,
+                severity="warning",
+                suggestion="保留原始异常作为 cause，或不做无价值异常翻译。",
+            )
+        ]
+
+
+class ProductionPrintRule(CoreQualityRule[FunctionEffectRuleContext]):
+    """Detect production print calls without inspecting call-site names (QG052).
+
+    The rule evaluates its supplied analysis context and reports evidence-backed findings."""
+
+    code = "QG052"
+
+    def evaluate(self, context: FunctionEffectRuleContext) -> list[Finding]:
+        """Evaluate QG052 using the supplied rule evidence.
+
+        Args:
+            context: Precollected typed analysis facts for this rule.
+
+        Returns:
+            Findings backed by the supplied evidence, or an empty list."""
+        item = context.item
+        if not isinstance(item, ast.Call) or call_name(item) != "print":
+            return []
+        return [
+            context.module.make_finding(
+                item,
+                self.code,
+                "生产代码中使用 print()，输出无法进入统一日志和 Trace。",
+                symbol=context.qualname,
+                severity="warning",
+                suggestion="使用项目日志系统并选择正确级别。",
+            )
+        ]
+
+
+_EXCEPTION_RULES: tuple[CoreQualityRule[FunctionEffectRuleContext], ...] = (
+    SwallowedLoggedExceptionRule(),
+    MissingExceptionCauseRule(),
+)
+_PRODUCTION_PRINT_RULE = ProductionPrintRule()
 
 
 def handler_logs_without_raising(handler: ast.ExceptHandler) -> bool:

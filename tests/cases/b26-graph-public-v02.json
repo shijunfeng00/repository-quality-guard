@@ -1,0 +1,693 @@
+{
+  "schema": "b26-graph-public/v02",
+  "cases": [
+    {
+      "case_id": "b26-lifecycle-diamond",
+      "sources": {
+        "pkg/classes.py": "class Root:\n def __init__(self): self.item=1\nclass Left(Root):\n def __init__(self): super().__init__()\nclass Right(Root):\n def __init__(self): super().__init__()\nclass Child(Left,Right):\n def __init__(self): super().__init__()\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "mro": [
+          "pkg.classes.Child",
+          "pkg.classes.Left",
+          "pkg.classes.Right",
+          "pkg.classes.Root"
+        ],
+        "constructor": "pkg.classes.Child.__init__"
+      },
+      "owner": "pkg.classes.Child"
+    },
+    {
+      "case_id": "b26-lifecycle-inherited",
+      "sources": {
+        "pkg/classes.py": "class Base:\n def __init__(self): pass\nclass Deriv(Base): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "pkg.classes.Base.__init__"
+      },
+      "owner": "pkg.classes.Deriv"
+    },
+    {
+      "case_id": "b26-lifecycle-renamed-param",
+      "sources": {
+        "pkg/classes.py": "class Base:\n def __init__(renamed): pass\nclass Deriv(Base): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "pkg.classes.Base.__init__"
+      },
+      "owner": "pkg.classes.Deriv"
+    },
+    {
+      "case_id": "b26-lifecycle-decorator-unknown",
+      "sources": {
+        "pkg/classes.py": "class Good: pass\n@change\nclass Decorated(Good): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "",
+        "mro": [],
+        "capability": "UNKNOWN_DYNAMIC_OR_UNBOUND_HIERARCHY"
+      },
+      "owner": "pkg.classes.Decorated"
+    },
+    {
+      "case_id": "b26-lifecycle-dynamic-base",
+      "sources": {
+        "pkg/classes.py": "class Good: pass\nclass Dynamic(Good,f()): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "",
+        "mro": [],
+        "capability": "UNKNOWN_DYNAMIC_OR_UNBOUND_HIERARCHY"
+      },
+      "owner": "pkg.classes.Dynamic"
+    },
+    {
+      "case_id": "b26-lifecycle-override-new",
+      "sources": {
+        "pkg/classes.py": "class Good: pass\nclass NewOverride(Good):\n def __new__(cls): return object.__new__(cls)\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "",
+        "mro": [],
+        "capability": "UNKNOWN_DYNAMIC_OR_UNBOUND_HIERARCHY"
+      },
+      "owner": "pkg.classes.NewOverride"
+    },
+    {
+      "case_id": "b26-lifecycle-c3-conflict",
+      "sources": {
+        "pkg/classes.py": "class X: pass\nclass Y: pass\nclass A(X,Y): pass\nclass B(Y,X): pass\nclass C(A,B): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "mro": [],
+        "capability": "UNKNOWN_DYNAMIC_OR_UNBOUND_HIERARCHY"
+      },
+      "owner": "pkg.classes.C"
+    },
+    {
+      "case_id": "b26-lifecycle-nested-super",
+      "sources": {
+        "pkg/classes.py": "class Root:\n def __init__(self): pass\nclass Child(Root):\n def __init__(self):\n  def later(): super().__init__()\n  action=lambda: super().__init__()\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "super": []
+      },
+      "owner": "pkg.classes.Child"
+    },
+    {
+      "case_id": "b26-lifecycle-shadowed-super",
+      "sources": {
+        "pkg/classes.py": "class Parent: pass\nclass Child(Parent):\n def __init__(self):\n  super = lambda: self\n  super().__init__()\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "super": []
+      },
+      "owner": "pkg.classes.Child"
+    },
+    {
+      "case_id": "b26-lifecycle-module-shadow-super",
+      "sources": {
+        "pkg/classes.py": "super=lambda: None\nclass Parent: pass\nclass Child(Parent):\n def __init__(self): super().__init__()\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "super": []
+      },
+      "owner": "pkg.classes.Child"
+    },
+    {
+      "case_id": "b26-method-c3",
+      "sources": {
+        "pkg/lifecycle.py": "class Root:\n def __init__(self): self.value=1\n def act(self): return self.value\nclass Left(Root):\n def act(self): return 2\nclass Right(Root):\n def check(self): return 3\nclass Child(Left,Right):\n def fetch(self): return self.act()\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "pkg.lifecycle.Root.__init__",
+        "methods": {
+          "act": "pkg.lifecycle.Left.act",
+          "check": "pkg.lifecycle.Right.check",
+          "fetch": "pkg.lifecycle.Child.fetch"
+        },
+        "unknown": []
+      },
+      "owner": "pkg.lifecycle.Child"
+    },
+    {
+      "case_id": "b26-method-rename-left",
+      "sources": {
+        "pkg/lifecycle.py": "class A:\n def run(self): return 1\nclass B(A): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {
+          "run": "pkg.lifecycle.A.run"
+        }
+      },
+      "owner": "pkg.lifecycle.B"
+    },
+    {
+      "case_id": "b26-method-rename-right",
+      "sources": {
+        "pkg/lifecycle.py": "class Y:\n def run(q): return 1\nclass Z(Y): pass\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {
+          "run": "pkg.lifecycle.Y.run"
+        }
+      },
+      "owner": "pkg.lifecycle.Z"
+    },
+    {
+      "case_id": "b26-method-decorator",
+      "sources": {
+        "pkg/lifecycle.py": "def patch(fn): return fn\nclass Base:\n @patch\n def emit(self): return 1\nclass Child(Base):\n def direct(self): return 2\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {
+          "direct": "pkg.lifecycle.Child.direct"
+        },
+        "unknown": [
+          "emit"
+        ]
+      },
+      "owner": "pkg.lifecycle.Child"
+    },
+    {
+      "case_id": "b26-method-dynamic-dispatch",
+      "sources": {
+        "pkg/lifecycle.py": "class A:\n def __getattribute__(self,name): return 0\n def run(self): return 1\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {},
+        "unknown": [
+          "__getattribute__",
+          "run"
+        ]
+      },
+      "owner": "pkg.lifecycle.A"
+    },
+    {
+      "case_id": "b26-method-unknown-hierarchy",
+      "sources": {
+        "pkg/lifecycle.py": "class Child(unknown()):\n def foo(self): return 1\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {},
+        "unknown": []
+      },
+      "owner": "pkg.lifecycle.Child"
+    },
+    {
+      "case_id": "b26-method-conditional-super",
+      "sources": {
+        "pkg/lifecycle.py": "class Parent:\n def __init__(self): self.payload=1\n def read(self): return self.payload\nclass Child(Parent):\n def __init__(self, flag):\n  if flag: super().__init__()\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "constructor": "pkg.lifecycle.Child.__init__",
+        "methods": {
+          "read": "pkg.lifecycle.Parent.read"
+        }
+      },
+      "owner": "pkg.lifecycle.Child"
+    },
+    {
+      "case_id": "b26-method-class-shadow",
+      "sources": {
+        "pkg/lifecycle.py": "class Base:\n def routine(self): return 1\nclass Child(Base):\n routine = 123\n def stable(self): return 2\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {
+          "stable": "pkg.lifecycle.Child.stable"
+        },
+        "unknown": [
+          "routine"
+        ]
+      },
+      "owner": "pkg.lifecycle.Child"
+    },
+    {
+      "case_id": "b26-method-dynamic-class-body",
+      "sources": {
+        "pkg/lifecycle.py": "condition=True\nclass Child:\n def routine(self): return 1\n if condition: routine=lambda self:2\n"
+      },
+      "query": "lifecycle",
+      "expected": {
+        "methods": {},
+        "unknown": [
+          "routine"
+        ]
+      },
+      "owner": "pkg.lifecycle.Child"
+    },
+    {
+      "case_id": "b26-topology-private-symbol",
+      "sources": {
+        "sample.py": "class Worker:\n    def _helper(self):\n        return 1\n\n    def run(self):\n        return self._helper()\n\ndef callback(value):\n    return value\n\ndef consume(fn):\n    return fn(1)\n\ndef main():\n    return consume(callback)\n"
+      },
+      "query": "symbol",
+      "expected": {
+        "visibility": "internal",
+        "owner_id": "sample.Worker",
+        "kind": "method"
+      },
+      "symbol": "sample.Worker._helper"
+    },
+    {
+      "case_id": "b26-topology-direct-self-call",
+      "sources": {
+        "sample.py": "class Worker:\n    def _helper(self):\n        return 1\n\n    def run(self):\n        return self._helper()\n\ndef callback(value):\n    return value\n\ndef consume(fn):\n    return fn(1)\n\ndef main():\n    return consume(callback)\n"
+      },
+      "query": "incoming",
+      "expected": [
+        [
+          "sample.Worker.run",
+          "direct_call",
+          6
+        ]
+      ],
+      "target": "sample.Worker._helper",
+      "kinds": [
+        "direct_call"
+      ]
+    },
+    {
+      "case_id": "b26-topology-lexical-local",
+      "sources": {
+        "a.py": "def outer(value):\n def is_valid(item): return bool(item)\n return is_valid(value)\n",
+        "b.py": "def other(flag):\n is_valid=flag\n return is_valid\n"
+      },
+      "query": "incoming",
+      "expected": [
+        [
+          "a.outer",
+          "direct_call",
+          3
+        ]
+      ],
+      "target": "a.outer.is_valid",
+      "kinds": [
+        "direct_call"
+      ]
+    },
+    {
+      "case_id": "b26-topology-repeated-call-sites",
+      "sources": {
+        "sample.py": "def _format(value):\n return value.strip()\n\ndef render(value):\n first=_format(value)\n return first+_format(value)\n"
+      },
+      "query": "incoming",
+      "expected": [
+        [
+          "sample.render",
+          "direct_call",
+          5
+        ],
+        [
+          "sample.render",
+          "direct_call",
+          6
+        ]
+      ],
+      "target": "sample._format",
+      "kinds": [
+        "direct_call"
+      ]
+    },
+    {
+      "case_id": "b26-relation-export",
+      "sources": {
+        "base.py": "class Base:\n def hook(self): return None\ndef callback(v): return v\n",
+        "worker.py": "from base import Base,callback\n__all__=[\"Worker\"]\nclass Worker(Base):\n def __init__(self): self.state=1\n def hook(self): return self.state\n def _helper(self): return self.state\n def run(self): return self._helper()\ndef consume(fn): return fn\ndef main(): return consume(callback)\ndef outer(value):\n def transform(item): return item+value\n return consume(transform)\n"
+      },
+      "query": "symbol",
+      "expected": {
+        "exported": true
+      },
+      "symbol": "worker.Worker"
+    },
+    {
+      "case_id": "b26-relation-override",
+      "sources": {
+        "base.py": "class Base:\n def hook(self): return None\ndef callback(v): return v\n",
+        "worker.py": "from base import Base,callback\n__all__=[\"Worker\"]\nclass Worker(Base):\n def __init__(self): self.state=1\n def hook(self): return self.state\n def _helper(self): return self.state\n def run(self): return self._helper()\ndef consume(fn): return fn\ndef main(): return consume(callback)\ndef outer(value):\n def transform(item): return item+value\n return consume(transform)\n"
+      },
+      "query": "edges_present",
+      "expected": [
+        true,
+        true,
+        true
+      ],
+      "edges": [
+        [
+          "worker.Worker",
+          "base.Base",
+          "inheritance"
+        ],
+        [
+          "worker.Worker.hook",
+          "base.Base.hook",
+          "override"
+        ],
+        [
+          "worker.main",
+          "base.callback",
+          "callback_registration"
+        ]
+      ]
+    },
+    {
+      "case_id": "b26-relation-closure",
+      "sources": {
+        "base.py": "class Base:\n def hook(self): return None\ndef callback(v): return v\n",
+        "worker.py": "from base import Base,callback\n__all__=[\"Worker\"]\nclass Worker(Base):\n def __init__(self): self.state=1\n def hook(self): return self.state\n def _helper(self): return self.state\n def run(self): return self._helper()\ndef consume(fn): return fn\ndef main(): return consume(callback)\ndef outer(value):\n def transform(item): return item+value\n return consume(transform)\n"
+      },
+      "query": "edges_present",
+      "expected": [
+        true,
+        true
+      ],
+      "edges": [
+        [
+          "worker.outer",
+          "worker.outer.transform",
+          "callback_registration"
+        ],
+        [
+          "worker.outer.transform",
+          "binding:worker.outer:value",
+          "closure_capture"
+        ]
+      ]
+    },
+    {
+      "case_id": "b26-relation-field",
+      "sources": {
+        "base.py": "class Base:\n def hook(self): return None\ndef callback(v): return v\n",
+        "worker.py": "from base import Base,callback\n__all__=[\"Worker\"]\nclass Worker(Base):\n def __init__(self): self.state=1\n def hook(self): return self.state\n def _helper(self): return self.state\n def run(self): return self._helper()\ndef consume(fn): return fn\ndef main(): return consume(callback)\ndef outer(value):\n def transform(item): return item+value\n return consume(transform)\n"
+      },
+      "query": "edges_present",
+      "expected": [
+        true,
+        true
+      ],
+      "edges": [
+        [
+          "worker.Worker.__init__",
+          "field:worker.Worker.state",
+          "field_access"
+        ],
+        [
+          "worker.Worker._helper",
+          "field:worker.Worker.state",
+          "field_access"
+        ]
+      ]
+    },
+    {
+      "case_id": "b26-relation-local-owner",
+      "sources": {
+        "local.py": "def build():\n class SpyBinder:\n  calls=0\n  def require(self):\n   self.calls+=1\n   return self.calls\n return SpyBinder().require()\n"
+      },
+      "query": "edges_present",
+      "expected": [
+        true
+      ],
+      "edges": [
+        [
+          "local.build.SpyBinder.require",
+          "field:local.build.SpyBinder.calls",
+          "field_access"
+        ]
+      ]
+    },
+    {
+      "case_id": "b26-relation-lexical-boundary",
+      "sources": {
+        "lexical.py": "def outer(value):\n def is_valid(item): return bool(item)\n def inner(item): return is_valid(item)\n return inner(value)\n",
+        "class_scope.py": "class Worker:\n def helper(self): return 1\n def run(self): return helper()\n"
+      },
+      "query": "edges_present",
+      "expected": [
+        true,
+        false
+      ],
+      "edges": [
+        [
+          "lexical.outer.inner",
+          "lexical.outer.is_valid",
+          "direct_call"
+        ],
+        [
+          "class_scope.Worker.run",
+          "class_scope.Worker.helper",
+          "direct_call"
+        ]
+      ]
+    },
+    {
+      "case_id": "b26-guard-positive",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" in state:\n        return state[\"value\"]\n    return 0\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-negative-return",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-negative-raise",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        raise ValueError()\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-bare-read",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-non-dominating",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" in state:\n        pass\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-branch-exit",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" in state:\n        pass\n    else:\n        return 0\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-both-continue",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" in state:\n        pass\n    else:\n        pass\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-invalidated-call",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    unknown(state)\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-invalidated-delete",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    del state[\"value\"]\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-invalidated-rebound",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    state=external()\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-invalidated-unknown-effect",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    awaitable(state)\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-unrelated-branch",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    if flag:\n        pass\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-nested-negative",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return state[\"value\"]\n    return 0\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-double-negative",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if not (\"value\" not in state):\n        return state[\"value\"]\n    return 0\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-exception-handler",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    try:\n        may_fail()\n    except Exception:\n        pass\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-rename-get",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    get: int\ndef check(state: Record):\n    if \"get\" not in state:\n        return 0\n    return state[\"get\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "get"
+    },
+    {
+      "case_id": "b26-guard-rename-queue",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    queue: int\ndef check(state: Record):\n    if \"queue\" not in state:\n        return 0\n    return state[\"queue\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "queue"
+    },
+    {
+      "case_id": "b26-guard-rename-read_only",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    read_only: int\ndef check(state: Record):\n    if \"read_only\" not in state:\n        return 0\n    return state[\"read_only\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "read_only"
+    },
+    {
+      "case_id": "b26-guard-rename-set",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    set: int\ndef check(state: Record):\n    if \"set\" not in state:\n        return 0\n    return state[\"set\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        5
+      ],
+      "field": "set"
+    },
+    {
+      "case_id": "b26-guard-alias-delete",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    alias=state\n    del alias[\"value\"]\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    },
+    {
+      "case_id": "b26-guard-container-alias",
+      "sources": {
+        "module.py": "from typing import TypedDict\nclass Record(TypedDict,total=False):\n    value: int\ndef check(state: Record):\n    if \"value\" not in state:\n        return 0\n    alias=[state]\n    del alias[0][\"value\"]\n    return state[\"value\"]\n"
+      },
+      "query": "guard",
+      "expected": [
+        0
+      ],
+      "field": "value"
+    }
+  ]
+}

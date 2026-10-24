@@ -1,0 +1,17 @@
+{
+  "schema": "compiler-triage-public/v02",
+  "cases": [
+    {
+      "case_id": "compiler-triage-missing-import-and-stale-source",
+      "expected": {
+        "total": 3,
+        "groups": {
+          "COMPILER_CONTRACT_WITH_MISSING_IMPORTS": 2,
+          "ENVIRONMENT_INCOMPLETE": 1
+        },
+        "context_line": 3,
+        "all_unverified_source": true
+      }
+    }
+  ]
+}

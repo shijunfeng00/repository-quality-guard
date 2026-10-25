@@ -180,7 +180,7 @@ class RepositoryScanner:
                 ),
             )
         findings = [finding for item in facts for finding in item.findings]
-        from .case_contract_rules import case_contract_findings
+        from .case_contract_rules import case_contract_findings, repository_directory_layout_findings
 
         # Case entrypoint authentication needs the same cross-module graph as
         # all other R1/R2/R3 rules. Run after topology construction, reusing
@@ -195,6 +195,8 @@ class RepositoryScanner:
                         test_roots=self.config.test_roots,
                     )
                 )
+        if self.config.project_name == "repository-quality-guard":
+            findings.extend(repository_directory_layout_findings(self.root, self.topology, facts))
         if self.analysis_snapshot is not None and self.topology is not None:
             from .typed_producer_contract import typed_producer_contract_findings
 

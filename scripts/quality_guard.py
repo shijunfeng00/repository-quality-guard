@@ -45,7 +45,7 @@ def main() -> int:
         print(f"[QG] 环境准备失败：{error}", file=sys.stderr, flush=True)
         return 2
     os.environ["REPO_QUALITY_GUARD_HOME"] = str(ROOT)
-    seal = "efd04869d0fd3cebf12608866d4fdeb4ed2b2bff19c8e17dad12126edca28c10"
+    seal = "1c8b206e644819fb867afd26b7ab9225e366757b21d4fb2c489467cdc97d5f8c"
     os.environ["REPO_QUALITY_GUARD_RELEASE_SEAL"] = seal
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     from runtime.src import workflow

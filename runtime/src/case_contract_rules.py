@@ -1074,6 +1074,96 @@ def _case_entrypoint_origin_findings(
         else {}
     )
     findings: list[Finding] = []
+
+    def is_repository_cli_process_adapter(target: ast.expr) -> bool:
+        """Authenticate subprocess.run only when a Case exercises a real repo CLI.
+
+        ``rqgtest`` invokes the returned callable with the Case input tuple. For
+        process-level CLI contracts, ``subprocess.run`` is the execution
+        adapter, while the actual subject is the repository-owned script named
+        in the yielded command. Accept that adapter only when the same Case
+        supplies an independent output Case and compares process status/output;
+        arbitrary subprocesses and third-party entrypoints remain rejected.
+        """
+        if not (
+            isinstance(target, ast.Attribute)
+            and target.attr == "run"
+            and isinstance(target.value, ast.Name)
+            and imports.get(target.value.id) == "subprocess"
+            and repository_root is not None
+        ):
+            return False
+        input_method = declared.get("get_input_data")
+        output_method = declared.get("get_output_data")
+        equals_method = declared.get("equals")
+        if input_method is None or output_method is None or equals_method is None:
+            return False
+
+        # A command variable must carry an existing repository CLI path and be
+        # yielded as the actual positional input to subprocess.run.
+        command_names: set[str] = set()
+        for statement in ast.walk(input_method):
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = (
+                statement.value
+                if isinstance(statement, ast.Assign)
+                else statement.value
+                if isinstance(statement, ast.AnnAssign)
+                else None
+            )
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+                if isinstance(statement, ast.AnnAssign)
+                else []
+            )
+            if value is None:
+                continue
+            script_found = False
+            for node in ast.walk(value):
+                if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                    continue
+                raw = Path(node.value)
+                if raw.suffix != ".py" or not raw.parts or raw.parts[0] not in {"scripts", "runtime"}:
+                    continue
+                candidate = (repository_root / raw).resolve()
+                try:
+                    candidate.relative_to(repository_root.resolve())
+                except ValueError:
+                    continue
+                if candidate.is_file():
+                    script_found = True
+                    break
+            if script_found:
+                command_names.update(
+                    node.id for target_node in targets for node in ast.walk(target_node)
+                    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                )
+        if not command_names:
+            return False
+        yielded_command = any(
+            isinstance(node, ast.Yield)
+            and node.value is not None
+            and any(
+                isinstance(child, ast.Name)
+                and isinstance(child.ctx, ast.Load)
+                and child.id in command_names
+                for child in ast.walk(node.value)
+            )
+            for node in ast.walk(input_method)
+        )
+        if not yielded_command:
+            return False
+
+        observed_fields = {
+            node.attr for node in ast.walk(equals_method) if isinstance(node, ast.Attribute)
+        }
+        return "returncode" in observed_fields and bool(
+            {"stdout", "stderr"} & observed_fields
+        )
+
     for statement in ast.walk(method):
         if not isinstance(statement, ast.Return) or statement.value is None:
             continue
@@ -1090,6 +1180,8 @@ def _case_entrypoint_origin_findings(
                     f"{case.name}.get_enterpoint",
                 )
             )
+            continue
+        if is_repository_cli_process_adapter(target):
             continue
         if (
             topology is not None

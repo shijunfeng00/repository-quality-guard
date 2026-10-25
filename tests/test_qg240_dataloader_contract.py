@@ -20,6 +20,7 @@ class DataLoaderModuleProvenanceCase(TestCase):
             ('from rqgtest import PickleDataLoader\nclass Legit(PickleDataLoader):\n    pass\n', ()),
             ('class Impostor(JSONDataLoader):\n    pass\n', ('QG240', 'QG240')),
             ('from rqgtest import JSONDataLoader\nclass Legit(JSONDataLoader):\n    pass\ndef extra(): return 1\n', ('QG240', 'QG240')),
+            ('from rqgtest import JSONDataLoader\nclass Legit(JSONDataLoader):\n    pass\nclass Extra: pass\n', ('QG240', 'QG240', 'QG240')),
         )
         for source, _ in records:
             yield ((Path('tests/dataloaders/inputs.py'), ast.parse(source)), {})
@@ -29,6 +30,7 @@ class DataLoaderModuleProvenanceCase(TestCase):
         yield ()
         yield ()
         yield ('QG240', 'QG240')
+        yield ('QG240', 'QG240', 'QG240')
         yield ('QG240', 'QG240', 'QG240')
 
     def equals(self, expected, actual):

@@ -63,7 +63,10 @@ class FrozenRepositoryDirectoryLayoutCase(TestCase):
         cases = (
             (None, ()),
             ("tests_support", ("tests_support", "unexpected_directory")),
+            ("tests/data", ("tests/data", "unexpected_tests_child")),
             ("tests/cases/release", ("tests/cases/release", "unexpected_directory")),
+            ("tests/cases/nested", ("tests/cases/nested", "unexpected_directory")),
+            ("tests/dataloaders/nested", ("tests/dataloaders/nested", "unexpected_directory")),
             ("tests/helper.py", ("tests/helper.py", "unexpected_tests_file")),
             ("tests/dataloaders/extra.json", ("tests/dataloaders/extra.json", "non_python_dataloader_asset")),
             (".ruff_cache", ()),
@@ -91,7 +94,10 @@ class FrozenRepositoryDirectoryLayoutCase(TestCase):
     def get_output_data(self):
         yield ()
         yield (("tests_support", "unexpected_directory"),)
+        yield (("tests/data", "unexpected_directory"), ("tests/data", "unexpected_tests_child"))
         yield (("tests/cases/release", "unexpected_directory"),)
+        yield (("tests/cases/nested", "unexpected_directory"),)
+        yield (("tests/dataloaders/nested", "unexpected_directory"),)
         yield (("tests/helper.py", "unexpected_tests_file"),)
         yield (("tests/dataloaders/extra.json", "non_python_dataloader_asset"),)
         yield ()

@@ -1,11 +1,13 @@
 """Public ordered Finding-ledger equivalence and fail-closed input contracts."""
+
 from __future__ import annotations
 
+from tests_support.finding_ledger import compare_finding_ledgers
+
 from rqgtest import Outcome, TestCase
-from tools.compare_finding_ledgers import compare_finding_ledgers
+
 import json
 from pathlib import Path
-
 
 
 class Core03FindingParityPublicCase(TestCase):
@@ -17,13 +19,21 @@ class Core03FindingParityPublicCase(TestCase):
 
     def get_input_data(self):
         """Supply all valid frozen-input pairs as direct positional inputs."""
-        for row in json.loads((Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json").read_text(encoding="utf-8"))["cases"]:
+        for row in json.loads(
+            (
+                Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json"
+            ).read_text(encoding="utf-8")
+        )["cases"]:
             if "equivalent" in row["expected"]:
                 yield ((row["baseline"], row["current"]), {})
 
     def get_output_data(self):
         """Read originally authored equivalence and mismatch-count expectations."""
-        for row in json.loads((Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json").read_text(encoding="utf-8"))["cases"]:
+        for row in json.loads(
+            (
+                Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json"
+            ).read_text(encoding="utf-8")
+        )["cases"]:
             if "equivalent" in row["expected"]:
                 yield row["expected"]
 
@@ -31,7 +41,8 @@ class Core03FindingParityPublicCase(TestCase):
         """Compare exact equivalence, retired-baseline removal and ordered mismatch count."""
         return (
             actual["equivalent"] == expected["equivalent"]
-            and actual["removed_retired_baseline_findings"] == expected["removed_retired_baseline_findings"]
+            and actual["removed_retired_baseline_findings"]
+            == expected["removed_retired_baseline_findings"]
             and len(actual["differences"]) == expected["differences"]
         )
 
@@ -49,13 +60,21 @@ class Core03FindingInvalidLedgerPublicCase(TestCase):
 
     def get_input_data(self):
         """Supply malformed or forged inputs without executing the comparator."""
-        for row in json.loads((Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json").read_text(encoding="utf-8"))["cases"]:
+        for row in json.loads(
+            (
+                Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json"
+            ).read_text(encoding="utf-8")
+        )["cases"]:
             if "exception" in row["expected"]:
                 yield ((row["baseline"], row["current"]), {})
 
     def get_output_data(self):
         """Require the original independently authored ValueError contract."""
-        for row in json.loads((Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json").read_text(encoding="utf-8"))["cases"]:
+        for row in json.loads(
+            (
+                Path(__file__).resolve().parent / "cases/core03-finding-parity-v1.json"
+            ).read_text(encoding="utf-8")
+        )["cases"]:
             if "exception" in row["expected"]:
                 yield ValueError
 

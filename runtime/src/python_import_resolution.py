@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Collection, Mapping
 
 
@@ -51,6 +52,86 @@ def resolve_local_import_symbol(
             return None
         current = expanded
 
+
+
+def authored_import_bindings(
+    current_module: str, path: str, node: ast.Import | ast.ImportFrom
+) -> dict[str, str]:
+    """Normalize one authored import statement into local-name to target bindings.
+
+    Args:
+        current_module: Canonical module name for the importing source file.
+        path: Source-relative filename used to resolve package initializer semantics.
+        node: Parsed top-level import statement.
+
+    Returns:
+        Explicit local bindings without loading modules or executing user code.
+    """
+    if isinstance(node, ast.Import):
+        return {
+            alias.asname or alias.name.split(".", 1)[0]: alias.name
+            for alias in node.names
+        }
+    module = node.module or ""
+    if node.level:
+        package = (
+            current_module
+            if path == "__init__.py" or path.endswith("/__init__.py")
+            else current_module.rpartition(".")[0]
+        )
+        parts = [part for part in package.split(".") if part]
+        remove = node.level - 1
+        if remove > len(parts):
+            return {}
+        base = parts[: len(parts) - remove]
+        if module:
+            base.extend(module.split("."))
+        module = ".".join(base)
+    if not module:
+        return {}
+    return {
+        alias.asname or alias.name: f"{module}.{alias.name}"
+        for alias in node.names
+        if alias.name != "*"
+    }
+
+
+def module_import_declarations(
+    module: str,
+    path: str,
+    node: ast.Import | ast.ImportFrom,
+    namespace_modules: Collection[str],
+) -> tuple[dict[str, str], bool]:
+    """Project authored imports to safe symbol/module prefixes for graph analysis.
+
+    Args:
+        module: Canonical module name of the importing source.
+        path: Source-relative filename used for relative import resolution.
+        node: Parsed top-level import statement.
+        namespace_modules: Known namespace-package module identifiers.
+
+    Returns:
+        Normalized import bindings and whether a wildcard import opens the namespace.
+    """
+    if isinstance(node, ast.Import):
+        return (
+            {
+                alias.asname or alias.name.split(".", 1)[0]: (
+                    alias.name if alias.asname else alias.name.split(".", 1)[0]
+                )
+                + "."
+                for alias in node.names
+            },
+            False,
+        )
+    imports = authored_import_bindings(module, path, node)
+    return (
+        {
+            key: target + "." if target in namespace_modules else target
+            for key, target in imports.items()
+        },
+        any(alias.name == "*" for alias in node.names),
+    )
 
 def python_module_name(path: str) -> str:
     """Return the normalized Python module identity from an authored relative path.

@@ -35,6 +35,7 @@ _PROTECTED_ROOT_FILES = frozenset(
 )
 _PROTECTED_PREFIXES = (
     "runtime/src/",
+    "scripts/",
     "tests/",
     "runtime/contracts/",
     "templates/",
@@ -202,7 +203,12 @@ def _legacy_payload_issues(root: Path) -> list[str]:
                 "README.md",
                 "README_zh.md",
                 "dev-tests",
+                "tests_support",
                 "tools",
+                "scripts/build_release.py",
+                "scripts/verify_release.py",
+                "scripts/install_dev_hooks.py",
+                "scripts/source_pre_push.py",
                 "profiles",
                 "installed/profile/AGENTS.md",
                 "installed/profile/README.md",

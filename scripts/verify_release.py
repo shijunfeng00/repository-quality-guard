@@ -20,7 +20,7 @@ import time
 import zipfile
 
 
-# The release verifier lives in tools/; resolve the same process lifecycle
+# The release verifier lives in scripts/; resolve the same process lifecycle
 # implementation used by the published scanner without a second runner.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from runtime.src.process_lifecycle import terminate_process_tree
@@ -37,11 +37,13 @@ _REQUIRED_FILES = (
     "runtime/src/integrity.py",
     "scripts/quality_guard.py",
     "scripts/git_hook_install.py",
+    "scripts/build_release.py",
+    "scripts/verify_release.py",
     "offline/node_modules.zip",
 )
 
 
-def _execute(args: list[str], *, timeout: int = 180, cwd: Path | None = None) -> str:
+def _execute(args: list[str], timeout: int = 180, cwd: Path | None = None) -> str:
     """Execute a real release command and fail if its exit status is nonzero."""
     result = subprocess.run(
         args, cwd=cwd, text=True, capture_output=True, check=False, timeout=timeout
@@ -66,15 +68,23 @@ def _scan_with_heartbeat(
     if not command:
         raise ValueError("release scan command must not be empty")
     started = time.monotonic()
-    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout, \
-         tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr:
+    with (
+        tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout,
+        tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr,
+    ):
         launch_options = (
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-            if os.name == "nt" else {"start_new_session": True}
+            if os.name == "nt"
+            else {"start_new_session": True}
         )
         process = subprocess.Popen(
-            command, cwd=cwd, stdin=subprocess.DEVNULL,
-            stdout=stdout, stderr=stderr, text=True, **launch_options
+            command,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
+            text=True,
+            **launch_options,
         )
         try:
             while process.poll() is None:
@@ -84,12 +94,12 @@ def _scan_with_heartbeat(
                     print(
                         f"release scan running: pid={process.pid}, "
                         f"elapsed={time.monotonic() - started:.0f}s",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
-        except BaseException:
-            if process.poll() is None:
+        finally:
+            if sys.exc_info()[0] is not None and process.poll() is None:
                 terminate_process_tree(process)
-            raise
         stdout.seek(0)
         stderr.seek(0)
         return subprocess.CompletedProcess(
@@ -104,6 +114,10 @@ def _archive_contract(artifact: Path) -> tuple[str, int]:
         if len(members) != len(set(members)):
             raise RuntimeError("release ZIP contains duplicate archive members")
         files = {name for name in members if not name.endswith("/")}
+        if any(name.startswith(f"{_ROOT}/tools/") for name in files):
+            raise RuntimeError(
+                "root tools/ is retired; source tooling must live in scripts/ or its owning package"
+            )
         absent = [name for name in _REQUIRED_FILES if f"{_ROOT}/{name}" not in files]
         if absent:
             raise RuntimeError(f"release ZIP missing required content: {absent}")
@@ -585,13 +599,13 @@ if sys.platform.startswith('linux'):
 
 def _evidence_lookup_release_smoke(bundle: Path, workspace: Path) -> None:
     """Replay authored evidence CLI output oracles against the released command."""
-    fixture = bundle / "tools/release_checks/fixtures/qg-evidence-lookup-cli-v1.json"
+    fixture = bundle / "tests/cases/release/qg-evidence-lookup-cli-v1.json"
     if not fixture.is_file():
         raise RuntimeError("canonical evidence CLI oracle missing from release")
     script = """import contextlib,io,json,subprocess,sys,tempfile
 from pathlib import Path
 from scripts import evidence_lookup
-bundle=Path(sys.argv[1]); rows=json.loads((bundle/'tools/release_checks/fixtures/qg-evidence-lookup-cli-v1.json').read_text())
+bundle=Path(sys.argv[1]); rows=json.loads((bundle/'tests/cases/release/qg-evidence-lookup-cli-v1.json').read_text())
 with tempfile.TemporaryDirectory(prefix='rqg-evidence-release-') as directory:
     for index,row in enumerate(rows['cases']):
         root=Path(directory)/f'case-{index}'
@@ -645,7 +659,7 @@ def _evidence_cache_release_smoke(bundle: Path, workspace: Path) -> None:
 from pathlib import Path
 from scripts import evidence_lookup
 bundle=Path(sys.argv[1])
-rows=json.loads((bundle/'tools/release_checks/fixtures/b33-evidence-trace-v1.json').read_text())['cases']
+rows=json.loads((bundle/'tests/cases/release/b33-evidence-trace-v1.json').read_text())['cases']
 row=next(item for item in rows if item['scenario']=='cache-invalidate')
 with tempfile.TemporaryDirectory(prefix='rqg-evidence-cache-release-') as directory:
     root=Path(directory)/'source';root.mkdir()
@@ -687,7 +701,7 @@ from runtime.src.analysis_snapshot import directory_analysis_snapshot
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner,snapshot_only_rule_findings
 from runtime.src.topology_facts import RepositoryTopology
-rows=json.loads((Path(sys.argv[1])/'tools/release_checks/fixtures/b33-scanner-equivalence-v1.json').read_text())['cases']
+rows=json.loads((Path(sys.argv[1])/'tests/cases/release/b33-scanner-equivalence-v1.json').read_text())['cases']
 for row in rows:
     with tempfile.TemporaryDirectory(prefix='rqg-snapshot-release-') as directory:
         root=Path(directory)
@@ -749,7 +763,7 @@ from runtime.src.topology_facts import UsageKind
 from scripts import evidence_lookup
 from scripts.evidence_graph import TraceOptions,_serialize,render
 from scripts.evidence_statistics import graph_statistics
-rows=json.loads((Path(sys.argv[1])/'tools/release_checks/fixtures/b32-graph-observable-v1.json').read_text())['cases']
+rows=json.loads((Path(sys.argv[1])/'tests/cases/release/b32-graph-observable-v1.json').read_text())['cases']
 for row in rows:
     if row['scenario']=='nested-owner':continue
     with tempfile.TemporaryDirectory(prefix='rqg-graph-cli-release-') as directory:
@@ -928,7 +942,7 @@ if [(x.code,x.path,x.line) for x in first[1].findings] != [(x.code,x.path,x.line
 
 def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
     """Compile the shipped C++ TestUnit and compare its independent oracle."""
-    test_source = bundle / "tools/release_checks/fixtures/cpp-testunit"
+    test_source = bundle / "tests/cases/release/cpp-testunit"
     if not test_source.is_dir():
         raise RuntimeError("missing C++ TestUnit contract sources in canonical release")
     build = workspace / "cpp-testunit-build"
@@ -947,7 +961,7 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
     _execute(["ctest", "--test-dir", str(build), "--output-on-failure"], timeout=60)
     observed = json.loads(_execute([str(build / "rqg_testunit_cpp")], timeout=40))
     rows = json.loads(
-        (bundle / "tools/release_checks/fixtures/native-oracle-b69.json").read_text(
+        (bundle / "tests/cases/release/native-oracle-b69.json").read_text(
             encoding="utf-8"
         )
     )["cases"]
@@ -975,11 +989,11 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
 
 def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     """Validate C11/Java native ledgers and cross-language observable parity."""
-    tests = bundle / "tools/release_checks/fixtures/native-testunit"
+    tests = bundle / "tests/cases/release/native-testunit"
     if not tests.is_dir():
         raise RuntimeError("missing native TestUnit fixture sources")
     rows = json.loads(
-        (bundle / "tools/release_checks/fixtures/native-oracle-b69.json").read_text(
+        (bundle / "tests/cases/release/native-oracle-b69.json").read_text(
             encoding="utf-8"
         )
     )["cases"]
@@ -1024,6 +1038,7 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     )
 
     def summarize(value: dict, language: str) -> dict:
+        """Project compiler-runner output onto the frozen public oracle fields."""
         return {
             "schema": value["schema_version"],
             "passed": value["passed"],
@@ -1093,6 +1108,7 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     )
 
     def public(value):
+        """Return only the language-neutral public fields used for parity comparison."""
         return [
             [
                 x["case_id"],
@@ -1132,34 +1148,65 @@ def _native_abstract_interface_negative_smoke(bundle: Path, workspace: Path) -> 
     cpp = root / "MissingCase.cpp"
     cpp.write_text(
         '#include "tests.hpp"\n'
-        'struct MissingCase final : rqg::tests::ITestCase {};\n'
-        'int main() { MissingCase cannot_instantiate; }\n',
+        "struct MissingCase final : rqg::tests::ITestCase {};\n"
+        "int main() { MissingCase cannot_instantiate; }\n",
         encoding="utf-8",
     )
     java = root / "MissingCase.java"
     java.write_text(
-        'import rqg.contracts.TestUnit;\n'
-        'public final class MissingCase implements TestUnit.ITestCase {}\n',
+        "import rqg.contracts.TestUnit;\n"
+        "public final class MissingCase implements TestUnit.ITestCase {}\n",
         encoding="utf-8",
     )
     for language, command in (
-        ("C++", ["c++", "-std=c++17", "-fsyntax-only", "-I",
-                 str(bundle / "runtime/contracts/cpp"), str(cpp)]),
-        ("Java", ["javac", "-d", str(root),
-                  str(bundle / "runtime/contracts/java/TestUnit.java"), str(java)]),
+        (
+            "C++",
+            [
+                "c++",
+                "-std=c++17",
+                "-fsyntax-only",
+                "-I",
+                str(bundle / "runtime/contracts/cpp"),
+                str(cpp),
+            ],
+        ),
+        (
+            "Java",
+            [
+                "javac",
+                "-d",
+                str(root),
+                str(bundle / "runtime/contracts/java/TestUnit.java"),
+                str(java),
+            ],
+        ),
     ):
-        result = subprocess.run(command, text=True, capture_output=True,
-                                check=False, timeout=45, cwd=workspace)
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=45,
+            cwd=workspace,
+        )
         if result.returncode == 0:
-            raise RuntimeError(f"{language} accepted a missing abstract Case implementation")
-        if language == "C++" and not any(word in result.stderr for word in
-                                          ("abstract", "pure virtual")):
-            raise RuntimeError("C++ negative check failed for unrelated reasons: "
-                               + result.stderr[-700:])
-        if language == "Java" and not any(word in result.stderr for word in
-                                           ("abstract", "override")):
-            raise RuntimeError("Java negative check failed for unrelated reasons: "
-                               + result.stderr[-700:])
+            raise RuntimeError(
+                f"{language} accepted a missing abstract Case implementation"
+            )
+        if language == "C++" and not any(
+            word in result.stderr for word in ("abstract", "pure virtual")
+        ):
+            raise RuntimeError(
+                "C++ negative check failed for unrelated reasons: "
+                + result.stderr[-700:]
+            )
+        if language == "Java" and not any(
+            word in result.stderr for word in ("abstract", "override")
+        ):
+            raise RuntimeError(
+                "Java negative check failed for unrelated reasons: "
+                + result.stderr[-700:]
+            )
 
 
 def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
@@ -1169,36 +1216,69 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
     No network-based compiler installation or skipped tooling is permitted.
     """
     ts_source = bundle / "runtime/contracts/typescript/testunit.ts"
-    ts_positive = bundle / "tools/release_checks/fixtures/native-testunit/TypeScriptNativeCase.ts"
+    ts_positive = bundle / "tests/cases/release/native-testunit/TypeScriptNativeCase.ts"
     go_source = bundle / "runtime/contracts/go/testunit.go"
     go_positive = bundle / "runtime/contracts/go/testunit_test.go"
     for required in (ts_source, ts_positive, go_source, go_positive):
         if not required.is_file():
             raise RuntimeError(f"missing native interface source: {required}")
     ts_compiled = workspace / "ts-contract-compiled"
-    _execute([
-        "tsc", "--strict", "--target", "es2022", "--module", "commonjs",
-        "--moduleResolution", "node", "--rootDir", str(bundle),
-        "--outDir", str(ts_compiled), str(ts_source), str(ts_positive),
-    ], timeout=60)
-    ts_entry = ts_compiled / "tools/release_checks/fixtures/native-testunit/TypeScriptNativeCase.js"
+    _execute(
+        [
+            "tsc",
+            "--strict",
+            "--target",
+            "es2022",
+            "--module",
+            "commonjs",
+            "--moduleResolution",
+            "node",
+            "--rootDir",
+            str(bundle),
+            "--outDir",
+            str(ts_compiled),
+            str(ts_source),
+            str(ts_positive),
+        ],
+        timeout=60,
+    )
+    ts_entry = (
+        ts_compiled / "tests/cases/release/native-testunit/TypeScriptNativeCase.js"
+    )
     observed = json.loads(_execute(["node", str(ts_entry)], timeout=30))
     expected = {"case_id": "sum-7", "kind": "RETURN", "matched": True}
     if observed != expected:
-        raise RuntimeError(f"TypeScript ITestCase positive contract mismatch: {observed}")
+        raise RuntimeError(
+            f"TypeScript ITestCase positive contract mismatch: {observed}"
+        )
 
     negative_ts = workspace / "IncompleteCase.ts"
     negative_ts.write_text(
         f'import type {{ ITestCase }} from "{ts_source.as_posix()[:-3]}";\n'
         'class IncompleteCase implements ITestCase { get_case_id(): string { return "broken"; } }\n'
-        'void IncompleteCase;\n', encoding="utf-8"
+        "void IncompleteCase;\n",
+        encoding="utf-8",
     )
     rejected_ts = subprocess.run(
-        ["tsc", "--strict", "--noEmit", "--target", "es2022",
-         "--moduleResolution", "node", str(negative_ts)],
-        capture_output=True, text=True, check=False, timeout=60,
+        [
+            "tsc",
+            "--strict",
+            "--noEmit",
+            "--target",
+            "es2022",
+            "--moduleResolution",
+            "node",
+            str(negative_ts),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
     )
-    if rejected_ts.returncode == 0 or "TS2420" not in rejected_ts.stdout + rejected_ts.stderr:
+    if (
+        rejected_ts.returncode == 0
+        or "TS2420" not in rejected_ts.stdout + rejected_ts.stderr
+    ):
         raise RuntimeError(
             "TypeScript compiler did not reject missing ITestCase methods: "
             + (rejected_ts.stdout + rejected_ts.stderr)[-1000:]
@@ -1210,11 +1290,21 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
     shutil.copy2(go_positive, go_root / "testunit_test.go")
     go_env = {**os.environ, "GOWORK": "off", "GO111MODULE": "off", "GOPROXY": "off"}
     go_good = subprocess.run(
-        ["go", "test", "-count=1", "-v", "."], cwd=go_root, env=go_env,
-        capture_output=True, text=True, check=False, timeout=90,
+        ["go", "test", "-count=1", "-v", "."],
+        cwd=go_root,
+        env=go_env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
     )
-    if go_good.returncode or "--- PASS: TestRequiredMethodsAndCaseIdentity" not in go_good.stdout:
-        raise RuntimeError("Go interface positive contract failed: " + go_good.stderr[-1000:])
+    if (
+        go_good.returncode
+        or "--- PASS: TestRequiredMethodsAndCaseIdentity" not in go_good.stdout
+    ):
+        raise RuntimeError(
+            "Go interface positive contract failed: " + go_good.stderr[-1000:]
+        )
     # Isolate the negative provider from positive tests, so a failure must
     # be caused by the real Go interface, not some unrelated prior test.
     go_bad = workspace / "go-missing-case"
@@ -1223,13 +1313,21 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
     (go_bad / "bad_test.go").write_text(
         "package testunit\n"
         "type MissingCase struct{}\n"
-        "var _ ITestCase = (*MissingCase)(nil)\n", encoding="utf-8"
+        "var _ ITestCase = (*MissingCase)(nil)\n",
+        encoding="utf-8",
     )
     rejected_go = subprocess.run(
-        ["go", "test", "-count=1", "."], cwd=go_bad, env=go_env,
-        capture_output=True, text=True, check=False, timeout=90,
+        ["go", "test", "-count=1", "."],
+        cwd=go_bad,
+        env=go_env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
     )
-    if rejected_go.returncode == 0 or "does not implement ITestCase" not in (rejected_go.stdout + rejected_go.stderr):
+    if rejected_go.returncode == 0 or "does not implement ITestCase" not in (
+        rejected_go.stdout + rejected_go.stderr
+    ):
         raise RuntimeError(
             "Go compiler did not reject incomplete ITestCase: "
             + (rejected_go.stdout + rejected_go.stderr)[-1000:]
@@ -1239,7 +1337,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
 def _source_witness_release_smoke(bundle: Path, workspace: Path) -> None:
     """Verify source-bound R2/R3 evidence survives official audit and readonly verify."""
     rows = json.loads(
-        (bundle / "tools/release_checks/fixtures/native-oracle-b69.json").read_text(
+        (bundle / "tests/cases/release/native-oracle-b69.json").read_text(
             encoding="utf-8"
         )
     )["cases"]
@@ -1288,7 +1386,7 @@ def _qg003_dual_oracle_release_smoke(bundle: Path, workspace: Path) -> None:
     they are exercised as a release integration contract rather than a
     synthetic TestCase method hiding an entire execution workflow.
     """
-    dataset = bundle / "tools/release_checks/fixtures/qg003-business-v1.json"
+    dataset = bundle / "tests/cases/release/qg003-business-v1.json"
     if not dataset.is_file():
         raise RuntimeError("QG003 release fixture missing: " + str(dataset))
     script = r"""
@@ -1297,7 +1395,7 @@ import tempfile
 from pathlib import Path
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner
-rows=json.loads(Path('tools/release_checks/fixtures/qg003-business-v1.json').read_text(encoding='utf-8'))['cases']
+rows=json.loads(Path('tests/cases/release/qg003-business-v1.json').read_text(encoding='utf-8'))['cases']
 if {row['kind'] for row in rows} != {'TP','TN'}:
     raise RuntimeError('QG003 independent polarity oracles are incomplete')
 for row in rows:
@@ -1392,10 +1490,17 @@ def _report_mutation_release_smoke(destination: Path, workspace: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Validate the exact release artifact, then perform isolated installation."""
+    """Validate the canonical release artifact and its isolated install behavior.
+
+    Args:
+        argv: Optional command-line arguments; None reads the process arguments.
+
+    Returns:
+        Zero only when archive, installation, integrity, lifecycle, and native checks pass.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "archive", type=Path, help="full release ZIP from tools/build_release.py"
+        "archive", type=Path, help="full release ZIP from scripts/build_release.py"
     )
     args = parser.parse_args(argv)
     artifact = args.archive.resolve(strict=True)

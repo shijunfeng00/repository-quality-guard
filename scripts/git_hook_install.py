@@ -16,14 +16,8 @@ _HOOK_TEXT = f"""#!/bin/sh
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1
 qg="$repo_root/.agents/skills/repository-quality-guard/scripts/quality_guard.py"
 if [ ! -f "$qg" ]; then
-  # RQG's own source repository is a portable checkout, not an .agents deployment.
-  own_qg="$repo_root/scripts/quality_guard.py"
-  if [ -f "$repo_root/SKILL.md" ] && [ -f "$repo_root/runtime/RELEASE.lock" ] && [ -f "$own_qg" ]; then
-    qg="$own_qg"
-  else
-    echo "pre-push: Repository Quality Guard 运行时缺失，拒绝 push" >&2
-    exit 1
-  fi
+  echo "pre-push: 宿主项目未安装 .agents Repository Quality Guard；此安装器不能用于 RQG 源码仓库" >&2
+  exit 1
 fi
 
 head_sha=$(git rev-parse HEAD 2>/dev/null) || exit 1
@@ -90,6 +84,16 @@ def main() -> int:
     parser.add_argument("repo", nargs="?", type=Path, default=default_repo)
     args = parser.parse_args()
     root = args.repo.resolve()
+    if (
+        (root / "SKILL.md").is_file()
+        and (root / "runtime" / "RELEASE.lock").is_file()
+        and (root / "scripts" / "ci" / "verify_release.py").is_file()
+    ):
+        print(
+            "目标是 RQG 源码仓库；宿主项目 hook 安装器不能用于自身开发，请运行 scripts/install_dev_hooks.py。",
+            file=sys.stderr,
+        )
+        return 2
     result = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "--git-path", "hooks/pre-push"],
         check=False,

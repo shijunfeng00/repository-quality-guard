@@ -20,14 +20,9 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import unquote, urlsplit
 
-from runtime.src.analysis_snapshot import RepositoryAnalysisSnapshot
+from .analysis_snapshot import RepositoryAnalysisSnapshot
 from .python_import_resolution import python_module_name
 
-
-def _utf16_column(line: str, byte_offset: int) -> int:
-    """Convert an original UTF-8 byte column to its LSP UTF-16 code-unit position."""
-    prefix = line.encode("utf-8")[:byte_offset].decode("utf-8")
-    return len(prefix.encode("utf-16-le")) // 2
 
 
 def declaration_positions(
@@ -151,8 +146,9 @@ class _PyreflyLsp:
 
     def _read_messages(self) -> None:
         """Read length-prefixed JSON-RPC replies and signal EOF explicitly to request waiters."""
-        assert self.process.stdout is not None
         stream = self.process.stdout
+        if stream is None:
+            raise RuntimeError("Python compiler LSP stdout is unavailable")
         try:
             while True:
                 header = stream.readline()
@@ -173,7 +169,8 @@ class _PyreflyLsp:
     def _send(self, message: dict) -> None:
         """Write a single framed JSON-RPC message to the compiler subprocess."""
         payload = json.dumps(message, separators=(",", ":")).encode()
-        assert self.process.stdin is not None
+        if self.process.stdin is None:
+            raise RuntimeError("Python compiler LSP stdin is unavailable")
         self.process.stdin.write(
             f"Content-Length: {len(payload)}\r\n\r\n".encode() + payload
         )
@@ -301,7 +298,8 @@ def project_compiler_targets(
             if isinstance(expr, ast.Attribute):
                 start = expr.end_col_offset - len(expr.attr.encode("utf-8"))
             line = expr.lineno - 1
-            char = _utf16_column(lines_by_path[source_path][line], start)
+            prefix = lines_by_path[source_path][line].encode("utf-8")[:start].decode("utf-8")
+            char = len(prefix.encode("utf-16-le")) // 2
             declarations = session.definition(
                 root / source_path, unit.source, line, char
             )
@@ -332,7 +330,7 @@ def project_compiler_targets(
                 results[(source_path, expr.lineno, expr.col_offset)] = tuple(
                     sorted(targets)
                 )
-    except (OSError, RuntimeError, TimeoutError, ValueError, KeyError, IndexError):
+    except (OSError, RuntimeError, TimeoutError, ValueError):
         # No compiler proof is preferable to a stale or partial proof.
         return {}
     finally:

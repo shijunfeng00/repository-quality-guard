@@ -1,1 +1,1 @@
-"""Private test support for RQG source migration checks."""
+"""Pure test support functions, no runner or executable tests."""

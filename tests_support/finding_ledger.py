@@ -6,12 +6,9 @@ Every other field or ordered Finding difference remains an explicit mismatch.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 from difflib import SequenceMatcher
 import json
-from pathlib import Path
-import sys
 from typing import Any
 
 FINDING_FIELDS = (
@@ -46,6 +43,7 @@ def compare_finding_ledgers(
     """
 
     def validate(ledger: dict[str, object], label: str) -> list[dict[str, Any]]:
+        """Validate that the ledger is an ordered array of complete Finding records."""
         items = ledger.get("findings")
         if not isinstance(items, list):
             raise ValueError(f"{label}: missing ordered findings array")
@@ -57,11 +55,20 @@ def compare_finding_ledgers(
         return items
 
     def frozen_identity(ledger: dict[str, object], label: str) -> tuple[str, str, str]:
-        """Authenticate source/configuration manifests and compare one scan scope.
+        """Authenticate the source/config manifests and return their shared scope.
 
-        A copied hash string is not evidence of identical source files.  The
-        exported file inventory and effective normalized config must match
-        their digests before two ledgers may be compared as frozen inputs.
+        Args:
+            ledger: One exported baseline or current Finding ledger.
+            label: Human-readable ledger label used in contract errors.
+
+        Returns:
+            Source digest, config digest, and declared scan scope after verification.
+
+        Raises:
+            ValueError: The source inventory, config provenance, or scope is invalid.
+
+        A copied hash string is not evidence of identical source files. The exported
+        inventory and effective normalized config must match their digests.
         """
         identity = ledger.get("frozen_input")
         if not isinstance(identity, dict):
@@ -103,14 +110,15 @@ def compare_finding_ledgers(
                 raise ValueError(f"{label}: invalid or duplicate source file identity")
             paths.add(entry[0])
 
-        def normalized(data: object) -> bytes:
-            return json.dumps(
-                data, sort_keys=True, separators=(",", ":"), default=str
-            ).encode()
-
-        if hashlib.sha256(normalized(files)).hexdigest() != values[0]:
+        normalized_files = json.dumps(
+            files, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
+        normalized_config = json.dumps(
+            config, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
+        if hashlib.sha256(normalized_files).hexdigest() != values[0]:
             raise ValueError(f"{label}: source manifest hash mismatch")
-        if hashlib.sha256(normalized(config)).hexdigest() != values[1]:
+        if hashlib.sha256(normalized_config).hexdigest() != values[1]:
             raise ValueError(f"{label}: config provenance hash mismatch")
         return values[0], values[1], scope
 
@@ -124,6 +132,7 @@ def compare_finding_ledgers(
     retired = len(before) - len(filtered_before)
 
     def identity(item: dict[str, Any]) -> str:
+        """Serialize one Finding's complete stable fields in canonical order."""
         return json.dumps(
             {name: item[name] for name in FINDING_FIELDS},
             ensure_ascii=False,
@@ -155,33 +164,3 @@ def compare_finding_ledgers(
         "removed_retired_baseline_findings": retired,
         "differences": differences,
     }
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Compare existing JSON ledgers and emit a deterministic machine-readable result.
-
-    Args:
-        argv: Optional CLI arguments; None reads sys.argv.
-
-    Returns:
-        Zero only for complete parity after the sole permitted retired-baseline deletion.
-    """
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("baseline", type=Path)
-    parser.add_argument("current", type=Path)
-    parser.add_argument("--output", type=Path)
-    args = parser.parse_args(argv)
-    baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
-    current = json.loads(args.current.read_text(encoding="utf-8"))
-    result = compare_finding_ledgers(baseline, current)
-    data = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
-    if args.output is None:
-        sys.stdout.write(data)
-    else:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(data, encoding="utf-8")
-    return 0 if result["equivalent"] else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -123,40 +123,48 @@ def _profile_selection(
 
 def _copy_agents_tree(bundle: Path, target: Path) -> None:
     """Copy first-party runtime but exclude distribution-only/profile-catalog media."""
-    shutil.copytree(
-        bundle,
-        target,
-        ignore=shutil.ignore_patterns(
-            ".git",
-            ".hg",
-            ".svn",
-            "*.whl",
-            "*.pyc",
-            "*.pyo",
-            "__pycache__",
-            ".ruff_cache",
-            ".pytest_cache",
-            "tests",
-            "dev-tests",
-            "tools",
-            "README.md",
-            "README_zh.md",
-            "AGENTS.md",
-            "templates",
-            "profiles",
-            "installed",
-            "offline",
-            "node_modules",
-            "vendor",
-            "wheels",
-        ),
+    ignored_names = shutil.ignore_patterns(
+        ".git",
+        ".hg",
+        ".svn",
+        "*.whl",
+        "*.pyc",
+        "*.pyo",
+        "__pycache__",
+        ".ruff_cache",
+        ".pytest_cache",
+        "tests",
+        "tests_support",
+        "dev-tests",
+        "tools",
+        "README.md",
+        "README_zh.md",
+        "AGENTS.md",
+        "templates",
+        "profiles",
+        "installed",
+        "offline",
+        "node_modules",
+        "vendor",
+        "wheels",
     )
+
+    def _ignore_distribution_assets(directory: str, names: list[str]) -> set[str]:
+        """Exclude the source-only CI tree only at the repository scripts root."""
+        ignored = set(ignored_names(directory, names))
+        if Path(directory).resolve() == (bundle / "scripts").resolve():
+            ignored.update({"build_release.py", "verify_release.py", "install_dev_hooks.py", "source_pre_push.py"})
+        return ignored
+
+    shutil.copytree(bundle, target, ignore=_ignore_distribution_assets)
     forbidden = [
         target / "offline",
         target / "profiles",
         target / "tests",
+        target / "tests_support",
         target / "dev-tests",
         target / "tools",
+        *(target / "scripts" / name for name in ("build_release.py", "verify_release.py", "install_dev_hooks.py", "source_pre_push.py")),
         target / "README.md",
         target / "README_zh.md",
         target / "AGENTS.md",

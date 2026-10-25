@@ -1250,7 +1250,7 @@ def _scan_target_impl(
     provider_identity: dict[str, str] = {}
     if compiler_entry and not scan_args.staged:
         from shutil import which
-        from tools.spike_core.provider_audit import collect
+        from .compiler_provider_audit import collect
         from .compiler_contracts import r2_initialization_observations
 
         checker = collect(target.root, Path(compiler_entry))
@@ -1292,7 +1292,7 @@ def _scan_target_impl(
     # every supported deployment. Explicit activation must fail visibly on an
     # incomplete toolchain; never silently downgrade to name-based inference.
     if checker is not None:
-        from tools.spike_core.python_compiler_provider import (
+        from .python_compiler_provider import (
             certified_static_call_mismatches,
         )
         from .compiler_contracts import r1_bound_call_findings

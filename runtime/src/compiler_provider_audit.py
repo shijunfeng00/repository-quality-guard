@@ -6,7 +6,6 @@ user-chosen function/field/variable name is used to infer program behavior.
 
 from __future__ import annotations
 
-import argparse
 import collections
 import hashlib
 import json
@@ -73,7 +72,6 @@ def _sha256(path: pathlib.Path) -> str:
 def collect(
     source_root: pathlib.Path,
     pyright_entry: pathlib.Path,
-    *,
     timeout: int = 90,
 ) -> dict:
     """Evaluate a frozen disk tree and check each compiler diagnostic's origin.
@@ -120,6 +118,7 @@ def collect(
         text=True,
         timeout=timeout,
         cwd=root,
+        check=False,
     )
     if run.returncode not in (0, 1):
         raise RuntimeError(
@@ -267,65 +266,3 @@ def triage(report: dict, source_root: pathlib.Path) -> dict:
         "checked_source_files": len(sources),
         "rows": rows,
     }
-
-
-def main() -> None:
-    """Run the compiler observation triage CLI and write explicit evidence and review outputs.
-
-    Returns:
-        None; results are stored on the visitor, emitted to the requested file, or resources are released."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source_root", type=pathlib.Path)
-    parser.add_argument("--pyright-entry", type=pathlib.Path, required=True)
-    parser.add_argument("--output", type=pathlib.Path, required=True)
-    parser.add_argument("--review-output", type=pathlib.Path)
-    parser.add_argument(
-        "--static-r1",
-        action="store_true",
-        help="Cross-check direct arity mismatches with compiler declarations",
-    )
-    args = parser.parse_args()
-    report = collect(args.source_root, args.pyright_entry)
-    if args.static_r1:
-        import ast
-        from runtime.src.analysis_snapshot import PythonUnit, RepositoryAnalysisSnapshot
-        from tools.spike_core.python_compiler_provider import (
-            certified_static_call_mismatches,
-        )
-
-        root = args.source_root.resolve(strict=True)
-        units = {}
-        for path in sorted(root.rglob("*.py")):
-            relative = path.relative_to(root).as_posix()
-            source = path.read_text(encoding="utf-8-sig")
-            try:
-                tree = ast.parse(source)
-            except SyntaxError:
-                tree = None
-            units[relative] = PythonUnit(relative, source, tree)
-        snapshot = RepositoryAnalysisSnapshot(root, "DIRECTORY", units)
-        report["r1_static_witnesses"] = certified_static_call_mismatches(
-            snapshot, report["observations"]
-        )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2))
-    if args.review_output is not None:
-        review = triage(report, args.source_root)
-        args.review_output.parent.mkdir(parents=True, exist_ok=True)
-        args.review_output.write_text(
-            json.dumps(review, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    print(
-        json.dumps(
-            {
-                key: value
-                for key, value in report.items()
-                if key not in ("observations", "limitations", "source_root")
-            },
-            ensure_ascii=False,
-        )
-    )
-
-
-if __name__ == "__main__":
-    main()

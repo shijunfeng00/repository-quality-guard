@@ -366,7 +366,7 @@ git add -A -- .agents/skills/repository-quality-guard
 
 记录新增、修改和删除。
 
-`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。托管 `.git/hooks/pre-push` 同样不进入 Git 历史；Agent 必须在 fresh clone / 任务开始时确认它存在，并通过 `scripts/git_hook_install.py` 安装缺失 hook。已有非托管 hook 不得被覆盖。
+`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。托管 `.git/hooks/pre-push` 同样不进入 Git 历史；Agent 必须在 fresh clone / 任务开始时确认它存在，并通过 `scripts/git_hook_install.py` 安装缺失 hook。已有非托管 hook 不得被覆盖。 RQG 源码仓库自己的开发 hook 由 source-only `scripts/install_dev_hooks.py` 安装，使用独立 marker 与自审入口；它不得由面向宿主项目的 `scripts/git_hook_install.py` 代装，也不得随 `.agents` 部署。
 
 ## 8. 完整性与依赖
 
@@ -395,11 +395,11 @@ Node.js/npm/Clang 属于宿主系统能力；只有显式 `--install-system` 或
 
 唯一 canonical full-repository ZIP：
 
-- 包含 `.git`、完整第一方 Skill、`README.md`、`README_zh.md`、`tests/`、独立发布验收 fixtures、authoring/release tools、全部本地 Profile 与离线依赖；
+- 包含 `.git`、完整第一方 Skill、`README.md`、`README_zh.md`、`tests/`、tests/cases/release 中的发布验收数据、scripts/ 中的 authoring/release 工具、全部本地 Profile 与离线依赖；
 - Profile 与离线二进制仍遵守 `.gitignore`，因此它们可以存在于本地完整 ZIP，但不会因此进入 public Git 历史；
 - 不包含构建缓存、一次性审计工作目录或 `修改说明.md`。
 
-不再维护 public/internal 两套 ZIP。GitHub 分发使用仓库 + npx 安装路径；若未来单独发布 GitHub Release asset，也应复用同一 canonical ZIP 规则。deploy 到 `.agents` 时继续剥离 `README.md`、`README_zh.md`、`tests/`、`tools/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
+不再维护 public/internal 两套 ZIP。GitHub 分发使用仓库 + npx 安装路径；若未来单独发布 GitHub Release asset，也应复用同一 canonical ZIP 规则。deploy 到 `.agents` 时继续剥离 `README.md`、`README_zh.md`、`tests/`、`scripts/`、`offline/`、wheelhouse、Node 离线 payload 与 Profile authoring 文件。
 
 ## 10. 审计原则
 

@@ -1,12 +1,16 @@
 """Real evidence-lookup CLI contracts migrated from the frozen UT47 source ledger."""
+
 from __future__ import annotations
+
+from tests_support.evidence_lookup_cli import run_evidence_lookup_case
 
 import json
 from pathlib import Path
 
 from rqgtest import TestCase
 
-from tests_support.evidence_lookup_cli import run_evidence_lookup_case
+
+
 
 class EvidenceLookupCliCase(TestCase):
     """Run every immutable source row through the real CLI and its authored output Oracle."""
@@ -18,7 +22,11 @@ class EvidenceLookupCliCase(TestCase):
     def get_input_data(self):
         """Provide only command inputs; expected-output fields are excluded."""
         root = Path(__file__).resolve().parents[1]
-        document = json.loads((root / "tools/release_checks/fixtures/qg-evidence-lookup-cli-v1.json").read_text(encoding="utf-8"))
+        document = json.loads(
+            (root / "tests/cases/release/qg-evidence-lookup-cli-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
         for row in document["cases"]:
             payload = {
                 "case_id": row["case_id"],
@@ -33,8 +41,20 @@ class EvidenceLookupCliCase(TestCase):
     def get_output_data(self):
         """Keep the original exit/stdout/stderr/section/artifact expectations independent."""
         root = Path(__file__).resolve().parents[1]
-        document = json.loads((root / "tools/release_checks/fixtures/qg-evidence-lookup-cli-v1.json").read_text(encoding="utf-8"))
-        keys = ("code", "stdout_empty", "contains", "absent", "stderr_contains", "before_section_absent", "artifacts")
+        document = json.loads(
+            (root / "tests/cases/release/qg-evidence-lookup-cli-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        keys = (
+            "code",
+            "stdout_empty",
+            "contains",
+            "absent",
+            "stderr_contains",
+            "before_section_absent",
+            "artifacts",
+        )
         for row in document["cases"]:
             yield {key: row[key] for key in keys if key in row}
 
@@ -58,6 +78,8 @@ class EvidenceLookupCliCase(TestCase):
                 prefix = stdout.split(bounded["section"], 1)[0]
             if bounded["value"] in prefix:
                 return False
-        if any(name not in actual["artifacts"] for name in expected.get("artifacts", [])):
+        if any(
+            name not in actual["artifacts"] for name in expected.get("artifacts", [])
+        ):
             return False
         return True

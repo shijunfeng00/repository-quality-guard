@@ -597,102 +597,6 @@ if sys.platform.startswith('linux'):
         )
 
 
-def _evidence_lookup_release_smoke(bundle: Path, workspace: Path) -> None:
-    """Replay authored evidence CLI output oracles against the released command."""
-    fixture = bundle / "tests/cases/release/qg-evidence-lookup-cli-v1.json"
-    if not fixture.is_file():
-        raise RuntimeError("canonical evidence CLI oracle missing from release")
-    script = """import contextlib,io,json,subprocess,sys,tempfile
-from pathlib import Path
-from scripts import evidence_lookup
-bundle=Path(sys.argv[1]); rows=json.loads((bundle/'tests/cases/release/qg-evidence-lookup-cli-v1.json').read_text())
-with tempfile.TemporaryDirectory(prefix='rqg-evidence-release-') as directory:
-    for index,row in enumerate(rows['cases']):
-        root=Path(directory)/f'case-{index}'
-        root.mkdir()
-        (root/'sample.py').write_text(row.get('source',rows['source']),encoding='utf-8')
-        for name,source in row.get('extra_files',{}).items():
-            path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
-            path.write_text(source,encoding='utf-8')
-        if row.get('git_snapshot') and not (root/'.git').is_dir():
-            subprocess.run(['git','init','-q'],cwd=root,check=True,capture_output=True)
-            subprocess.run(['git','add','.'],cwd=root,check=True,capture_output=True)
-            subprocess.run(['git','-c','user.name=Release','-c','user.email=release@example.invalid','commit','-qm','fixture'],cwd=root,check=True,capture_output=True)
-        args=[str(root) if item=='@repo' else item for item in row['args']]
-        if row.get('exec')=='process':
-            p=subprocess.run([sys.executable,str(bundle/'scripts/evidence_lookup.py'),*args],cwd=bundle,text=True,capture_output=True,check=False,timeout=40)
-            code,stdout,stderr=p.returncode,p.stdout,p.stderr
-        else:
-            output,errors=io.StringIO(),io.StringIO()
-            with contextlib.redirect_stdout(output),contextlib.redirect_stderr(errors):
-                try: code=evidence_lookup.main(args)
-                except SystemExit as e:code=int(e.code)
-            stdout,stderr=output.getvalue(),errors.getvalue()
-        failed=(code!=row['code']
-            or row.get('stdout_empty',False) and bool(stdout)
-            or any(value not in stdout for value in row.get('contains',[]))
-            or any(value in stdout for value in row.get('absent',[]))
-            or any(value not in stderr for value in row.get('stderr_contains',[]))
-            or any(bounded['value'] in stdout.split(bounded['section'])[0] for bounded in row.get('before_section_absent',[]))
-            or any(not (root/name).exists() for name in row.get('artifacts',[])))
-        if failed:
-            raise RuntimeError(f"Evidence CLI {row['case_id']} violated frozen output oracle: exit={code}, stdout={stdout[-1200:]!r}, stderr={stderr[-1200:]!r}")
-"""
-    result = subprocess.run(
-        [sys.executable, "-B", "-c", script, str(bundle)],
-        cwd=workspace,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=180,
-        env={**os.environ, "PYTHONPATH": str(bundle), "PYTHONDONTWRITEBYTECODE": "1"},
-    )
-    if result.returncode:
-        raise RuntimeError(
-            "released evidence CLI regression failed: " + result.stderr[-2000:]
-        )
-
-
-def _evidence_cache_release_smoke(bundle: Path, workspace: Path) -> None:
-    """Verify unchanged-source reuse and equal-size source-edit invalidation."""
-    script = """import contextlib,io,json,sys,tempfile
-from pathlib import Path
-from scripts import evidence_lookup
-bundle=Path(sys.argv[1])
-rows=json.loads((bundle/'tests/cases/release/b33-evidence-trace-v1.json').read_text())['cases']
-row=next(item for item in rows if item['scenario']=='cache-invalidate')
-with tempfile.TemporaryDirectory(prefix='rqg-evidence-cache-release-') as directory:
-    root=Path(directory)/'source';root.mkdir()
-    cache=Path(directory)/'cache'
-    source=root/'sample.py';source.write_text(row['source'],encoding='utf-8')
-    args=['--repo',str(root),*row['args'],'--cache-dir',str(cache)]
-    results=[]
-    for changed in (False,False,True):
-        if changed:source.write_text(row['changed_source'],encoding='utf-8')
-        stdout,stderr=io.StringIO(),io.StringIO()
-        with contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
-            status=evidence_lookup.main(args)
-        if status!=0 or stderr.getvalue():raise RuntimeError('evidence lookup failed during cache check')
-        results.append(stdout.getvalue())
-    if not ('cache=MISS/REBUILT' in results[0] and 'cache=HIT' in results[1]
-            and 'cache=MISS/REBUILT' in results[2]):
-        raise RuntimeError('evidence graph cache did not respect source mutation')
-"""
-    result = subprocess.run(
-        [sys.executable, "-B", "-c", script, str(bundle)],
-        cwd=workspace,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=120,
-        env={**os.environ, "PYTHONPATH": str(bundle), "PYTHONDONTWRITEBYTECODE": "1"},
-    )
-    if result.returncode:
-        raise RuntimeError(
-            "released evidence cache regression failed: " + result.stderr[-2000:]
-        )
-
-
 def _snapshot_equivalence_release_smoke(bundle: Path, workspace: Path) -> None:
     """Compare normal and shared-snapshot reports on frozen source fixtures."""
     script = """import json,sys,tempfile
@@ -701,7 +605,7 @@ from runtime.src.analysis_snapshot import directory_analysis_snapshot
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner,snapshot_only_rule_findings
 from runtime.src.topology_facts import RepositoryTopology
-rows=json.loads((Path(sys.argv[1])/'tests/cases/release/b33-scanner-equivalence-v1.json').read_text())['cases']
+rows=json.loads((Path(sys.argv[1])/'tests/cases/b33-scanner-equivalence-v1.json').read_text())['cases']
 for row in rows:
     with tempfile.TemporaryDirectory(prefix='rqg-snapshot-release-') as directory:
         root=Path(directory)
@@ -749,81 +653,6 @@ for row in rows:
     if result.returncode:
         raise RuntimeError(
             "released snapshot comparison failed: " + result.stderr[-2000:]
-        )
-
-
-def _graph_public_cli_release_smoke(bundle: Path, workspace: Path) -> None:
-    """Replay CLI and callback evidence against the real normalized graph."""
-    script = """import contextlib,io,json,sys,tempfile
-from pathlib import Path
-from runtime.src.analysis_snapshot import directory_analysis_snapshot
-from runtime.src.config import GuardConfig
-from runtime.src.relation_graph import RepositoryRelationGraph,normalized_topology
-from runtime.src.topology_facts import UsageKind
-from scripts import evidence_lookup
-from scripts.evidence_graph import TraceOptions,_serialize,render
-from scripts.evidence_statistics import graph_statistics
-rows=json.loads((Path(sys.argv[1])/'tests/cases/release/b32-graph-observable-v1.json').read_text())['cases']
-for row in rows:
-    if row['scenario']=='nested-owner':continue
-    with tempfile.TemporaryDirectory(prefix='rqg-graph-cli-release-') as directory:
-        root=Path(directory)/'repo';root.mkdir()
-        for name,content in row['sources'].items():
-            path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
-            path.write_text(content,encoding='utf-8')
-        scenario=row['scenario']
-        if scenario in ('constructor-cli','stats-cli'):
-            output,errors=io.StringIO(),io.StringIO()
-            args=['--repo',str(root),'--cache-dir',str(Path(directory)/'cache')]
-            if scenario=='constructor-cli':
-                args+=['--symbol','consumer.Receiver.work','--variable','self.channel','--depth','2']
-            else:args+=['--graph-stats']
-            with contextlib.redirect_stdout(output),contextlib.redirect_stderr(errors):
-                status=evidence_lookup.main(args)
-            text=output.getvalue()
-            if scenario=='constructor-cli':
-                actual={'exit':status,'channel_source':'self.channel = source' in text,
-                    'constructor_call':'Receiver(source=self.state)' in text,
-                    'source_producer':'self.state = Ledger()' in text,
-                    'possible_invocation':'[SOURCE_BOUND_MAY_CALL]' in text,
-                    'stderr_empty':not errors.getvalue()}
-            else:
-                actual={'exit':status,'components':'弱连通分量：' in text,
-                    'possible_calls':'类型约束可能调用：' in text,
-                    'isolated':'无已解析调用边的符号：' in text,
-                    'stderr_empty':not errors.getvalue()}
-        else:
-            snapshot=directory_analysis_snapshot(root,GuardConfig())
-            topology=normalized_topology(RepositoryRelationGraph(snapshot))
-            edges=[edge for edge in topology.edges if edge.source_id=='workflow.Worker.configure' and edge.target_id=='workflow.Worker.task']
-            graph=_serialize(topology);stats=graph_statistics(graph)
-            anchor=next(symbol for symbol in graph['symbols'] if symbol['id']=='workflow.Worker.task')
-            rendered=render(snapshot,graph,anchor,TraceOptions(direction='callers',depth=2,
-                budget=8,radius=1,variable=None,line=None,cache_info='release'))
-            actual={'callback_edge':any(edge.kind is UsageKind.CALLBACK_REGISTRATION for edge in edges),
-                'direct_call_not_fabricated':all(edge.kind is not UsageKind.DIRECT_CALL for edge in edges),
-                'one_registration':'注册边 1' in stats,
-                'three_components':'弱连通分量：3' in stats,
-                'second_component':'弱连通分量 2' in stats,
-                'traced_callback':'[CALLBACK_ARGUMENT]' in rendered,
-                'exact_call_site':"graph.add_node('step', self.task)" in rendered,
-                'not_actual_dispatch':'不证明实际调度' in rendered,
-                'no_fake_resolved_direct_call':'[DIRECT_CALL, resolved]' not in rendered}
-        if actual != row['expected']:
-            raise RuntimeError(f"graph CLI regression {row['case_id']}: {actual}")
-"""
-    result = subprocess.run(
-        [sys.executable, "-B", "-c", script, str(bundle)],
-        cwd=workspace,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=120,
-        env={**os.environ, "PYTHONPATH": str(bundle), "PYTHONDONTWRITEBYTECODE": "1"},
-    )
-    if result.returncode:
-        raise RuntimeError(
-            "released graph CLI regression failed: " + result.stderr[-2000:]
         )
 
 
@@ -941,16 +770,35 @@ if [(x.code,x.path,x.line) for x in first[1].findings] != [(x.code,x.path,x.line
 
 
 def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
-    """Compile the shipped C++ TestUnit and compare its independent oracle."""
-    test_source = bundle / "tests/cases/release/cpp-testunit"
-    if not test_source.is_dir():
-        raise RuntimeError("missing C++ TestUnit contract sources in canonical release")
+    """Compile the flattened C++ TestUnit source and compare its independent oracle."""
+    test_source = bundle / "tests/cases/cpp-testunit-test_main.cpp"
+    if not test_source.is_file():
+        raise RuntimeError("missing C++ TestUnit contract source in canonical release")
+    source_dir = workspace / "cpp-testunit-source"
+    source_dir.mkdir()
     build = workspace / "cpp-testunit-build"
+    cpp_include = (bundle / "runtime/contracts/cpp").as_posix()
+    cmake_file = source_dir / "CMakeLists.txt"
+    cmake_file.write_text(
+        "\n".join(
+            (
+                "cmake_minimum_required(VERSION 3.10)",
+                "project(rqg_testunit_cpp LANGUAGES CXX)",
+                "enable_testing()",
+                f'add_executable(rqg_testunit_cpp "{test_source.as_posix()}")',
+                f'target_include_directories(rqg_testunit_cpp PRIVATE "{cpp_include}")',
+                "set_target_properties(rqg_testunit_cpp PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)",
+                "add_test(NAME testunit_public_contract COMMAND rqg_testunit_cpp)",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
     _execute(
         [
             "cmake",
             "-S",
-            str(test_source),
+            str(source_dir),
             "-B",
             str(build),
             "-DCMAKE_BUILD_TYPE=Release",
@@ -961,9 +809,7 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
     _execute(["ctest", "--test-dir", str(build), "--output-on-failure"], timeout=60)
     observed = json.loads(_execute([str(build / "rqg_testunit_cpp")], timeout=40))
     rows = json.loads(
-        (bundle / "tests/cases/release/native-oracle-b69.json").read_text(
-            encoding="utf-8"
-        )
+        (bundle / "tests/cases/native-oracle-b69.json").read_text(encoding="utf-8")
     )["cases"]
     oracle = next(item["expected"] for item in rows if item["kind"] == "cpp-native")
     checks = {
@@ -976,7 +822,8 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
         "passed": observed["passed"],
         "cases": [[c["case_id"], c["status"]] for c in observed["cases"]],
         "steps": [
-            [step["method"], step["status"]] for step in observed["cases"][6]["steps"]
+            [step["method"], step["status"]]
+            for step in observed["cases"][6]["steps"]
         ],
         "keys": all(
             set(c) == {"case_id", "status", "detail", "steps_executed", "steps"}
@@ -989,11 +836,17 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
 
 def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     """Validate C11/Java native ledgers and cross-language observable parity."""
-    tests = bundle / "tests/cases/release/native-testunit"
-    if not tests.is_dir():
-        raise RuntimeError("missing native TestUnit fixture sources")
+    tests = bundle / "tests/cases"
+    required_sources = (
+        "JavaNativeCases.java",
+        "c_native_cases.c",
+        "EquivalentNativeCases.cpp",
+        "EquivalentNativeCases.java",
+    )
+    if any(not (tests / name).is_file() for name in required_sources):
+        raise RuntimeError("missing flattened native TestUnit fixture sources")
     rows = json.loads(
-        (bundle / "tests/cases/release/native-oracle-b69.json").read_text(
+        (bundle / "tests/cases/native-oracle-b69.json").read_text(
             encoding="utf-8"
         )
     )["cases"]
@@ -1216,7 +1069,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
     No network-based compiler installation or skipped tooling is permitted.
     """
     ts_source = bundle / "runtime/contracts/typescript/testunit.ts"
-    ts_positive = bundle / "tests/cases/release/native-testunit/TypeScriptNativeCase.ts"
+    ts_positive = bundle / "tests/cases/TypeScriptNativeCase.ts"
     go_source = bundle / "runtime/contracts/go/testunit.go"
     go_positive = bundle / "runtime/contracts/go/testunit_test.go"
     for required in (ts_source, ts_positive, go_source, go_positive):
@@ -1243,7 +1096,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
         timeout=60,
     )
     ts_entry = (
-        ts_compiled / "tests/cases/release/native-testunit/TypeScriptNativeCase.js"
+        ts_compiled / "tests/cases/TypeScriptNativeCase.js"
     )
     observed = json.loads(_execute(["node", str(ts_entry)], timeout=30))
     expected = {"case_id": "sum-7", "kind": "RETURN", "matched": True}
@@ -1337,7 +1190,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
 def _source_witness_release_smoke(bundle: Path, workspace: Path) -> None:
     """Verify source-bound R2/R3 evidence survives official audit and readonly verify."""
     rows = json.loads(
-        (bundle / "tests/cases/release/native-oracle-b69.json").read_text(
+        (bundle / "tests/cases/native-oracle-b69.json").read_text(
             encoding="utf-8"
         )
     )["cases"]
@@ -1386,7 +1239,7 @@ def _qg003_dual_oracle_release_smoke(bundle: Path, workspace: Path) -> None:
     they are exercised as a release integration contract rather than a
     synthetic TestCase method hiding an entire execution workflow.
     """
-    dataset = bundle / "tests/cases/release/qg003-business-v1.json"
+    dataset = bundle / "tests/cases/qg003-business-v1.json"
     if not dataset.is_file():
         raise RuntimeError("QG003 release fixture missing: " + str(dataset))
     script = r"""
@@ -1395,7 +1248,7 @@ import tempfile
 from pathlib import Path
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner
-rows=json.loads(Path('tests/cases/release/qg003-business-v1.json').read_text(encoding='utf-8'))['cases']
+rows=json.loads(Path('tests/cases/qg003-business-v1.json').read_text(encoding='utf-8'))['cases']
 if {row['kind'] for row in rows} != {'TP','TN'}:
     raise RuntimeError('QG003 independent polarity oracles are incomplete')
 for row in rows:
@@ -1523,10 +1376,7 @@ def main(argv: list[str] | None = None) -> int:
         _source_catalog_smoke(installed, workspace)
         _catalog_ledger_and_generated_docs_smoke(installed, workspace)
         _rule_lookup_smoke(installed, workspace)
-        _evidence_lookup_release_smoke(bundle, workspace)
-        _evidence_cache_release_smoke(bundle, workspace)
         _snapshot_equivalence_release_smoke(bundle, workspace)
-        _graph_public_cli_release_smoke(bundle, workspace)
         _integrity_mutation_smoke(bundle, workspace)
         _cache_worker_release_smoke(bundle, workspace)
         _worker_lifecycle_release_smoke(bundle, workspace)

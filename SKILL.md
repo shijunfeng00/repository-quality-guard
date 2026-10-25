@@ -395,7 +395,7 @@ Node.js/npm/Clang 属于宿主系统能力；只有显式 `--install-system` 或
 
 唯一 canonical full-repository ZIP：
 
-- 包含 `.git`、完整第一方 Skill、`README.md`、`README_zh.md`、`tests/`、tests/cases/release 中的发布验收数据、scripts/ 中的 authoring/release 工具、全部本地 Profile 与离线依赖；
+- 包含 `.git`、完整第一方 Skill、`README.md`、`README_zh.md`、`tests/`、tests/cases 中平铺的发布验收数据、scripts/ 中的 authoring/release 工具、全部本地 Profile 与离线依赖；
 - Profile 与离线二进制仍遵守 `.gitignore`，因此它们可以存在于本地完整 ZIP，但不会因此进入 public Git 历史；
 - 不包含构建缓存、一次性审计工作目录或 `修改说明.md`。
 

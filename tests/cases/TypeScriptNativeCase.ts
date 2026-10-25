@@ -1,4 +1,4 @@
-import { Case, ITestCase, Step } from "../../../../runtime/contracts/typescript/testunit";
+import { Case, ITestCase, Step } from "../../runtime/contracts/typescript/testunit";
 
 const step: Step = {
   method: "add",

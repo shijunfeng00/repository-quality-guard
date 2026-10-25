@@ -12,7 +12,11 @@ class CommitCompactPolicyCase(TestCase):
         return _commit_issues
 
     def get_input_data(self):
-        rows = json.loads((Path(__file__).parent / "data/commit-policy-contract-v1.json").read_text(encoding="utf-8"))["cases"]
+        rows = json.loads(
+            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )["cases"]
         for row in rows:
             bullets = row.get("bullets", [
                 "- 覆盖完整变更范围与长期仓库边界",
@@ -26,7 +30,11 @@ class CommitCompactPolicyCase(TestCase):
             yield ((message, report), {})
 
     def get_output_data(self):
-        rows = json.loads((Path(__file__).parent / "data/commit-policy-contract-v1.json").read_text(encoding="utf-8"))["cases"]
+        rows = json.loads(
+            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )["cases"]
         for row in rows:
             yield row["accepted"]
 
@@ -39,7 +47,11 @@ class CommitFullReportPolicyCase(TestCase):
         return _commit_findings
 
     def get_input_data(self):
-        rows = json.loads((Path(__file__).parent / "data/commit-policy-contract-v1.json").read_text(encoding="utf-8"))["cases"]
+        rows = json.loads(
+            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )["cases"]
         for row in rows:
             bullets = row.get("bullets", [
                 "- 覆盖完整变更范围与长期仓库边界",
@@ -53,7 +65,11 @@ class CommitFullReportPolicyCase(TestCase):
             yield ((message, report), {})
 
     def get_output_data(self):
-        rows = json.loads((Path(__file__).parent / "data/commit-policy-contract-v1.json").read_text(encoding="utf-8"))["cases"]
+        rows = json.loads(
+            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )["cases"]
         for row in rows:
             yield row["accepted"]
 

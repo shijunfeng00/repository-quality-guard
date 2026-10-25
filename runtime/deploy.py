@@ -122,7 +122,16 @@ def _profile_selection(
 
 
 def _copy_agents_tree(bundle: Path, target: Path) -> None:
-    """Copy first-party runtime but exclude distribution-only/profile-catalog media."""
+    """Copy first-party runtime while rejecting retired source-tree directories."""
+    forbidden_source_dirs = (
+        bundle / "tools",
+        bundle / "tests_support",
+        bundle / "scripts" / "ci",
+    )
+    existing_source_dirs = [path for path in forbidden_source_dirs if path.exists()]
+    if existing_source_dirs:
+        relative = existing_source_dirs[0].relative_to(bundle).as_posix()
+        raise RuntimeError(f"source tree contains forbidden directory: {relative}")
     ignored_names = shutil.ignore_patterns(
         ".git",
         ".hg",
@@ -134,9 +143,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
         ".ruff_cache",
         ".pytest_cache",
         "tests",
-        "tests_support",
         "dev-tests",
-        "tools",
         "README.md",
         "README_zh.md",
         "AGENTS.md",

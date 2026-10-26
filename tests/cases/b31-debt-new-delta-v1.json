@@ -1,0 +1,19 @@
+{
+  "contract": "modern-independent-oracle",
+  "source_review": {
+    "source_ordinal": 15,
+    "authored_case_id": "b31-debt-new-delta",
+    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
+    "source_row_sha256": "a93d41078373dca70d765a0a7c508f76e5a24d4909aca8c6fcd42ec7a06c4080",
+    "expected_sha256": "3674440eae96ac31b7b53638b0a567f58979b08700c655d4a8ee632f9af32efa",
+    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
+    "historical_expected_payload_reconstructed": false
+  },
+  "input_fixture": "b31-debt-scoped-history-v1.json",
+  "expected": {
+    "new_delta_count": 1,
+    "new_rule": "QG125",
+    "historical_rule": "QG123",
+    "new_rule_not_historical": true
+  }
+}

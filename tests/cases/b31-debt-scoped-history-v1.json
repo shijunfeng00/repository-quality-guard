@@ -1,13 +1,5 @@
 {
   "contract": "modern-independent-oracle",
-  "source_review": {
-    "source_ordinal": 9,
-    "authored_case_id": "b31-debt-scoped-history",
-    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
-    "source_row_sha256": "b32b781b413171bf9b0d06a6f2748ee8fd154ecaacc34da25f9323cc54be1069",
-    "expected_sha256": "58238bc43a72b4ad2319c72ea5e52d7973d1fc20c4bba4248ef0c7c5e29925a5",
-    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING"
-  },
   "git_fixture": "qg-evidence-lookup-git-snapshot-v1.tar.gz",
   "changed_path": "sample.py",
   "findings": [

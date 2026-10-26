@@ -1,14 +1,5 @@
 {
   "contract": "modern-independent-oracle",
-  "source_review": {
-    "source_ordinal": 16,
-    "authored_case_id": "b31-debt-qg179-ordinary",
-    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
-    "source_row_sha256": "757a5c4b9c67ac26ac60d52a22f674bc7c98fbe2fbe5084369c832258b9cae5a",
-    "expected_sha256": "3a59479813ede1946a201df5f46592b4e16812d82c227d7f040c45f9542b2745",
-    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
-    "historical_expected_payload_reconstructed": false
-  },
   "input_fixture": "b31-debt-scoped-history-v1.json",
   "expected": {
     "ordinary_debt_count": 2,

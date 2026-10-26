@@ -1,14 +1,5 @@
 {
   "contract": "modern-independent-oracle",
-  "source_review": {
-    "source_ordinal": 12,
-    "authored_case_id": "b31-debt-cleanup-all",
-    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
-    "source_row_sha256": "527d1a899e461ee7638a9731c175c7c110ed7b108ed47d9fb367758dd5db80df",
-    "expected_sha256": "cf55729fdbac06f5a25c4f62b42196b318cee96b427bdbcd5fbed4b973156d45",
-    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
-    "historical_expected_payload_reconstructed": false
-  },
   "input_fixture": "b31-debt-scoped-history-v1.json",
   "expected": {
     "cleanup_required_count": 2,

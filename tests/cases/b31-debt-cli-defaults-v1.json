@@ -1,14 +1,5 @@
 {
   "contract": "modern-independent-oracle",
-  "source_review": {
-    "source_ordinal": 18,
-    "authored_case_id": "b31-debt-cli-defaults",
-    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
-    "source_row_sha256": "6051033533040d0920e78522ba395280b935a972b35bda3c1599e54ec06bde5e",
-    "expected_sha256": "95a1305562f6c3efae971d98e49df4542c83e8f032de3f6a9fb8a4e6049259bd",
-    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
-    "historical_expected_payload_reconstructed": false
-  },
   "input_fixture": "b31-debt-scoped-history-v1.json",
   "expected": {
     "samples": [

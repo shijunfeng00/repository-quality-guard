@@ -1,14 +1,5 @@
 {
   "contract": "modern-independent-oracle",
-  "source_review": {
-    "source_ordinal": 10,
-    "authored_case_id": "b31-debt-deferral-survives",
-    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
-    "source_row_sha256": "367d777227c10edeb68601efb3cdcb46bec41add54006abac06dec6c55c7686c",
-    "expected_sha256": "628708bb0cbdbfb2ea8ca5652175400e9c3956d9883e2685596509d2e84e1690",
-    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
-    "historical_expected_payload_reconstructed": false
-  },
   "input_fixture": "b31-debt-scoped-history-v1.json",
   "prior_debt_row": {
     "debt_id": "DEBT-96b7c293c2",

@@ -1,14 +1,12 @@
 [
   {
     "case_id": "tn-own-production-callable",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": []
   },
   {
     "case_id": "tp-builtin-int-external",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return int\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -17,7 +15,6 @@
   },
   {
     "case_id": "tp-stdlib-math-external",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nimport math\n\nclass Example(TestCase):\n    def get_enterpoint(self): return math.sqrt\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -26,7 +23,6 @@
   },
   {
     "case_id": "tp-external-dependency",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom tensorflow import nn\n\nclass Example(TestCase):\n    def get_enterpoint(self): return nn.relu\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -35,7 +31,6 @@
   },
   {
     "case_id": "tp-external-test-helper",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom external_fixture import ClosedCaseBehaviorCase as target\n\nclass Example(TestCase):\n    def get_enterpoint(self): return target.ClosedCaseBehaviorCase\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -44,7 +39,6 @@
   },
   {
     "case_id": "tp-case-method-as-target",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return self.equals\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -53,7 +47,6 @@
   },
   {
     "case_id": "tp-write-state-in-input",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self):\n        self.counter = 1\n        return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -62,7 +55,6 @@
   },
   {
     "case_id": "tp-bypass-constructor",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self):\n        fake = object.__new__(object)\n        return ((fake,), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -71,14 +63,12 @@
   },
   {
     "case_id": "tn-observed-output-independent",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": []
   },
   {
     "case_id": "tp-extra-member-wrapper",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n    def _scan_fixture(self, source): return source\n",
     "expected_codes": [
@@ -87,7 +77,6 @@
   },
   {
     "case_id": "tp-nested-lambda-in-fixture",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self):\n        local = lambda value: value\n        return ((local(\"test\"),), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -96,7 +85,6 @@
   },
   {
     "case_id": "tp-class-constant",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n    OFFSET = 2\n",
     "expected_codes": [
@@ -105,14 +93,12 @@
   },
   {
     "case_id": "tn-known-local-sdk-export",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom runtime.src.case_contract_rules import case_contract_findings as repo_scan\n\nclass Example(TestCase):\n    def get_enterpoint(self): return repo_scan\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": []
   },
   {
     "case_id": "tp-module-helper-definition",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\ndef build_result(): return 1\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -121,7 +107,6 @@
   },
   {
     "case_id": "tp-test-dir-helper-without-test-prefix",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/source_helpers.py",
     "source": "def source_helper(x):\n    return x\n",
     "expected_codes": [
@@ -131,7 +116,6 @@
   },
   {
     "case_id": "tp-method-local-external-import",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def get_enterpoint(self):\n        from tensorflow import nn\n        return nn.relu\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -140,7 +124,6 @@
   },
   {
     "case_id": "empty-module",
-    "lineage": "qg240_file_contract.json",
     "path": "tests/test_contract.py",
     "source": "",
     "expected_codes": [
@@ -149,7 +132,6 @@
   },
   {
     "case_id": "imports-only",
-    "lineage": "qg240_file_contract.json",
     "path": "tests/test_contract.py",
     "source": "import pytest\n",
     "expected_codes": [
@@ -158,7 +140,6 @@
   },
   {
     "case_id": "pytest-function",
-    "lineage": "qg240_file_contract.json",
     "path": "tests/test_contract.py",
     "source": "def test_legacy():\n    return 2 == 2\n",
     "expected_codes": [
@@ -168,7 +149,6 @@
   },
   {
     "case_id": "noncanonical-parent",
-    "lineage": "qg240_file_contract.json",
     "path": "tests/test_contract.py",
     "source": "from elsewhere import TestCase\nclass Unit(TestCase):\n pass\n",
     "expected_codes": [
@@ -178,7 +158,6 @@
   },
   {
     "case_id": "forged-parent",
-    "lineage": "qg240_file_contract.json",
     "path": "tests/test_contract.py",
     "source": "class TestCase: pass\nclass Unit(TestCase): pass\n",
     "expected_codes": [
@@ -189,7 +168,6 @@
   },
   {
     "case_id": "invalid-double-base",
-    "lineage": "qg240_file_contract.json",
     "path": "tests/test_contract.py",
     "source": "from rqgtest import TestCase\nclass Root: pass\nclass Work(TestCase, Root): pass\n",
     "expected_codes": [
@@ -200,7 +178,6 @@
   },
   {
     "case_id": "tp-extra-instance-attr-constructor",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        super().__init__(case_id)\n        self.fixture = 1\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -211,7 +188,6 @@
   },
   {
     "case_id": "tp-existing-root-attr-reassignment",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        super().__init__(case_id)\n        self.case_id = \"new\"\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -222,7 +198,6 @@
   },
   {
     "case_id": "tp-setattr-in-constructor",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        super().__init__(case_id)\n        setattr(self, \"fixture\", 2)\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -233,7 +208,6 @@
   },
   {
     "case_id": "tp-object-setattr-in-constructor",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        super().__init__(case_id)\n        object.__setattr__(self, \"fixture\", 2)\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -244,7 +218,6 @@
   },
   {
     "case_id": "tp-dict-write-in-constructor",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        super().__init__(case_id)\n        self.__dict__[\"fixture\"] = 2\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -255,7 +228,6 @@
   },
   {
     "case_id": "tp-dict-update-in-constructor",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        super().__init__(case_id)\n        self.__dict__.update(fixture=2)\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -266,7 +238,6 @@
   },
   {
     "case_id": "tn-pure-local-fixture-data",
-    "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self, case_id):\n        temporary = case_id\n        super().__init__(temporary)\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -276,7 +247,6 @@
   },
   {
     "case_id": "tn-v02-legal-zeroarg-constructor",
-    "lineage": "new-rqgtest02-contract",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Example(TestCase):\n    def __init__(self): super().__init__()\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((1,), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [],
@@ -284,14 +254,12 @@
   },
   {
     "case_id": "tp-cli-process-adapter-runs-repository-script",
-    "lineage": "ut47-30-independent-cli-process-contract",
     "path": "tests/test_cli_process_fixture.py",
     "source": "import subprocess\nimport sys\nfrom pathlib import Path\nfrom rqgtest import TestCase\n\nclass CliCase(TestCase):\n    def get_enterpoint(self):\n        return subprocess.run\n\n    def get_input_data(self):\n        project = Path(__file__).resolve().parents[1]\n        command = [sys.executable, str(project / \"scripts/evidence_lookup.py\"), \"--help\"]\n        yield ((command,), {\"capture_output\": True, \"text\": True, \"check\": False})\n\n    def get_output_data(self):\n        yield {\"returncode\": 0}\n\n    def equals(self, expected, actual):\n        return actual.returncode == expected[\"returncode\"] and bool(actual.stdout) and not actual.stderr\n",
     "expected_codes": []
   },
   {
     "case_id": "tp-cli-process-adapter-does-not-accept-arbitrary-command",
-    "lineage": "ut47-30-independent-cli-process-contract",
     "path": "tests/test_cli_process_fixture.py",
     "source": "import subprocess\nimport sys\nfrom rqgtest import TestCase\n\nclass CliCase(TestCase):\n    def get_enterpoint(self):\n        return subprocess.run\n\n    def get_input_data(self):\n        command = [sys.executable, \"-c\", \"print('not a repository CLI')\"]\n        yield ((command,), {\"capture_output\": True, \"text\": True, \"check\": False})\n\n    def get_output_data(self):\n        yield {\"returncode\": 0}\n\n    def equals(self, expected, actual):\n        return actual.returncode == expected[\"returncode\"] and bool(actual.stdout) and not actual.stderr\n",
     "expected_codes": [
@@ -300,7 +268,6 @@
   },
   {
     "case_id": "tp-module-level-constant-rejected",
-    "lineage": "ut47-30-frozen-test-module-layout",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nFIXTURE_COUNT = 1\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
@@ -309,7 +276,6 @@
   },
   {
     "case_id": "tp-module-level-non-case-class-rejected",
-    "lineage": "ut47-30-frozen-test-module-layout",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nclass Helper:\n    pass\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [

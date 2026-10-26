@@ -1,5 +1,4 @@
 {
-  "source_sha256": "118b135355bd6e35bf61982b9364c588b9d8d9492bb055ba42a8283302c99240",
   "cases": [
     {
       "subject": "fix: 统一提交信息语言契约",

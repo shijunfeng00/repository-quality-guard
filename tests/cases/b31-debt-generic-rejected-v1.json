@@ -1,0 +1,27 @@
+{
+  "contract": "modern-independent-oracle",
+  "source_review": {
+    "source_ordinal": 11,
+    "authored_case_id": "b31-debt-generic-rejected",
+    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
+    "source_row_sha256": "ebe32a1c3062f5fb39bab3b63fde8f9634ce3b5fe510c5d98f0ccc88d3976ed0",
+    "expected_sha256": "f457e7be5199c8dc741370144e1b2a0e53e7dc845f0db3e16c49992caf37964f",
+    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
+    "historical_expected_payload_reconstructed": false
+  },
+  "input_fixture": "b31-debt-scoped-history-v1.json",
+  "prior_debt_row": {
+    "debt_id": "DEBT-96b7c293c2",
+    "decision": "DEFERRED",
+    "reason": "out of scope",
+    "impact": "This touched warning remains accountable in sample.py during the current change.",
+    "closure_condition": "Remove this deferral after the touched warning is fixed and the report passes."
+  },
+  "expected": {
+    "required_issue": "不能仅用‘历史债务/超出范围’作为延期理由",
+    "required_reason_issue": "Concrete reason 必须给出具体、可验证的延期事实",
+    "debt_id": "DEBT-96b7c293c2",
+    "decision": "DEFERRED",
+    "rejected_reason": "out of scope"
+  }
+}

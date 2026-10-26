@@ -323,7 +323,7 @@ def lexical_candidates(snapshot, anchor: dict, limit: int = 12):
                 continue
             # All sites are only lexical candidates. Keep tests in a lower
             # priority group, never promote same-name to receiver identity.
-            production = not path.startswith(("dev-tests/", "tests/", "test/"))
+            production = not path.startswith(("tests/", "test/"))
             same_module = path == anchor["path"]
             matches.append(
                 (

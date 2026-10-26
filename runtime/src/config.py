@@ -34,19 +34,11 @@ _TEST_DIR_PARTS = frozenset(
     {
         "test",
         "tests",
-        "dev-test",
-        "dev-tests",
-        "dev_test",
-        "dev_tests",
         "unit-test",
         "unit-tests",
         "unit_test",
         "unit_tests",
         "__tests__",
-        "test-deprecated",
-        "tests-deprecated",
-        "test_deprecated",
-        "tests_deprecated",
     }
 )
 

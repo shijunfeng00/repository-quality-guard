@@ -37,7 +37,7 @@
     "case_id": "tp-external-test-helper",
     "lineage": "qg240-source-auth-v1.json",
     "path": "tests/test_auth_fixture.py",
-    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom dev_tests import test_qg240_closed_case_behavior as target\n\nclass Example(TestCase):\n    def get_enterpoint(self): return target.ClosedCaseBehaviorCase\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
+    "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\nfrom external_fixture import ClosedCaseBehaviorCase as target\n\nclass Example(TestCase):\n    def get_enterpoint(self): return target.ClosedCaseBehaviorCase\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",
     "expected_codes": [
       "QG240"
     ]

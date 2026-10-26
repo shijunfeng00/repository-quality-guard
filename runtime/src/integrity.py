@@ -202,7 +202,6 @@ def _legacy_payload_issues(root: Path) -> list[str]:
                 "offline",
                 "README.md",
                 "README_zh.md",
-                "dev-tests",
                 "tests_support",
                 "tools",
                 "scripts/build_release.py",
@@ -214,7 +213,6 @@ def _legacy_payload_issues(root: Path) -> list[str]:
                 "installed/profile/README.md",
                 "installed/profile/README_zh.md",
                 "installed/profile/tests",
-                "installed/profile/dev-tests",
                 "installed/profile/docs",
                 "installed/profile/examples",
             )

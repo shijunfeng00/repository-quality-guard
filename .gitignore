@@ -33,3 +33,20 @@ __pycache__/
 
 # rqgtest local generated preprocessing cache (never distribute)
 /tests/cases/.cache/
+
+# External development planning/checkpoint artifacts: never commit or publish.
+# These files live under the outer checkpoint workspace, not in this product repo.
+/ARCH.md
+/PLAN*.md
+/PLAN*.json
+/DAG*.md
+/DAG*.json
+/CHECKLIST*.md
+/CHECKLIST*.json
+/TODOLIST*.md
+/TODOLIST*.json
+/PROGRESS*.json
+/CHECKPOINT*.json
+/CURRENT-HANDOFF.md
+/CURRENT.mbox
+/CURRENT-OVERLAY.zip

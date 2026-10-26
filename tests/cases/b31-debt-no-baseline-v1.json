@@ -1,0 +1,20 @@
+{
+  "contract": "modern-independent-oracle",
+  "source_review": {
+    "source_ordinal": 13,
+    "authored_case_id": "b31-debt-no-baseline",
+    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
+    "source_row_sha256": "0d9604bc8f881f5ea59da6d176d7ad790d3debe398a3e857bb6aa9a92e9289b5",
+    "expected_sha256": "af07a61828ce3d75d8f8300a6eb8bc736efdeb6f00915390d4365e700f9843d1",
+    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
+    "historical_expected_payload_reconstructed": false
+  },
+  "input_fixture": "b31-debt-scoped-history-v1.json",
+  "expected": {
+    "selected_scope_count": 2,
+    "current_ordinary_count": 2,
+    "baseline_label": "N/A",
+    "delta_label": "N/A",
+    "mode": "ignore-diff"
+  }
+}

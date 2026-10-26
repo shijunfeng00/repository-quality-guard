@@ -465,4 +465,4 @@ Repository Quality Guard 使用 **Apache License 2.0** 开源。
 
 ### 审计模式
 
-默认不传 `--mode`，使用 `normal` 正常模式。仅当用户明确授权，才可以使用 `--mode ignore-diff`（忽略diff模式）或 `--mode cleanup`（强制清零模式）。cleanup 要求普通生产 Critical / Error / Warning 债务归零，最终只有 ACCEPT 或 REJECT。无 Git 目录在 normal 下照常生成当前静态发现与当前关系图，历史基线和 Delta 标为 N/A。audit 与 verify 模式必须一致；无 `.git` 本身不是忽略 diff 的授权。
+唯一支持的模式参数是 `--mode normal|ignore-diff|cleanup`，不提供 `--debt-mode` 兼容别名。默认不传 `--mode`，使用 `normal` 正常模式。仅当用户明确授权，才可以使用 `--mode ignore-diff`（忽略diff模式）或 `--mode cleanup`（强制清零模式）。cleanup 要求普通生产 Critical / Error / Warning 债务归零，最终只有 ACCEPT 或 REJECT。无 Git 目录在 normal 下照常生成当前静态发现与当前关系图，历史基线和 Delta 标为 N/A。audit 与 verify 模式必须一致；无 `.git` 本身不是忽略 diff 的授权。

@@ -83,12 +83,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="审计模式；默认 normal。忽略 diff 与强制清零须获得用户授权。",
     )
-    audit.add_argument(
-        "--debt-mode",
-        choices=("progressive", "cleanup"),
-        default=None,
-        help="旧版兼容参数：progressive/cleanup；优先使用 --mode。",
-    )
 
     verify = subparsers.add_parser("verify", help="最终只读重扫并验证报告。")
     _common_target_options(verify)
@@ -100,12 +94,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("normal", "ignore-diff", "cleanup"),
         default=None,
         help="必须与 audit 使用同一审计模式。",
-    )
-    verify.add_argument(
-        "--debt-mode",
-        choices=("progressive", "cleanup"),
-        default=None,
-        help="旧版兼容参数；必须与 audit 使用同一审计模式。",
     )
     return parser
 
@@ -119,12 +107,7 @@ def _resolve_audit_mode(options: argparse.Namespace) -> argparse.Namespace:
     Returns:
         A new namespace retaining all options with one resolved audit policy.
     """
-    legacy = options.debt_mode
-    requested = options.mode
-    mapped = "cleanup" if legacy == "cleanup" else "normal"
-    if legacy is not None and requested is not None and requested != mapped:
-        raise ValueError("--mode 与旧版 --debt-mode 冲突，不能隐式改变审计模式")
-    effective_mode = requested or (mapped if legacy is not None else "normal")
+    effective_mode = options.mode or "normal"
     if effective_mode != "normal" and (options.diff_base or options.staged):
         raise ValueError("非 normal 模式不能同时使用 --diff-base 或 --staged")
     normalized = copy.copy(options)

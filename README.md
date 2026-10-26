@@ -464,4 +464,4 @@ The topology model explicitly records compiler-proven `UsageKind.STATIC_POLYMORP
 
 ### Audit modes
 
-Normal is the default (omit `--mode`). Explicit user authorization is required for `--mode ignore-diff` (current-source audit) or `--mode cleanup` (all ordinary production Critical/Error/Warning debt must be zero; ACCEPT or REJECT only). Git-free directories are auditable in normal mode; baseline and historical deltas are N/A, while current static findings and relation graph remain available. Audit and verify must use the same mode.
+The only supported mode option is `--mode normal|ignore-diff|cleanup`; there is no `--debt-mode` compatibility alias. Normal is the default (omit `--mode`). Explicit user authorization is required for `--mode ignore-diff` (current-source audit) or `--mode cleanup` (all ordinary production Critical/Error/Warning debt must be zero; ACCEPT or REJECT only). Git-free directories are auditable in normal mode; baseline and historical deltas are N/A, while current static findings and relation graph remain available. Audit and verify must use the same mode.

@@ -15,7 +15,7 @@ class DebtCliDefaultsCase(TestCase):
 
     def get_input_data(self):
         parser = build_parser()
-        for argv in (["audit"], ["audit", "--mode", "ignore-diff"], ["audit", "--mode", "cleanup"], ["audit", "--debt-mode", "progressive"]):
+        for argv in (["audit"], ["audit", "--mode", "ignore-diff"], ["audit", "--mode", "cleanup"]):
             yield ((parser.parse_args(argv),), {})
 
     def get_output_data(self):
@@ -25,3 +25,25 @@ class DebtCliDefaultsCase(TestCase):
 
     def equals(self, expected, actual):
         return actual.mode == expected["mode"] and actual.debt_mode == expected["debt_mode"] and actual.staged is False and actual.diff_base is None
+
+
+class DebtCliPublicSurfaceCase(TestCase):
+    """Expose only --mode on audit and verify; no legacy debt-mode alias."""
+
+    def get_enterpoint(self):
+        return lambda parser, command: any(
+            "--debt-mode" in action.option_strings
+            for action in parser._subparsers._group_actions[0].choices[command]._actions
+        )
+
+    def get_input_data(self):
+        parser = build_parser()
+        yield ((parser, "audit"), {})
+        yield ((parser, "verify"), {})
+
+    def get_output_data(self):
+        yield False
+        yield False
+
+    def equals(self, expected, actual):
+        return actual is expected

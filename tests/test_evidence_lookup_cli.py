@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 from rqgtest import CaseConfig, TestCase
@@ -28,18 +29,18 @@ class EvidenceLookupCliCase(TestCase):
         for row in fixture["cases"]:
             with tempfile.TemporaryDirectory(prefix="rqg-evidence-cli-case-") as directory:
                 repo = Path(directory)
-                (repo / "sample.py").write_text(row.get("source", fixture["source"]), encoding="utf-8")
-                for name, source in row.get("extra_files", {}).items():
+                source = row.get("source", fixture["source"])
+                if row.get("git_snapshot"):
+                    snapshot = Path(__file__).parent / "cases/qg-evidence-lookup-git-snapshot-v1.tar.gz"
+                    with tarfile.open(snapshot, "r:gz") as archive:
+                        archive.extractall(repo)
+                    if not (repo / ".git").is_dir():
+                        raise RuntimeError("Frozen Git CLI fixture has no .git directory")
+                (repo / "sample.py").write_text(source, encoding="utf-8")
+                for name, content in row.get("extra_files", {}).items():
                     target = repo / name
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(source, encoding="utf-8")
-                if row.get("git_snapshot"):
-                    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
-                    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-                    subprocess.run(
-                        ["git", "-c", "user.name=RQG Test", "-c", "user.email=rqg-test@example.invalid", "commit", "-qm", "fixture"],
-                        cwd=repo, check=True, capture_output=True,
-                    )
+                    target.write_text(content, encoding="utf-8")
                 args = [str(repo) if item == "@repo" else item for item in row["args"]]
                 command = [sys.executable, "-B", str(project / "scripts/evidence_lookup.py"), *args]
                 yield ((command,), {

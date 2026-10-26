@@ -87,7 +87,7 @@ def main() -> int:
     if (
         (root / "SKILL.md").is_file()
         and (root / "runtime" / "RELEASE.lock").is_file()
-        and (root / "scripts" / "ci" / "verify_release.py").is_file()
+        and (root / "scripts" / "verify_release.py").is_file()
     ):
         print(
             "目标是 RQG 源码仓库；宿主项目 hook 安装器不能用于自身开发，请运行 scripts/install_dev_hooks.py。",

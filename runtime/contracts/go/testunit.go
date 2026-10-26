@@ -36,7 +36,7 @@ type ITestCase interface {
 	GetSteps() []Step
 }
 
-// Case is a concrete provider, not a legacy Python InstanceTestCase adapter.
+// Case is a concrete provider with a language-native execution contract.
 type Case struct {
 	CaseID      string `json:"case_id"`
 	Type        Kind

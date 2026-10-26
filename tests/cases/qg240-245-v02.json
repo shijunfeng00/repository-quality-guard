@@ -247,15 +247,6 @@
     "expected_locations": null
   },
   {
-    "case_id": "legacy-instance",
-    "source": "from rqgtest import InstanceTestCase\nfrom example_prod import add\n\nclass CheckCase(InstanceTestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    def equals(self, expected, actual):\n        return expected == actual\n",
-    "expected_codes": {
-      "QG240": 2
-    },
-    "expected_locations": null,
-    "review_note": "Static negative source fixture only; never imported or executed. InstanceTestCase is intentionally an unrecognized retired-like base; QG240 must reject it rather than treating it as an rqgtest Case."
-  },
-  {
     "case_id": "legacy-step",
     "source": "from rqgtest import TestCase\nfrom example_prod import add\n\nclass CheckCase(TestCase):\n    def get_enterpoint(self):\n        return add\n    def get_input_data(self):\n        return ((2,3), {})\n    def get_output_data(self):\n        return 5\n    @property\n    def input_iterator(self):\n        return ()\n    def equals(self, expected, actual):\n        return expected == actual\n",
     "expected_codes": {

@@ -446,6 +446,13 @@ def repository_directory_layout_findings(
             name for name in directories
             if name not in {".git", "__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache", ".cache", ".qg-work"}
         )
+        # Private Profile internals are not part of the product-root directory
+        # allowlist. Keep each direct profiles/<profile>/ directory visible,
+        # then validate its optional tests/ tree under the same closed test
+        # contract below instead of treating it as a root-level extra directory.
+        if relative_parent.parts[:1] == ("profiles",) and len(relative_parent.parts) >= 2:
+            directories[:] = []
+            continue
         for name in directories:
             relative = (relative_parent / name).as_posix() + "/"
             actual.add(relative)
@@ -494,6 +501,73 @@ def repository_directory_layout_findings(
         for item in sorted(dataloaders.iterdir(), key=lambda path: path.name):
             if item.is_file() and item.suffix != ".py":
                 add(item.relative_to(root).as_posix(), "non_python_dataloader_asset", "dataloaders/ 只允许符合协议的 Python DataLoader 模块；静态数据应放 cases/。")
+
+    # Private Profiles have independent test roots: their fixtures and loaders
+    # stay under profiles/<profile>/tests/, never in the public root tests/.
+    # The rest of each private Profile tree is intentionally outside the frozen
+    # product-root layout contract, but an existing tests/ tree must obey the
+    # exact same Case/cases/DataLoader shape and rqgtest module contract.
+    profiles_root = root / "profiles"
+    known_fact_paths = {
+        Path(item.path).resolve() if Path(item.path).is_absolute()
+        else (root / item.path).resolve()
+        for item in (module_facts or ())
+    }
+    if profiles_root.is_dir():
+        for profile_root in sorted(
+            (item for item in profiles_root.iterdir() if item.is_dir()),
+            key=lambda path: path.name,
+        ):
+            profile_tests = profile_root / "tests"
+            if not profile_tests.is_dir():
+                continue
+            for item in sorted(profile_tests.iterdir(), key=lambda path: path.name):
+                relative = item.relative_to(root).as_posix()
+                if item.is_dir():
+                    if item.name in {"__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache", ".cache", ".qg-work"}:
+                        continue
+                    if item.name not in {"cases", "dataloaders"}:
+                        add(relative, "unexpected_tests_child", "Profile tests/ 直接子目录只允许 cases/ 与 dataloaders/。")
+                elif item.is_file() and not (item.name.startswith("test_") and item.suffix == ".py"):
+                    add(relative, "unexpected_tests_file", "Profile tests/ 根目录只允许 test_*.py Case 模块及 cases/、dataloaders/。")
+
+            profile_cases = profile_tests / "cases"
+            if profile_cases.is_dir():
+                for item in sorted(profile_cases.iterdir(), key=lambda path: path.name):
+                    if item.is_dir() and item.name in {"__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache", ".cache", ".qg-work"}:
+                        continue
+                    if item.is_dir():
+                        add(item.relative_to(root).as_posix(), "unexpected_directory", "Profile tests/cases/ 不允许新增或嵌套目录。")
+
+            profile_dataloaders = profile_tests / "dataloaders"
+            if profile_dataloaders.is_dir():
+                for item in sorted(profile_dataloaders.iterdir(), key=lambda path: path.name):
+                    relative = item.relative_to(root).as_posix()
+                    if item.is_dir() and item.name in {"__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache", ".cache", ".qg-work"}:
+                        continue
+                    if item.is_dir():
+                        add(relative, "unexpected_directory", "Profile tests/dataloaders/ 不允许新增或嵌套目录。")
+                    elif item.is_file() and item.suffix != ".py":
+                        add(relative, "non_python_dataloader_asset", "Profile tests/dataloaders/ 只允许 Python DataLoader 模块；静态数据应放本 Profile 的 cases/。")
+
+            # Git ignores private Profile payloads, so parse their test modules
+            # explicitly when they are absent from the ordinary scanner facts.
+            # This preserves QG240-246 TestCase/DataLoader checks without
+            # applying product-root layout rules to unrelated Profile folders.
+            for test_file in sorted(profile_tests.rglob("*.py")):
+                resolved = test_file.resolve()
+                if resolved in known_fact_paths:
+                    continue
+                try:
+                    tree = ast.parse(test_file.read_text(encoding="utf-8"), filename=str(test_file))
+                except (OSError, SyntaxError) as error:
+                    add(test_file.relative_to(root).as_posix(), "invalid_test_source", f"Profile 测试源码无法解析：{error}")
+                    continue
+                findings.extend(
+                    case_contract_findings(
+                        test_file.relative_to(root), tree, root, topology=topology
+                    )
+                )
 
     # Reuse the scanner's parsed imports and resolved symbol graph to identify
     # classes consumed only from tests. A spelling-based denylist is insufficient:

@@ -69,6 +69,10 @@ class FrozenRepositoryDirectoryLayoutCase(TestCase):
             ("tests/dataloaders/nested", ("tests/dataloaders/nested", "unexpected_directory")),
             ("tests/helper.py", ("tests/helper.py", "unexpected_tests_file")),
             ("tests/dataloaders/extra.json", ("tests/dataloaders/extra.json", "non_python_dataloader_asset")),
+            ("profiles/council-of-harnesses/tests/support", ("profiles/council-of-harnesses/tests/support", "unexpected_tests_child")),
+            ("profiles/council-of-harnesses/tests/cases/nested", ("profiles/council-of-harnesses/tests/cases/nested", "unexpected_directory")),
+            ("profiles/council-of-harnesses/tests/helper.py", ("profiles/council-of-harnesses/tests/helper.py", "unexpected_tests_file")),
+            ("profiles/council-of-harnesses/tests/dataloaders/extra.json", ("profiles/council-of-harnesses/tests/dataloaders/extra.json", "non_python_dataloader_asset")),
             (".ruff_cache", ()),
         )
         for extra, _ in cases:
@@ -100,6 +104,10 @@ class FrozenRepositoryDirectoryLayoutCase(TestCase):
         yield (("tests/dataloaders/nested", "unexpected_directory"),)
         yield (("tests/helper.py", "unexpected_tests_file"),)
         yield (("tests/dataloaders/extra.json", "non_python_dataloader_asset"),)
+        yield (("profiles/council-of-harnesses/tests/support", "unexpected_tests_child"),)
+        yield (("profiles/council-of-harnesses/tests/cases/nested", "unexpected_directory"),)
+        yield (("profiles/council-of-harnesses/tests/helper.py", "unexpected_tests_file"),)
+        yield (("profiles/council-of-harnesses/tests/dataloaders/extra.json", "non_python_dataloader_asset"),)
         yield ()
 
     def equals(self, expected, actual):
@@ -194,3 +202,36 @@ class TestOnlySupportConsumerGraphCase(TestCase):
             and finding.evidence.get("kind") == "RQG_TEST_ONLY_SUPPORT_GRAPH"
         }))
         return observed == expected
+
+
+class ProfileTestModuleContractCase(TestCase):
+    """Require private Profile tests to use the same rqgtest Case contract."""
+
+    def get_enterpoint(self):
+        return RepositoryScanner.scan
+
+    def get_input_data(self):
+        with tempfile.TemporaryDirectory(prefix="rqg-profile-test-contract-") as directory:
+            root = Path(directory)
+            (root / "profiles" / "council-of-harnesses" / "tests").mkdir(parents=True)
+            (root / "profiles" / "council-of-harnesses" / "tests" / "test_helper.py").write_text(
+                "def helper():\n    return None\n", encoding="utf-8"
+            )
+            config = GuardConfig(
+                project_name="repository-quality-guard",
+                require_docstrings=False,
+                require_docstring_sections=False,
+            )
+            yield ((RepositoryScanner(root, config),), {})
+
+    def get_output_data(self):
+        yield "profiles/council-of-harnesses/tests/test_helper.py"
+
+    def equals(self, expected, actual):
+        return any(
+            finding.code == "QG240"
+            and finding.path == expected
+            and finding.source == "test-contract"
+            and finding.evidence.get("kind") != "RQG_DIRECTORY_LAYOUT"
+            for finding in actual.findings
+        )

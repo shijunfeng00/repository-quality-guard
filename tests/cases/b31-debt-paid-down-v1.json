@@ -1,0 +1,19 @@
+{
+  "contract": "modern-independent-oracle",
+  "source_review": {
+    "source_ordinal": 14,
+    "authored_case_id": "b31-debt-paid-down",
+    "source_file_sha256": "61c4b4a7b75dd662938a8b6d33a3857a6851fe0f1fb27700c91fe4c94b7bb366",
+    "source_row_sha256": "188c9706910924fd18269e85a8f66b652a85e39ea89498e2011384044b010215",
+    "expected_sha256": "7206f45b7d9552efb9f4ada6be0bd21a72a65a51c2dee06b61ad6bd84a74e059",
+    "disposition": "NECESSARY_BEHAVIOR_PORT_PENDING",
+    "historical_expected_payload_reconstructed": false
+  },
+  "input_fixture": "b31-debt-scoped-history-v1.json",
+  "expected": {
+    "reduced_count": 1,
+    "current_ordinary_count": 2,
+    "paid_down_rule": "QG123",
+    "current_severity": "WARNING"
+  }
+}

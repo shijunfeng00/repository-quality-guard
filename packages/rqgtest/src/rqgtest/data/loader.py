@@ -3,6 +3,7 @@
 A loader yields complete serialized records, never automatically expands an
 iterable stored *inside* a record. Only trusted pickle inputs are permitted.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -43,15 +44,19 @@ class DataLoader(ABC, Iterable):
         if not self._suffix:
             raise ValueError("A preprocessing DataLoader must declare _suffix")
         # Class identity differentiates distinct transformations of one source.
-        target = (source.parent / ".cache" /
-                  f"{source.name}.{type(self).__module__.replace('.', '_')}."
-                  f"{type(self).__qualname__}{self._suffix}")
+        target = (
+            source.parent
+            / ".cache"
+            / f"{source.name}.{type(self).__module__.replace('.', '_')}."
+            f"{type(self).__qualname__}{self._suffix}"
+        )
         if target.is_file():
             return target
         target.parent.mkdir(parents=True, exist_ok=True)
         # Atomic replacement prevents a reader from opening a partial cache.
-        fd, name = tempfile.mkstemp(prefix=".building-", suffix=self._suffix,
-                                    dir=target.parent)
+        fd, name = tempfile.mkstemp(
+            prefix=".building-", suffix=self._suffix, dir=target.parent
+        )
         os.close(fd)
         temporary = Path(name)
         try:
@@ -73,6 +78,7 @@ class DataLoader(ABC, Iterable):
 
 class JSONDataLoader(DataLoader):
     """One JSON document is one record, even when it contains a list."""
+
     _suffix = ".json"
 
     def _iter(self, path: Path) -> Iterator[Any]:
@@ -82,6 +88,7 @@ class JSONDataLoader(DataLoader):
 
 class JSONLDataLoader(DataLoader):
     """Yield one complete JSON value per non-empty line."""
+
     _suffix = ".jsonl"
 
     def _iter(self, path: Path) -> Iterator[Any]:
@@ -97,12 +104,15 @@ class JSONLDataLoader(DataLoader):
 
 class CSVDataLoader(DataLoader):
     """Yield CSV rows as mappings; no automatic type coercion."""
+
     _suffix = ".csv"
 
     def _iter(self, path: Path) -> Iterator[Any]:
         with path.open("r", encoding="utf-8-sig", newline="") as stream:
             reader = csv.DictReader(stream)
-            if not reader.fieldnames or len(reader.fieldnames) != len(set(reader.fieldnames)):
+            if not reader.fieldnames or len(reader.fieldnames) != len(
+                set(reader.fieldnames)
+            ):
                 raise ValueError(f"Missing or repeated CSV header: {path}")
             for row in reader:
                 if None in row:
@@ -116,6 +126,7 @@ class PickleDataLoader(DataLoader):
     Every pickle.load result is one record; containers inside it stay intact.
     A non-EOF pickle error is propagated instead of being treated as completion.
     """
+
     _suffix = ".pkl"
 
     def _iter(self, path: Path) -> Iterator[Any]:

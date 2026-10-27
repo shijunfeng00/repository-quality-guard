@@ -1,4 +1,5 @@
 """Immutable, complete per-invocation result ledger."""
+
 from dataclasses import dataclass, asdict
 from typing import Any
 
@@ -6,6 +7,7 @@ from typing import Any
 @dataclass(frozen=True, slots=True)
 class SampleResult:
     """One observable invocation, including failed and invalid observations."""
+
     name: str
     status: str
     detail: str = ""
@@ -17,6 +19,7 @@ class SampleResult:
 @dataclass(frozen=True, slots=True)
 class BatchResult:
     """Nonempty execution evidence; never discard failing samples."""
+
     samples: tuple[SampleResult, ...]
     invalid: str | None = None
 
@@ -26,7 +29,9 @@ class BatchResult:
 
     @property
     def succeeded(self) -> bool:
-        return bool(self.samples) and not self.invalid and self.passed == len(self.samples)
+        return (
+            bool(self.samples) and not self.invalid and self.passed == len(self.samples)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

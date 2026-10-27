@@ -1,4 +1,5 @@
 """Closed public Case contract: metadata comes only from the base constructor."""
+
 from __future__ import annotations
 
 from abc import ABC, ABCMeta, abstractmethod
@@ -40,9 +41,11 @@ class _DirectLeafMeta(ABCMeta):
         result = super().__new__(mcls, name, bases, namespace, **kwargs)
         if result.__module__ == __name__ and name == "ITestCase":
             return result
-        if result.__module__ == __name__ and name in (
-            "TestCase", "StatefulTestCase"
-        ) and bases == (ITestCase,):
+        if (
+            result.__module__ == __name__
+            and name in ("TestCase", "StatefulTestCase")
+            and bases == (ITestCase,)
+        ):
             return result
         if len(bases) != 1 or bases[0] not in (TestCase, StatefulTestCase):
             raise TypeError(
@@ -70,7 +73,9 @@ class ITestCase(ABC, metaclass=_DirectLeafMeta):
         object.__setattr__(self, "_case_config", config or CaseConfig())
 
     def __setattr__(self, name: str, value: object) -> None:
-        raise AttributeError("Case metadata and state are immutable; use super().__init__")
+        raise AttributeError(
+            "Case metadata and state are immutable; use super().__init__"
+        )
 
     @property
     def type(self) -> Outcome:

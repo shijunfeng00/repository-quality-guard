@@ -1,4 +1,5 @@
 """Command line entry point for discovery, selection and execution."""
+
 from __future__ import annotations
 
 import argparse
@@ -23,8 +24,11 @@ _CASES = ()
 
 def _cpu_slots() -> int:
     """Count CPUs available to the current process, respecting affinity."""
-    available = (len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity")
-                 else os.cpu_count() or 1)
+    available = (
+        len(os.sched_getaffinity(0))
+        if hasattr(os, "sched_getaffinity")
+        else os.cpu_count() or 1
+    )
     try:
         quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
         if quota != "max":
@@ -34,16 +38,25 @@ def _cpu_slots() -> int:
     return max(1, available)
 
 
-def _worker_init(root: str, case_names: tuple[str, ...], selected_files: tuple[str, ...]) -> None:
+def _worker_init(
+    root: str, case_names: tuple[str, ...], selected_files: tuple[str, ...]
+) -> None:
     """Load Case definitions once per worker on spawn-only platforms."""
     global _CASES
     if not _CASES:
-        collected, _ = discover(Path(root), selected_files=tuple(Path(path) for path in selected_files) if selected_files else None)
+        collected, _ = discover(
+            Path(root),
+            selected_files=tuple(Path(path) for path in selected_files)
+            if selected_files
+            else None,
+        )
         selected = dict(collected)
         _CASES = tuple((name, selected[name]) for name in case_names)
 
 
-def _execute(index: int, max_samples: int) -> tuple[int, list[SampleResult], str | None]:
+def _execute(
+    index: int, max_samples: int
+) -> tuple[int, list[SampleResult], str | None]:
     name, case = _CASES[index]
     try:
         return index, TestUnit.run(case, name, max_samples), None
@@ -60,17 +73,37 @@ def _source_snapshot(root: Path) -> dict[str, str]:
     project = root.parent
     git = subprocess.run(
         ["git", "ls-files", "-co", "--exclude-standard", "-z"],
-        cwd=project, capture_output=True, check=False,
+        cwd=project,
+        capture_output=True,
+        check=False,
     )
     candidates: list[Path]
     if git.returncode == 0:
         candidates = [project / os.fsdecode(p) for p in git.stdout.split(b"\0") if p]
     else:
-        candidates = [path for path in project.rglob("*.py")
-                      if not {".git", ".venv", "__pycache__", "build", "dist"}
-                      .intersection(path.relative_to(project).parts)]
-    extensions = {".py", ".pyx", ".c", ".h", ".cpp", ".hpp", ".java",
-                  ".js", ".ts", ".tsx", ".json", ".toml", ".yaml", ".yml"}
+        candidates = [
+            path
+            for path in project.rglob("*.py")
+            if not {".git", ".venv", "__pycache__", "build", "dist"}.intersection(
+                path.relative_to(project).parts
+            )
+        ]
+    extensions = {
+        ".py",
+        ".pyx",
+        ".c",
+        ".h",
+        ".cpp",
+        ".hpp",
+        ".java",
+        ".js",
+        ".ts",
+        ".tsx",
+        ".json",
+        ".toml",
+        ".yaml",
+        ".yml",
+    }
     hashes = {}
     for path in candidates:
         if path.is_file() and path.suffix in extensions:
@@ -103,7 +136,9 @@ def _resolve_selected_files(
         if not case_path or not class_name.isidentifier():
             raise ValueError("--case must be path/to/test_file.py::CaseName")
         case_file = _resolved_file(root, Path(case_path))
-        if requested and case_file not in [_resolved_file(root, path) for path in requested]:
+        if requested and case_file not in [
+            _resolved_file(root, path) for path in requested
+        ]:
             raise ValueError("--case and --file(s) must select the same test module")
         if not requested:
             requested.append(Path(case_path))
@@ -115,20 +150,28 @@ def _resolve_selected_files(
     return resolved
 
 
-def _select(cases, root: Path, selected_files: tuple[Path, ...] | None, name: str | None):
+def _select(
+    cases, root: Path, selected_files: tuple[Path, ...] | None, name: str | None
+):
     """Select exact Case identities; a missing match is an error."""
     selected = cases
     if selected_files is not None:
         wanted = {path.relative_to(root).as_posix() for path in selected_files}
-        selected = [(key, case) for key, case in selected
-                    if key.split("::", 1)[0].replace("\\", "/") in wanted]
+        selected = [
+            (key, case)
+            for key, case in selected
+            if key.split("::", 1)[0].replace("\\", "/") in wanted
+        ]
     if name is not None:
         normalized = name.replace("\\", "/")
         prefix = root.name + "/"
         if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
-        selected = [(key, case) for key, case in selected
-                    if key.replace("\\", "/") == normalized]
+            normalized = normalized[len(prefix) :]
+        selected = [
+            (key, case)
+            for key, case in selected
+            if key.replace("\\", "/") == normalized
+        ]
     if not selected:
         raise ValueError("No matching TestCase; use --list to inspect available cases")
     return selected
@@ -136,16 +179,28 @@ def _select(cases, root: Path, selected_files: tuple[Path, ...] | None, name: st
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m rqgtest.run", description="Discover and execute standard TestCase modules."
+        prog="python -m rqgtest.run",
+        description="Discover and execute standard TestCase modules.",
     )
-    parser.add_argument("--tests-root", type=Path, default=Path("tests"), help="测试根目录（默认 tests）")
+    parser.add_argument(
+        "--tests-root",
+        type=Path,
+        default=Path("tests"),
+        help="测试根目录（默认 tests）",
+    )
     parser.add_argument("--list", action="store_true", help="列出所有可运行 Case")
     files_group = parser.add_mutually_exclusive_group()
     files_group.add_argument("--file", type=Path, help="仅运行指定 test_*.py 文件")
-    files_group.add_argument("--files", type=Path, nargs="+", help="仅运行指定的多个 test_*.py 文件")
+    files_group.add_argument(
+        "--files", type=Path, nargs="+", help="仅运行指定的多个 test_*.py 文件"
+    )
     parser.add_argument("--case", help="仅运行指定 文件路径::Case类名")
-    parser.add_argument("--max-samples", type=int, default=10000, help="单个 Case 最大迭代样本数")
-    parser.add_argument("--rebuild-cache", action="store_true", help="删除测试缓存并重新预处理")
+    parser.add_argument(
+        "--max-samples", type=int, default=10000, help="单个 Case 最大迭代样本数"
+    )
+    parser.add_argument(
+        "--rebuild-cache", action="store_true", help="删除测试缓存并重新预处理"
+    )
     parser.add_argument("--report", type=Path, help="写出机器可读执行结果 JSON")
     args = parser.parse_args(argv)
     results: list[SampleResult] = []
@@ -167,10 +222,12 @@ def main(argv: list[str] | None = None) -> int:
         global _CASES
         _CASES = tuple(selected)
         before = _source_snapshot(root)
-        pool_indices = [i for i, (_, case) in enumerate(selected)
-                        if case.config.process == "pool"]
-        main_indices = [i for i, (_, case) in enumerate(selected)
-                        if case.config.process == "main"]
+        pool_indices = [
+            i for i, (_, case) in enumerate(selected) if case.config.process == "pool"
+        ]
+        main_indices = [
+            i for i, (_, case) in enumerate(selected) if case.config.process == "main"
+        ]
         # Explicit coordinator cases finish before parallel work, so they never
         # race against pool cases over process-local fixtures or native state.
         completed = [_execute(index, args.max_samples) for index in main_indices]
@@ -183,17 +240,26 @@ def main(argv: list[str] | None = None) -> int:
                 max_workers=min(_cpu_slots(), len(pool_indices)),
                 mp_context=context,
                 initializer=_worker_init,
-                initargs=(str(root), tuple(name for name, _ in selected),
-                          tuple(str(path) for path in selected_files) if selected_files else ()),
+                initargs=(
+                    str(root),
+                    tuple(name for name, _ in selected),
+                    tuple(str(path) for path in selected_files)
+                    if selected_files
+                    else (),
+                ),
             ) as pool:
-                futures = [pool.submit(_execute, i, args.max_samples) for i in pool_indices]
+                futures = [
+                    pool.submit(_execute, i, args.max_samples) for i in pool_indices
+                ]
                 for index, future in zip(pool_indices, futures):
                     try:
                         completed.append(future.result())
                     except Exception as exc:
                         name = selected[index][0]
                         detail = f"{name}: worker {type(exc).__name__}: {exc}"
-                        completed.append((index, [SampleResult(name, "INVALID", detail)], detail))
+                        completed.append(
+                            (index, [SampleResult(name, "INVALID", detail)], detail)
+                        )
         for _, samples, error in sorted(completed, key=lambda item: item[0]):
             results.extend(samples)
             if error:
@@ -210,7 +276,9 @@ def main(argv: list[str] | None = None) -> int:
     data = {"executor": "rqgtest", **ledger.to_dict(), "case_sha256": hashes}
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        args.report.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     for item in results:
         if item.status != "PASS":
             print(f"{item.status}: {item.name} {item.detail}", file=sys.stderr)

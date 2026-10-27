@@ -1,4 +1,5 @@
 """Discover a complete test root using fixed naming and inheritance contracts."""
+
 from __future__ import annotations
 import ast
 import hashlib
@@ -12,8 +13,15 @@ _ROOTS = (TestCase, StatefulTestCase)
 _ALLOWED = {"get_enterpoint", "get_input_data", "get_output_data", "equals", "__init__"}
 # Source files below data-only roots are never imported as executable test modules.
 _DATA_DIRS = frozenset({"cases"})
-_LOADER_BASES = frozenset({"DataLoader", "JSONDataLoader", "JSONLDataLoader", "CSVDataLoader", "PickleDataLoader"})
-
+_LOADER_BASES = frozenset(
+    {
+        "DataLoader",
+        "JSONDataLoader",
+        "JSONLDataLoader",
+        "CSVDataLoader",
+        "PickleDataLoader",
+    }
+)
 
 
 def _inspect_module(path: Path):
@@ -24,27 +32,47 @@ def _inspect_module(path: Path):
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
             continue
-        if (isinstance(node, ast.ClassDef) and len(node.bases) == 1
-                and isinstance(node.bases[0], ast.Name)
-                and node.bases[0].id in loader_bases):
+        if (
+            isinstance(node, ast.ClassDef)
+            and len(node.bases) == 1
+            and isinstance(node.bases[0], ast.Name)
+            and node.bases[0].id in loader_bases
+        ):
             loader_count += 1
             if loader_count > 1:
-                raise ValueError(f"At most one local DataLoader subclass per test module: {path}")
+                raise ValueError(
+                    f"At most one local DataLoader subclass per test module: {path}"
+                )
             continue
-        if isinstance(node, ast.ClassDef) and len(node.bases) == 1 and isinstance(node.bases[0], ast.Name) and node.bases[0].id in {r.__name__ for r in _ROOTS}:
+        if (
+            isinstance(node, ast.ClassDef)
+            and len(node.bases) == 1
+            and isinstance(node.bases[0], ast.Name)
+            and node.bases[0].id in {r.__name__ for r in _ROOTS}
+        ):
             found = True
             if not node.name.endswith("Case"):
                 raise ValueError(f"Case name must end with Case: {path}:{node.lineno}")
             for member in node.body:
                 if isinstance(member, ast.FunctionDef) and member.name in _ALLOWED:
                     continue
-                if isinstance(member, ast.Expr) and isinstance(member.value, ast.Constant) and isinstance(member.value.value, str):
+                if (
+                    isinstance(member, ast.Expr)
+                    and isinstance(member.value, ast.Constant)
+                    and isinstance(member.value.value, str)
+                ):
                     continue
                 raise ValueError(f"Nonstandard Case member: {path}:{member.lineno}")
             continue
-        raise ValueError(f"Test root may contain only imports and direct Cases: {path}:{node.lineno}")
+        raise ValueError(
+            f"Test root may contain only imports and direct Cases: {path}:{node.lineno}"
+        )
     if not found and not loader_count:
         raise ValueError(f"No direct Case or DataLoader in {path}")
 
@@ -52,9 +80,15 @@ def _inspect_module(path: Path):
 def _imported_loader_bases(tree: ast.Module) -> set[str]:
     bases: set[str] = set()
     for node in tree.body:
-        if isinstance(node, ast.ImportFrom) and node.module in ("rqgtest", "rqgtest.data.loader"):
-            bases.update(alias.asname or alias.name for alias in node.names
-                         if alias.name in _LOADER_BASES)
+        if isinstance(node, ast.ImportFrom) and node.module in (
+            "rqgtest",
+            "rqgtest.data.loader",
+        ):
+            bases.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name in _LOADER_BASES
+            )
     return bases
 
 
@@ -72,18 +106,29 @@ def _inspect_dataloader_module(path: Path) -> None:
             continue
         if isinstance(node, ast.Import):
             continue
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
             continue
         if isinstance(node, ast.ClassDef):
             classes.append(node)
             continue
-        raise ValueError(f"DataLoader module may contain only imports and one class: {path}:{node.lineno}")
+        raise ValueError(
+            f"DataLoader module may contain only imports and one class: {path}:{node.lineno}"
+        )
     if len(classes) != 1:
         raise ValueError(f"Exactly one DataLoader subclass required: {path}")
     cls = classes[0]
-    if (len(cls.bases) != 1 or not isinstance(cls.bases[0], ast.Name)
-            or cls.bases[0].id not in imported_bases):
-        raise ValueError(f"DataLoader subclass must directly extend an imported standard loader: {path}:{cls.lineno}")
+    if (
+        len(cls.bases) != 1
+        or not isinstance(cls.bases[0], ast.Name)
+        or cls.bases[0].id not in imported_bases
+    ):
+        raise ValueError(
+            f"DataLoader subclass must directly extend an imported standard loader: {path}:{cls.lineno}"
+        )
 
 
 def _is_data_file(path: Path, root: Path) -> bool:
@@ -93,6 +138,7 @@ def _is_data_file(path: Path, root: Path) -> bool:
 
 def _is_loader_file(path: Path, root: Path) -> bool:
     return path.relative_to(root).parts[0] == "dataloaders"
+
 
 def discover(root: Path, *, selected_files: tuple[Path, ...] | None = None):
     if not root.is_dir():
@@ -110,9 +156,14 @@ def discover(root: Path, *, selected_files: tuple[Path, ...] | None = None):
             raise ValueError("Selected test files may not be empty")
         modules = sorted({path.resolve() for path in selected_files})
         for path in modules:
-            if (not path.is_relative_to(root.resolve()) or not path.is_file()
-                    or not path.name.startswith("test_") or path.suffix != ".py"
-                    or _is_loader_file(path, root) or _is_data_file(path, root)):
+            if (
+                not path.is_relative_to(root.resolve())
+                or not path.is_file()
+                or not path.name.startswith("test_")
+                or path.suffix != ".py"
+                or _is_loader_file(path, root)
+                or _is_data_file(path, root)
+            ):
                 raise ValueError(f"Invalid selected test module: {path}")
         markers = set()
         for path in modules:
@@ -123,17 +174,21 @@ def discover(root: Path, *, selected_files: tuple[Path, ...] | None = None):
                     break
                 parent = parent.parent
     else:
-        modules = sorted(x for x in root.rglob("*.py")
-                         if x.name != "__init__.py"
-                         and not _is_loader_file(x, root)
-                         and not _is_data_file(x, root))
-        markers = {x for x in root.rglob("__init__.py")
-                   if not _is_data_file(x, root)}
+        modules = sorted(
+            x
+            for x in root.rglob("*.py")
+            if x.name != "__init__.py"
+            and not _is_loader_file(x, root)
+            and not _is_data_file(x, root)
+        )
+        markers = {x for x in root.rglob("__init__.py") if not _is_data_file(x, root)}
     if not modules:
         raise ValueError(f"No Python test cases in {root}")
     for marker in sorted(markers):
         if marker.is_file() and marker.read_text(encoding="utf-8").strip():
-            raise ValueError(f"Executable package marker forbidden in test root: {marker}")
+            raise ValueError(
+                f"Executable package marker forbidden in test root: {marker}"
+            )
     # Import the project-specific loader package through its test root.
     # This supports `from dataloaders.foo import FooLoader` on every platform.
     if str(root) not in sys.path:
@@ -152,7 +207,16 @@ def discover(root: Path, *, selected_files: tuple[Path, ...] | None = None):
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
-        for cls in sorted((val for val in vars(module).values() if inspect.isclass(val) and val.__module__ == spec.name and issubclass(val, ITestCase)), key=lambda c: c.__name__):
+        for cls in sorted(
+            (
+                val
+                for val in vars(module).values()
+                if inspect.isclass(val)
+                and val.__module__ == spec.name
+                and issubclass(val, ITestCase)
+            ),
+            key=lambda c: c.__name__,
+        ):
             if len(cls.__bases__) != 1 or cls.__bases__[0] not in _ROOTS:
                 raise ValueError(f"Non-direct Case inheritance: {cls.__name__}")
             case = cls()

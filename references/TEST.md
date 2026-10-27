@@ -1,4 +1,4 @@
-# rqgtest 0.2.2
+# rqgtest 0.2.3
 
 Python 3.10+ 单元测试框架。测试类声明真实入口、输入和独立预期值；`TestUnit` 负责调用、比较、进程池调度与结果报告。
 
@@ -15,7 +15,7 @@ Python 3.10+ 单元测试框架。测试类声明真实入口、输入和独立�
 安装随发行包提供的 Wheel：
 
 ```bash
-python -m pip install --no-index rqgtest-0.2.2-py3-none-any.whl
+python -m pip install --no-index rqgtest-0.2.3-py3-none-any.whl
 ```
 
 项目目录：

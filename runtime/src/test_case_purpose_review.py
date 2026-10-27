@@ -66,19 +66,6 @@ def _register_case_import(
                 bindings[binding] = alias.name
 
 
-def _case_origin(base: ast.expr, bindings: dict[str, str]) -> str | None:
-    """Resolve a direct framework base only when source imports prove its owner."""
-    qualified = _qualified_name(base)
-    for reference, origin in bindings.items():
-        if qualified == reference and origin.rsplit(".", 1)[-1] in _CASE_BASES:
-            return origin
-        if qualified.startswith(reference + ".") and origin in _CASE_MODULES:
-            suffix = qualified[len(reference) + 1 :]
-            if suffix in _CASE_BASES:
-                return origin + "." + suffix
-    return None
-
-
 def _case_nodes(source: str) -> dict[str, tuple[ast.ClassDef, str]]:
     """Accept direct standard Case roots with identity-bound imported aliases."""
     try:
@@ -91,10 +78,27 @@ def _case_nodes(source: str) -> dict[str, tuple[ast.ClassDef, str]]:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             _register_case_import(node, bound)
         elif isinstance(node, ast.ClassDef):
+            matched = False
             for base in node.bases:
-                origin = _case_origin(base, bound)
-                if origin is not None:
-                    cases[node.name] = (node, origin)
+                qualified = _qualified_name(base)
+                for reference, origin in bound.items():
+                    if (
+                        qualified == reference
+                        and origin.rsplit(".", 1)[-1] in _CASE_BASES
+                    ):
+                        cases[node.name] = (node, origin)
+                        matched = True
+                        break
+                    if (
+                        qualified.startswith(reference + ".")
+                        and origin in _CASE_MODULES
+                    ):
+                        suffix = qualified[len(reference) + 1 :]
+                        if suffix in _CASE_BASES:
+                            cases[node.name] = (node, origin + "." + suffix)
+                            matched = True
+                            break
+                if matched:
                     break
             _forget_shadowed(bound, node.name)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

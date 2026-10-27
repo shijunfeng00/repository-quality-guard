@@ -285,7 +285,11 @@ class RuleEvaluator:
                 self._repository_definition_context(definitions)
             )
         )
-        findings.extend(self._module_findings(facts))
+        for module in facts:
+            context = ModuleRuleContext(module, self.config)
+            findings.extend(ModuleLineLimitRule().evaluate(context))
+            if module.tree is not None:
+                findings.extend(SuppressionMarkerRule().evaluate(context))
         findings.extend(
             DuplicateBodyRule().evaluate(
                 self._repository_definition_context(definitions)
@@ -552,22 +556,3 @@ class RuleEvaluator:
         if critical_facade:
             return PrivateFacadeWrapperRule().evaluate(context)
         return DelegationWrapperRule().evaluate(context)
-
-    def _module_findings(self, facts: list[ModuleFacts]) -> list[Finding]:
-        """Apply module line-count and suppression-marker rules across supplied modules.
-
-        A suppression marker is only checked when a module has a parsed AST;
-        oversized modules remain visible even when their AST cannot be parsed.
-
-        Args:
-            facts: Module facts collected for the current repository scan.
-
-        Returns:
-            Ordered module-level findings for excessive length or suppression."""
-        findings: list[Finding] = []
-        for item in facts:
-            ctx = ModuleRuleContext(item, self.config)
-            findings.extend(ModuleLineLimitRule().evaluate(ctx))
-            if item.tree is not None:
-                findings.extend(SuppressionMarkerRule().evaluate(ctx))
-        return findings

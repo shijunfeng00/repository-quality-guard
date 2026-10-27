@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 
+
 def bound_names(body: list[ast.stmt], skip_nested: bool) -> set[str]:
     """Collect binding names in the immediate syntactic scope.
 
@@ -221,10 +222,17 @@ def straight_line_local_imports(
     declarations: dict[str, tuple[str, int]] = {}
     counts: dict[str, int] = {}
     for statement in method.body:
-        if isinstance(statement, ast.ImportFrom) and statement.level == 0 and statement.module:
+        if (
+            isinstance(statement, ast.ImportFrom)
+            and statement.level == 0
+            and statement.module
+        ):
             for alias in statement.names:
                 name = alias.asname or alias.name
-                declarations[name] = (f"import:{statement.module}.{alias.name}", statement.lineno)
+                declarations[name] = (
+                    f"import:{statement.module}.{alias.name}",
+                    statement.lineno,
+                )
         elif isinstance(statement, ast.Import):
             for alias in statement.names:
                 name = alias.asname or alias.name.split(".")[0]
@@ -232,7 +240,9 @@ def straight_line_local_imports(
     for statement in method.body:
         for name in bound_names([statement], skip_nested=True):
             counts[name] = counts.get(name, 0) + 1
-    return {name: binding for name, binding in declarations.items() if counts.get(name) == 1}
+    return {
+        name: binding for name, binding in declarations.items() if counts.get(name) == 1
+    }
 
 
 def entrypoint_call_witness(
@@ -268,8 +278,11 @@ def entrypoint_call_witness(
     }
     lexical_locals = bound_names(method.body, skip_nested=True)
     local_aliases.update(
-        {name: binding for name, binding in straight_line_local_imports(method).items()
-         if name not in parameters}
+        {
+            name: binding
+            for name, binding in straight_line_local_imports(method).items()
+            if name not in parameters
+        }
     )
     receiver = method.args.args[0].arg if method.args.args else None
     if method.args.vararg is not None:
@@ -314,11 +327,13 @@ def entrypoint_call_witness(
         if not isinstance(node, ast.Call):
             continue
         invoked = node.func
-        if (isinstance(invoked, ast.NamedExpr)
-                and isinstance(invoked.value, (ast.Name, ast.Attribute))
-                and stable_reference(invoked.value, tree) in targets
-                and isinstance(invoked.target, ast.Name)
-                and assignments.get(invoked.target.id) == 1):
+        if (
+            isinstance(invoked, ast.NamedExpr)
+            and isinstance(invoked.value, (ast.Name, ast.Attribute))
+            and stable_reference(invoked.value, tree) in targets
+            and isinstance(invoked.target, ast.Name)
+            and assignments.get(invoked.target.id) == 1
+        ):
             return node
         if (
             isinstance(invoked, ast.Call)
@@ -331,9 +346,11 @@ def entrypoint_call_witness(
         ):
             return node
         if isinstance(invoked, ast.Name):
-            if (invoked.id in local_aliases
-                    and local_aliases[invoked.id][1] < node.lineno
-                    and local_aliases[invoked.id][0] in targets | {"<declared-entrypoint>"}):
+            if (
+                invoked.id in local_aliases
+                and local_aliases[invoked.id][1] < node.lineno
+                and local_aliases[invoked.id][0] in targets | {"<declared-entrypoint>"}
+            ):
                 return node
             if invoked.id in parameters or invoked.id in lexical_locals:
                 continue

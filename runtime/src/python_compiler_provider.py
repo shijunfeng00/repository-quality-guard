@@ -24,7 +24,6 @@ from .analysis_snapshot import RepositoryAnalysisSnapshot
 from .python_import_resolution import python_module_name
 
 
-
 def declaration_positions(
     snapshot: RepositoryAnalysisSnapshot,
 ) -> dict[tuple[str, int, int], str]:
@@ -298,7 +297,9 @@ def project_compiler_targets(
             if isinstance(expr, ast.Attribute):
                 start = expr.end_col_offset - len(expr.attr.encode("utf-8"))
             line = expr.lineno - 1
-            prefix = lines_by_path[source_path][line].encode("utf-8")[:start].decode("utf-8")
+            prefix = (
+                lines_by_path[source_path][line].encode("utf-8")[:start].decode("utf-8")
+            )
             char = len(prefix.encode("utf-16-le")) // 2
             declarations = session.definition(
                 root / source_path, unit.source, line, char

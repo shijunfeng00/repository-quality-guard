@@ -117,7 +117,17 @@ def _filter_test_quality_findings(
             for pattern in passthrough_patterns
         )
         or item.code
-        in {"QG000", "QG149", "QG240", "QG241", "QG242", "QG243", "QG244", "QG245", "QG246"}
+        in {
+            "QG000",
+            "QG149",
+            "QG240",
+            "QG241",
+            "QG242",
+            "QG243",
+            "QG244",
+            "QG245",
+            "QG246",
+        }
         or item.source in {"ruff", "integration"}
     ]
 

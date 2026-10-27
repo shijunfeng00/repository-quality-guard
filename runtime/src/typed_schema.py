@@ -159,11 +159,14 @@ def _imported_schema_aliases(
             # Relative and external imports also occupy the alias.  They may
             # shadow an earlier known schema even when their target is open.
             imports = (
-                (item.asname or item.name, (
-                    statement.module + "." + item.name
-                    if statement.module and statement.level == 0
-                    else "OPEN_IMPORT:" + str(statement.module) + "." + item.name
-                ))
+                (
+                    item.asname or item.name,
+                    (
+                        statement.module + "." + item.name
+                        if statement.module and statement.level == 0
+                        else "OPEN_IMPORT:" + str(statement.module) + "." + item.name
+                    ),
+                )
                 for item in statement.names
                 if item.name != "*"
             )

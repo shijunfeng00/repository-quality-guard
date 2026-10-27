@@ -37,7 +37,8 @@ def is_absolute_blocker_finding(
     evidence = finding.evidence
     if test_finding:
         return (
-            finding.code in {"QG240", "QG241", "QG242", "QG243", "QG244", "QG245", "QG246"}
+            finding.code
+            in {"QG240", "QG241", "QG242", "QG243", "QG244", "QG245", "QG246"}
             and evidence.get("absolute_blocker") is True
         )
     return evidence.get("absolute_blocker") is True or (

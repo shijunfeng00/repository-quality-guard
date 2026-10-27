@@ -192,12 +192,17 @@ class RepositoryScanner:
             if is_test_source_path(item.path, self.config.test_roots):
                 findings.extend(
                     case_contract_findings(
-                        item.path, item.tree, self.root, topology=self.topology,
+                        item.path,
+                        item.tree,
+                        self.root,
+                        topology=self.topology,
                         test_roots=self.config.test_roots,
                     )
                 )
         if self.config.project_name == "repository-quality-guard":
-            findings.extend(repository_directory_layout_findings(self.root, self.topology, facts))
+            findings.extend(
+                repository_directory_layout_findings(self.root, self.topology, facts)
+            )
         if self.analysis_snapshot is not None and self.topology is not None:
             from .typed_producer_contract import typed_producer_contract_findings
 

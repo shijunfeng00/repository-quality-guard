@@ -113,10 +113,14 @@ def case_contract_findings(
     module_aliases: dict[str, str] = {}
     certified_imports: set[ast.stmt] = set()
     for statement in tree.body:
-        if isinstance(statement, ast.ImportFrom) and statement.module in {_FRAMEWORK, "rqgtest.core.unit"}:
+        if isinstance(statement, ast.ImportFrom) and statement.module in {
+            _FRAMEWORK,
+            "rqgtest.core.unit",
+        }:
             for alias in statement.names:
-                if (alias.name in {*_ROOT_METHODS, "TestUnit", "ITestCase"}
-                        and (statement.module == _FRAMEWORK or alias.name == "TestUnit")):
+                if alias.name in {*_ROOT_METHODS, "TestUnit", "ITestCase"} and (
+                    statement.module == _FRAMEWORK or alias.name == "TestUnit"
+                ):
                     aliases[alias.asname or alias.name] = alias.name
                     certified_imports.add(statement)
         elif isinstance(statement, ast.Import):
@@ -317,13 +321,19 @@ class TestLayoutRule(CoreQualityRule[TestContractContext]):
             imported: set[str] = set()
             for statement in tree.body:
                 if isinstance(statement, ast.ImportFrom) and statement.module in {
-                    "rqgtest", "rqgtest.data.loader"
+                    "rqgtest",
+                    "rqgtest.data.loader",
                 }:
                     imported.update(
-                        alias.asname or alias.name for alias in statement.names
-                        if alias.name in {
-                            "DataLoader", "JSONDataLoader", "JSONLDataLoader",
-                            "CSVDataLoader", "PickleDataLoader"
+                        alias.asname or alias.name
+                        for alias in statement.names
+                        if alias.name
+                        in {
+                            "DataLoader",
+                            "JSONDataLoader",
+                            "JSONLDataLoader",
+                            "CSVDataLoader",
+                            "PickleDataLoader",
                         }
                     )
             classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
@@ -834,7 +844,6 @@ def _repository_module_path(root: Path, module: str) -> Path | None:
     return None
 
 
-
 def _case_callable_definitions(
     method: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda]:
@@ -877,9 +886,12 @@ class EmptyTestUnitRule(CoreQualityRule[TestContractContext]):
         if source is None:
             return []
         body = list(source.body)
-        if (body and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)):
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
             body = body[1:]
         if len(body) != 1:
             return []
@@ -888,18 +900,26 @@ class EmptyTestUnitRule(CoreQualityRule[TestContractContext]):
         if isinstance(statement, ast.Return):
             value = statement.value
             empty = _provably_empty_cases(value) if value is not None else True
-            if (isinstance(value, ast.Call)
-                    and isinstance(value.func, ast.Name) and value.func.id == "iter"
-                    and len(value.args) == 1 and not value.keywords
-                    and "iter" not in context.builtin_shadowed):
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "iter"
+                and len(value.args) == 1
+                and not value.keywords
+                and "iter" not in context.builtin_shadowed
+            ):
                 empty = _provably_empty_cases(value.args[0])
-        elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.YieldFrom):
+        elif isinstance(statement, ast.Expr) and isinstance(
+            statement.value, ast.YieldFrom
+        ):
             empty = _provably_empty_cases(statement.value.value)
         if not empty:
             return []
         return [
             _finding(
-                context.path, source, "QG243",
+                context.path,
+                source,
+                "QG243",
                 "Case 的 get_input_data 返回确定为空的样本流，不能形成有效执行。",
                 f"{owner.name}.get_input_data",
             )
@@ -931,7 +951,9 @@ class SelfRunTestUnitRule(CoreQualityRule[TestContractContext]):
         if isinstance(node, ast.ClassDef) and node.name == "TestUnit":
             return [
                 _finding(
-                    context.path, node, "QG246",
+                    context.path,
+                    node,
+                    "QG246",
                     "单元测试目录不得定义自有 TestUnit；测试仅提供标准 Case，执行由 rqgtest CLI 负责。",
                     "TestUnit",
                 )
@@ -945,7 +967,9 @@ class SelfRunTestUnitRule(CoreQualityRule[TestContractContext]):
             return []
         return [
             _finding(
-                context.path, node, "QG246",
+                context.path,
+                node,
+                "QG246",
                 "单元测试目录不得自行创建或调用 TestUnit；由标准发现器与 CLI 执行 Case。",
                 "TestUnit",
             )
@@ -960,22 +984,33 @@ def _certified_testunit_source(
     Assignment under a conditional, repeated binding or method parameter is
     not elevated from UNKNOWN to a high-confidence framework reference.
     """
-    if _certified_symbol(
-        expression, context.aliases, context.module_aliases, context.parents
-    ) == "TestUnit":
+    if (
+        _certified_symbol(
+            expression, context.aliases, context.module_aliases, context.parents
+        )
+        == "TestUnit"
+    ):
         return True
-    if (isinstance(expression, ast.Call)
-            and isinstance(expression.func, ast.Name)
-            and expression.func.id == "getattr"
-            and "getattr" not in context.builtin_shadowed
-            and not _locally_bound("getattr", expression, context.parents)
-            and len(expression.args) == 2 and not expression.keywords
-            and isinstance(expression.args[1], ast.Constant)
-            and expression.args[1].value in {"run", "require_pass"}):
-        return _certified_symbol(
-            expression.args[0], context.aliases, context.module_aliases,
-            context.parents,
-        ) == "TestUnit"
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "getattr"
+        and "getattr" not in context.builtin_shadowed
+        and not _locally_bound("getattr", expression, context.parents)
+        and len(expression.args) == 2
+        and not expression.keywords
+        and isinstance(expression.args[1], ast.Constant)
+        and expression.args[1].value in {"run", "require_pass"}
+    ):
+        return (
+            _certified_symbol(
+                expression.args[0],
+                context.aliases,
+                context.module_aliases,
+                context.parents,
+            )
+            == "TestUnit"
+        )
     if not isinstance(expression, (ast.Name, ast.Attribute)):
         return False
     node = context.parents.get(call)
@@ -985,16 +1020,28 @@ def _certified_testunit_source(
             if isinstance(expression, ast.Name):
                 binding = local_imports.get(expression.id)
                 if binding is not None and binding[1] < call.lineno:
-                    if binding[0] in {"import:rqgtest.TestUnit", "import:rqgtest.core.unit.TestUnit"}:
+                    if binding[0] in {
+                        "import:rqgtest.TestUnit",
+                        "import:rqgtest.core.unit.TestUnit",
+                    }:
                         return True
-            elif isinstance(expression, ast.Attribute) and isinstance(expression.value, ast.Name):
+            elif isinstance(expression, ast.Attribute) and isinstance(
+                expression.value, ast.Name
+            ):
                 binding = local_imports.get(expression.value.id)
-                if (binding is not None and binding[1] < call.lineno
-                        and expression.attr == "TestUnit"
-                        and binding[0] in {"import:rqgtest", "import:rqgtest.core.unit"}):
+                if (
+                    binding is not None
+                    and binding[1] < call.lineno
+                    and expression.attr == "TestUnit"
+                    and binding[0] in {"import:rqgtest", "import:rqgtest.core.unit"}
+                ):
                     return True
                 return False
-            parameters = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            parameters = [
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            ]
             if not isinstance(expression, ast.Name):
                 return False
             if any(arg.arg == expression.id for arg in parameters):
@@ -1002,20 +1049,25 @@ def _certified_testunit_source(
             # A sole top-level straight-line assignment within this function
             # is a proven alias. Calls before assignment are never certified.
             assignments = [
-                stmt for stmt in node.body
+                stmt
+                for stmt in node.body
                 if isinstance(stmt, ast.Assign)
                 and len(stmt.targets) == 1
                 and isinstance(stmt.targets[0], ast.Name)
                 and stmt.targets[0].id == expression.id
             ]
             all_bindings = [
-                sub for sub in ast.walk(node)
-                if isinstance(sub, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr))
-                and any(isinstance(target, ast.Name) and target.id == expression.id
-                        for target in (
-                            sub.targets if isinstance(sub, ast.Assign)
-                            else [sub.target]
-                        ))
+                sub
+                for sub in ast.walk(node)
+                if isinstance(
+                    sub, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)
+                )
+                and any(
+                    isinstance(target, ast.Name) and target.id == expression.id
+                    for target in (
+                        sub.targets if isinstance(sub, ast.Assign) else [sub.target]
+                    )
+                )
             ]
             if (
                 len(assignments) == len(all_bindings) == 1
@@ -1025,21 +1077,34 @@ def _certified_testunit_source(
                 local_binding = None
                 if isinstance(rhs, ast.Name):
                     local_binding = local_imports.get(rhs.id)
-                    if local_binding is not None and local_binding[1] >= assignments[0].lineno:
+                    if (
+                        local_binding is not None
+                        and local_binding[1] >= assignments[0].lineno
+                    ):
                         local_binding = None
                 elif isinstance(rhs, ast.Attribute) and isinstance(rhs.value, ast.Name):
                     local_binding = local_imports.get(rhs.value.id)
-                    if local_binding is not None and local_binding[1] < assignments[0].lineno:
-                        local_binding = (local_binding[0] + "." + rhs.attr, local_binding[1])
+                    if (
+                        local_binding is not None
+                        and local_binding[1] < assignments[0].lineno
+                    ):
+                        local_binding = (
+                            local_binding[0] + "." + rhs.attr,
+                            local_binding[1],
+                        )
                     else:
                         local_binding = None
-                return (local_binding is not None
-                        and local_binding[0] in {"import:rqgtest.TestUnit", "import:rqgtest.core.unit.TestUnit"}) or _certified_symbol(
+                return (
+                    local_binding is not None
+                    and local_binding[0]
+                    in {"import:rqgtest.TestUnit", "import:rqgtest.core.unit.TestUnit"}
+                ) or _certified_symbol(
                     rhs, context.aliases, context.module_aliases, context.parents
                 ) == "TestUnit"
             return False
         node = context.parents.get(node)
     return False
+
 
 class CaseInterfaceRule(CoreQualityRule[TestContractContext]):
     """QG241 owns required Case methods and their executable signatures.
@@ -1080,7 +1145,9 @@ class CaseInterfaceRule(CoreQualityRule[TestContractContext]):
             if method is None:
                 continue
             property_required = False
-            if _invalid_case_override(method, required_args, property_required, context):
+            if _invalid_case_override(
+                method, required_args, property_required, context
+            ):
                 findings.append(
                     _finding(
                         path,
@@ -1162,7 +1229,9 @@ class OracleIndependenceRule(CoreQualityRule[TestContractContext]):
             if method is None:
                 continue
             entry = declared.get("get_enterpoint")
-            target_refs = entrypoint_return_bindings(entry, tree) if entry is not None else set()
+            target_refs = (
+                entrypoint_return_bindings(entry, tree) if entry is not None else set()
+            )
             witness = _source_shape_witness(method, tree, parents, target_refs)
             if witness is not None:
                 findings.append(
@@ -1302,7 +1371,6 @@ def _graph_entrypoint_call_witness(
         if isinstance(node, ast.Call) and node.lineno in lines:
             return node
     return None
-
 
 
 def _certified_symbol(
@@ -1738,7 +1806,6 @@ def _is_asserted_rejection(
                     return True
         current = parents.get(current)
     return False
-
 
 
 def _locally_bound(name: str, node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:

@@ -685,8 +685,9 @@ def _handler_preserves_failure(handler: ast.ExceptHandler, tree: ast.AST) -> boo
     return walk_block(handler.body, False)
 
 
-
-def _unconsumed_exception_local(handler: ast.ExceptHandler, tree: ast.AST) -> str | None:
+def _unconsumed_exception_local(
+    handler: ast.ExceptHandler, tree: ast.AST
+) -> str | None:
     """Prove an effect-free constant store has no consumer in its function.
 
     Avoid guessing across nested scopes, explicit external bindings, and dynamic
@@ -730,7 +731,10 @@ def _unconsumed_exception_local(handler: ast.ExceptHandler, tree: ast.AST) -> st
             if node.id == name or node.id in reflective_names:
                 return None
         if isinstance(node, ast.Attribute) and node.attr in {
-            "currentframe", "_getframe", "f_locals", "getouterframes"
+            "currentframe",
+            "_getframe",
+            "f_locals",
+            "getouterframes",
         }:
             return None
     return name

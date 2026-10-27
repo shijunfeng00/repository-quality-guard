@@ -53,7 +53,6 @@ def resolve_local_import_symbol(
         current = expanded
 
 
-
 def authored_import_bindings(
     current_module: str, path: str, node: ast.Import | ast.ImportFrom
 ) -> dict[str, str]:
@@ -132,6 +131,7 @@ def module_import_declarations(
         },
         any(alias.name == "*" for alias in node.names),
     )
+
 
 def python_module_name(path: str) -> str:
     """Return the normalized Python module identity from an authored relative path.

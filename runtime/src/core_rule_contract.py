@@ -65,7 +65,15 @@ def duplicate_rule_owners(source_root: Path) -> dict[str, tuple[str, ...]]:
         module = source_path.relative_to(source_root).with_suffix("").as_posix()
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef) or not any(
-                _core_rule_base(base) for base in node.bases
+                (
+                    (isinstance(base, ast.Name) and base.id == "CoreQualityRule")
+                    or (
+                        isinstance(base, ast.Subscript)
+                        and isinstance(base.value, ast.Name)
+                        and base.value.id == "CoreQualityRule"
+                    )
+                )
+                for base in node.bases
             ):
                 continue
             code = _declared_rule_code(node)
@@ -78,12 +86,6 @@ def duplicate_rule_owners(source_root: Path) -> dict[str, tuple[str, ...]]:
         for code, owner_names in sorted(owners.items())
         if len(owner_names) > 1
     }
-
-
-def _core_rule_base(base: ast.expr) -> bool:
-    """Identify a direct ``CoreQualityRule`` base without importing rule modules."""
-    value = base.value if isinstance(base, ast.Subscript) else base
-    return isinstance(value, ast.Name) and value.id == "CoreQualityRule"
 
 
 def _declared_rule_code(node: ast.ClassDef) -> str | None:

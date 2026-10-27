@@ -43,18 +43,6 @@ _TEST_DIR_PARTS = frozenset(
 )
 
 
-def _within_test_root(path: Path, declared: str) -> bool:
-    """Compare full path components so sibling prefix matches are impossible."""
-    raw = Path(declared)
-    if raw.is_absolute() or ".." in raw.parts:
-        raise ValueError(f"test_roots 必须是仓库内的相对目录: {declared!r}")
-    prefix = tuple(part.lower() for part in raw.parts if part not in {"", "."})
-    return (
-        len(path.parts) > len(prefix)
-        and tuple(part.lower() for part in path.parts[: len(prefix)]) == prefix
-    )
-
-
 def is_test_source_path(path: str | Path, test_roots: tuple[str, ...] = ()) -> bool:
     """Prove test provenance from a directory boundary, independent of basename.
 
@@ -75,9 +63,16 @@ def is_test_source_path(path: str | Path, test_roots: tuple[str, ...] = ()) -> b
     lowered = tuple(part.lower() for part in candidate.parts)
     if any(part in _TEST_DIR_PARTS for part in lowered[:-1]):
         return True
-    return not candidate.is_absolute() and any(
-        _within_test_root(candidate, root) for root in test_roots
-    )
+    if candidate.is_absolute():
+        return False
+    for declared in test_roots:
+        root = Path(declared)
+        if root.is_absolute() or ".." in root.parts:
+            raise ValueError(f"test_roots 必须是仓库内的相对目录: {declared!r}")
+        prefix = tuple(part.lower() for part in root.parts if part not in {"", "."})
+        if len(candidate.parts) > len(prefix) and lowered[: len(prefix)] == prefix:
+            return True
+    return False
 
 
 def is_test_path(

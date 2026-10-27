@@ -809,7 +809,9 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
     _execute(["ctest", "--test-dir", str(build), "--output-on-failure"], timeout=60)
     observed = json.loads(_execute([str(build / "rqg_testunit_cpp")], timeout=40))
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(encoding="utf-8")
+        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(
+            encoding="utf-8"
+        )
     )["cases"]
     oracle = next(item["expected"] for item in rows if item["kind"] == "cpp-native")
     checks = {
@@ -845,7 +847,9 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     if any(not (tests / name).is_file() for name in required_sources):
         raise RuntimeError("missing flattened native TestUnit fixture sources")
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(encoding="utf-8")
+        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(
+            encoding="utf-8"
+        )
     )["cases"]
     expected = {
         item["kind"] + ":" + str(item.get("language", "")): item["expected"]
@@ -1200,7 +1204,9 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
 def _source_witness_release_smoke(bundle: Path, workspace: Path) -> None:
     """Verify source-bound R2/R3 evidence survives official audit and readonly verify."""
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(encoding="utf-8")
+        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(
+            encoding="utf-8"
+        )
     )["cases"]
     row = next(item for item in rows if item["kind"] == "r2r3")
     project = workspace / "r2r3-witness"

@@ -1,5 +1,6 @@
 """Production code for the standalone rqgtest quickstart."""
 
+
 def add(a, b):
     return a + b
 

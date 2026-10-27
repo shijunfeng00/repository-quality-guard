@@ -428,9 +428,10 @@ def _install_rqgtest(bundle: Path) -> None:
     release archive or installed .agents runtime. Build failures remain visible.
     """
     project = bundle / "packages" / "rqgtest"
-    if not (project / "pyproject.toml").is_file() or not (
-        project / "src" / "rqgtest" / "core" / "unit.py"
-    ).is_file():
+    if (
+        not (project / "pyproject.toml").is_file()
+        or not (project / "src" / "rqgtest" / "core" / "unit.py").is_file()
+    ):
         raise RuntimeError("rqgtest source missing from source distribution")
     with tempfile.TemporaryDirectory(prefix="rqgtest-wheel-") as directory:
         module_name, builder = _load_module(
@@ -441,9 +442,18 @@ def _install_rqgtest(bundle: Path) -> None:
         finally:
             del sys.modules[module_name]
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps",
-             "--force-reinstall", str(wheel)],
-            check=True, timeout=180,
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--no-deps",
+                "--force-reinstall",
+                str(wheel),
+            ],
+            check=True,
+            timeout=180,
         )
 
 

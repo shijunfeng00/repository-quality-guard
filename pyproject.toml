@@ -1,0 +1,9 @@
+# The rqgtest implementation is a bundled, independently tested third-party component.
+# It is built from source at installation; the RQG static analyzer owns only RQG code.
+[tool.repo_quality_guard]
+exclude = [
+    ".git/**", ".agents/**", ".venv/**", "venv/**",
+    "build/**", "dist/**", "site-packages/**", "node_modules/**",
+    "migrations/**", "generated/**",
+    "packages/rqgtest/**",
+]

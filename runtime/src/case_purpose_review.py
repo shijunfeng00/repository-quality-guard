@@ -5,9 +5,10 @@ from __future__ import annotations
 import ast
 import hashlib
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 
-from .config import is_test_path
+from .config import GuardConfig, is_test_path
 from .git_utils import run_readonly_git
 
 _CASE_BASES = frozenset({"TestCase", "StatefulTestCase"})
@@ -214,7 +215,10 @@ def _changed_python_origins(
 
 
 def changed_case_purposes(
-    root: Path, revision: str, staged: bool = False
+    root: Path,
+    revision: str,
+    staged: bool = False,
+    exclude: tuple[str, ...] | None = None,
 ) -> tuple[CasePurpose, ...]:
     """Compare bound Case AST identities without executing target tests.
 
@@ -222,12 +226,17 @@ def changed_case_purposes(
         root: Root of the Git repository containing Case source files.
         revision: Frozen comparison revision or commit identifier.
         staged: Whether to read the INDEX instead of the current worktree.
+        exclude: Source-exclusion globs from the same validated repository policy.
 
     Returns:
         Changed standard Case declarations and their source digests.
     """
+    if exclude is None:
+        exclude = GuardConfig.load(root).exclude
     result: list[CasePurpose] = []
     for path, original_path, state in _changed_python_origins(root, revision, staged):
+        if any(fnmatch(path, pattern) for pattern in exclude):
+            continue
         if state == "REMOVED":
             current = ""
         else:

@@ -16,7 +16,18 @@ import zipfile
 
 
 def build_rqgtest_wheel(source: Path, output: Path) -> Path:
-    """Validate the fixed source package and produce one PEP 427 wheel."""
+    """Validate the fixed source package and produce one PEP 427 wheel.
+
+    Args:
+        source: Directory containing rqgtest's own pyproject.toml and src/.
+        output: Temporary directory receiving the wheel distribution.
+
+    Returns:
+        Path to the generated portable wheel.
+
+    Raises:
+        ValueError: The package identity or source layout is invalid.
+    """
     project = (source / "pyproject.toml").read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([0-9]+(?:\.[0-9]+){2})"\s*$', project, re.M)
     if match is None or not re.search(r'^name\s*=\s*"rqgtest"\s*$', project, re.M):

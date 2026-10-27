@@ -665,6 +665,14 @@ def _tool_read_events(
     def invalidate_generator_family(name: str) -> None:
         # Assignment aliases refer to the same runtime iterator; mutation,
         # escape or advancement invalidates *every* lexical alias.
+        """Invalidate a generator-family binding after an observed reassignment.
+
+        Args:
+            name: Bound local name whose producer relationship is no longer valid.
+
+        Returns:
+            None; mutates only the current analysis bindings.
+        """
         identity = local_generators.get(name)
         if identity is not None:
             for alias, candidate in tuple(local_generators.items()):
@@ -1065,10 +1073,14 @@ class ToolConsumerContractRule(CoreQualityRule[tuple[ToolResultBinding, ...]]):
 def required_tool_result_get_findings(
     bindings: tuple[ToolResultBinding, ...], code: str
 ) -> list[Finding]:
-    """Build graph-proven QG003 findings for a caller-owned rule contract.
+    """Emit proven missing-result-field findings from a resolved tool graph.
 
-    Tool graph extraction stays adjacent to its shared facts, but the caller
-    supplies the code so this helper cannot become a second Core rule owner.
+    Args:
+        bindings: Typed result bindings observed in the current graph.
+        code: Finding rule ID owned by the calling rule.
+
+    Returns:
+        Findings for result reads that violate the provided rule contract.
     """
     findings: list[Finding] = []
     for row in bindings:

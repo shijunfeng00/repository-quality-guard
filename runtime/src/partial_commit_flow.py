@@ -90,10 +90,12 @@ def _mutating_step(
             ):
                 return field, "set.add"
     if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
-        targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
-        if len(targets) != 1:
+        if isinstance(stmt, ast.AnnAssign):
+            target = stmt.target
+        elif len(stmt.targets) == 1:
+            target = stmt.targets[0]
+        else:
             return None
-        target = targets[0]
         if isinstance(target, ast.Subscript):
             field = _receiver_field(target.value, receiver)
             if field is not None and fields.get(field) == "dict":

@@ -180,7 +180,8 @@ class RepositoryScanner:
                 ),
             )
         findings = [finding for item in facts for finding in item.findings]
-        from .case_contract_rules import case_contract_findings, repository_directory_layout_findings
+        from .case_contract_rules import case_contract_findings
+        from .repository_directory_contract import repository_directory_layout_findings
 
         # Case entrypoint authentication needs the same cross-module graph as
         # all other R1/R2/R3 rules. Run after topology construction, reusing

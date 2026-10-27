@@ -528,8 +528,9 @@ def assignment_names(node: ast.Assign | ast.AnnAssign) -> set[str]:
     Returns:
         直接名称目标集合。
     """
-    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-    return {target.id for target in targets if isinstance(target, ast.Name)}
+    if isinstance(node, ast.AnnAssign):
+        return {node.target.id} if isinstance(node.target, ast.Name) else set()
+    return {target.id for target in node.targets if isinstance(target, ast.Name)}
 
 
 def collect_string_text(node: ast.expr | None) -> str:

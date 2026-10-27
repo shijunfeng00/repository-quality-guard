@@ -891,7 +891,15 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     )
 
     def summarize(value: dict, language: str) -> dict:
-        """Project compiler-runner output onto the frozen public oracle fields."""
+        """Normalize native test output to the cross-language acceptance fields.
+
+        Args:
+            value: Parsed test result emitted by the language runner.
+            language: Native runner whose language-specific details are inspected.
+
+        Returns:
+            Stable public parity fields and validated case structure.
+        """
         return {
             "schema": value["schema_version"],
             "passed": value["passed"],
@@ -961,7 +969,14 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     )
 
     def public(value):
-        """Return only the language-neutral public fields used for parity comparison."""
+        """Extract the public per-case records used for cross-language parity.
+
+        Args:
+            value: Parsed native result containing case records and steps.
+
+        Returns:
+            Normalized list of case IDs, statuses and execution steps.
+        """
         return [
             [
                 x["case_id"],

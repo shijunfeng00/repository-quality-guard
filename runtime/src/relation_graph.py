@@ -97,7 +97,16 @@ def _lexical_callable_aliases(function: ast.FunctionDef | ast.AsyncFunctionDef):
     bindings = []
 
     class _Writes(ast.NodeVisitor):
+        """Count rebinding operations in the immediate lexical scope."""
         def visit_FunctionDef(self, node):
+            """Treat nested definitions as assignments without descending into their bodies.
+
+            Args:
+                node: Nested function or class definition.
+
+            Returns:
+                None; updates binding counts.
+            """
             writes[node.name] += 1
             return None
 
@@ -105,22 +114,62 @@ def _lexical_callable_aliases(function: ast.FunctionDef | ast.AsyncFunctionDef):
         visit_ClassDef = visit_FunctionDef
 
         def visit_Lambda(self, node):
+            """Skip lambda-local bindings outside the current scope.
+
+            Args:
+                node: Lambda whose local body is not visited.
+
+            Returns:
+                None; the enclosing binding analysis is unchanged.
+            """
             return None
 
         def visit_Import(self, node):
+            """Count local identifiers assigned by import statements.
+
+            Args:
+                node: Import statement with bound module names.
+
+            Returns:
+                None; updates binding counts.
+            """
             for item in node.names:
                 writes[item.asname or item.name.split(".", 1)[0]] += 1
 
         def visit_ImportFrom(self, node):
+            """Count local identifiers assigned by from-import statements.
+
+            Args:
+                node: Import-from statement with bound exports.
+
+            Returns:
+                None; updates binding counts.
+            """
             for item in node.names:
                 writes[item.asname or item.name] += 1
 
         def visit_ExceptHandler(self, node):
+            """Record a named exception binding and visit its handler body.
+
+            Args:
+                node: Exception handler with optional local alias.
+
+            Returns:
+                None; updates the binding analysis.
+            """
             if node.name:
                 writes[node.name] += 1
             self.generic_visit(node)
 
         def visit_Name(self, node):
+            """Record each lexical name write or deletion.
+
+            Args:
+                node: Name access with AST load/store context.
+
+            Returns:
+                None; updates binding counts.
+            """
             if isinstance(node.ctx, (ast.Store, ast.Del)):
                 writes[node.id] += 1
 
@@ -773,7 +822,16 @@ class RepositoryRelationGraph:
         }
 
         def alias_target(module, caller, expr):
-            """Resolve only exact, acyclic, previously declared name aliases."""
+            """Resolve a previously assigned callable alias without following cycles.
+
+            Args:
+                module: Module containing the caller expression.
+                caller: Resolved caller symbol identifier.
+                expr: Call expression to resolve through prior assignments.
+
+            Returns:
+                Resolved target symbol ID, or None when proof is unavailable.
+            """
             if not isinstance(expr, ast.Name):
                 return None
             name = expr.id

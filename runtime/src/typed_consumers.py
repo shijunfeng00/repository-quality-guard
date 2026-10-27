@@ -215,7 +215,14 @@ class _DirectReads(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        """Record a literal `.get()` on an authenticated schema formal parameter."""
+        """Record direct literal-key mapping access in the current function.
+
+        Args:
+            node: Call expression considered for a schema-bound mapping read.
+
+        Returns:
+            None; visit appends read records to the visitor state.
+        """
         if (
             isinstance(node.func, ast.Attribute)
             and node.func.attr == "get"
@@ -435,10 +442,14 @@ def typed_consumer_facts(
 def typed_required_get_findings(
     topology: RepositoryTopology, audited_paths: frozenset[str]
 ):
-    """QG003/QG004 on positively proven TypedDict keys across module imports.
+    """Report fallback reads of proven required TypedDict fields.
 
-    Consume the already-normalized source graph: unknown schemas, unknown
-    selectors and explicitly NotRequired fields cannot become deficiencies.
+    Args:
+        topology: Shared repository graph with typed-consumer evidence.
+        audited_paths: Paths currently authorized for audit findings.
+
+    Returns:
+        Findings for verified required-field reads using .get().
     """
     from .model import Finding
 

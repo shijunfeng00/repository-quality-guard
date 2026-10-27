@@ -158,7 +158,14 @@ class MissingMappingKeyRule(CoreQualityRule[CallRuleContext]):
     def evaluate_tool_bindings(
         self, bindings: tuple[ToolResultBinding, ...]
     ) -> list[Finding]:
-        """Classify graph-proven Tool reads under the sole QG003 owner."""
+        """Classify authenticated missing-result-field reads as QG003.
+
+        Args:
+            bindings: Tool-result field reads certified by the source graph.
+
+        Returns:
+            QG003 findings for contradicted required-field reads.
+        """
         from .tool_return_graph_rules import required_tool_result_get_findings
 
         return required_tool_result_get_findings(bindings, self.code)
@@ -202,11 +209,14 @@ class MappingAccessRule(CoreQualityRule[CallRuleContext]):
 
     @staticmethod
     def normal_finding(context: CallRuleContext, code: str) -> list[Finding]:
-        """Report only a positive required-key contract contradicted by fallback.
+        """Report a fallback that contradicts an authenticated required key.
 
-        Unknown requiredness is not proven optionality and not evidence of a
-        defect. A source-level resolution failure is tested as an analyzer bug,
-        never hidden in the user's semantic review queue.
+        Args:
+            context: Bound mapping-access evidence and ownership facts.
+            code: Rule ID to emit for a proven contract violation.
+
+        Returns:
+            A finding for the contradiction, or an empty list.
         """
         if (
             context.ownership is not ContractOwnership.INTERNAL_FORMAL
@@ -736,7 +746,14 @@ class BroadExceptionRule(CoreQualityRule[ExceptionRuleContext]):
     code = "QG007"
 
     def evaluate(self, context: ExceptionRuleContext) -> list[Finding]:
-        """Report proven silent catches without predicting business correctness."""
+        """Check exception-handler bodies for proven silent exception loss.
+
+        Args:
+            context: Handler AST and surrounding binding evidence.
+
+        Returns:
+            Findings for definite silent catches; ambiguous handlers are excluded.
+        """
         broad = context.exception_names & {"", "BaseException", "Exception"}
         handler = context.node
         if not isinstance(handler, ast.ExceptHandler):

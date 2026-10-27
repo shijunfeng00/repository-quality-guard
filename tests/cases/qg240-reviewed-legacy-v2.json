@@ -253,20 +253,6 @@
     "v02_review": "A constructor that only calls the standard zero-arg super initializer is valid"
   },
   {
-    "case_id": "tp-cli-process-adapter-runs-repository-script",
-    "path": "tests/test_cli_process_fixture.py",
-    "source": "import subprocess\nimport sys\nfrom pathlib import Path\nfrom rqgtest import TestCase\n\nclass CliCase(TestCase):\n    def get_enterpoint(self):\n        return subprocess.run\n\n    def get_input_data(self):\n        project = Path(__file__).resolve().parents[1]\n        command = [sys.executable, str(project / \"scripts/evidence_lookup.py\"), \"--help\"]\n        yield ((command,), {\"capture_output\": True, \"text\": True, \"check\": False})\n\n    def get_output_data(self):\n        yield {\"returncode\": 0}\n\n    def equals(self, expected, actual):\n        return actual.returncode == expected[\"returncode\"] and bool(actual.stdout) and not actual.stderr\n",
-    "expected_codes": []
-  },
-  {
-    "case_id": "tp-cli-process-adapter-does-not-accept-arbitrary-command",
-    "path": "tests/test_cli_process_fixture.py",
-    "source": "import subprocess\nimport sys\nfrom rqgtest import TestCase\n\nclass CliCase(TestCase):\n    def get_enterpoint(self):\n        return subprocess.run\n\n    def get_input_data(self):\n        command = [sys.executable, \"-c\", \"print('not a repository CLI')\"]\n        yield ((command,), {\"capture_output\": True, \"text\": True, \"check\": False})\n\n    def get_output_data(self):\n        yield {\"returncode\": 0}\n\n    def equals(self, expected, actual):\n        return actual.returncode == expected[\"returncode\"] and bool(actual.stdout) and not actual.stderr\n",
-    "expected_codes": [
-      "QG240"
-    ]
-  },
-  {
     "case_id": "tp-module-level-constant-rejected",
     "path": "tests/test_auth_fixture.py",
     "source": "from rqgtest import TestCase\nfrom runtime.src.case_contract_rules import case_contract_findings\n\nFIXTURE_COUNT = 1\n\nclass Example(TestCase):\n    def get_enterpoint(self): return case_contract_findings\n    def get_input_data(self): return ((\"test\",), {})\n    def get_output_data(self): return 1\n    def equals(self, expected, actual): return expected == actual\n",

@@ -12,7 +12,7 @@ Python 3.10+ 单元测试框架。测试类声明真实入口、输入和独立�
 
 ## 安装与运行
 
-安装随发行包提供的 Wheel：
+在 RQG 源码根目录安装（部署 `.agents` 时自动完成）：
 
 ```bash
 python -m pip install ./packages/rqgtest  # RQG 源码安装到 .agents 时会自动构建安装

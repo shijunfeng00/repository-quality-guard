@@ -44,12 +44,7 @@ def _await_observation(value, loop=None):
 def _stateful_loop():
     """Preserve background tasks between transitions, then cancel at Case end."""
     loop = asyncio.new_event_loop()
-    previous = None
     try:
-        try:
-            previous = asyncio.get_event_loop_policy().get_event_loop()
-        except RuntimeError:
-            pass
         asyncio.set_event_loop(loop)
         yield loop
     finally:
@@ -60,7 +55,7 @@ def _stateful_loop():
             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.run_until_complete(loop.shutdown_default_executor())
-        asyncio.set_event_loop(previous)
+        asyncio.set_event_loop(None)
         loop.close()
 
 

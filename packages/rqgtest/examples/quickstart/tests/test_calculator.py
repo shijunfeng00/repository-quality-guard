@@ -63,5 +63,3 @@ class CounterSequenceCase(StatefulTestCase):
 
     def equals(self, expected, actual):
         return expected == actual
-
-

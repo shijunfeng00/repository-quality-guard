@@ -8,9 +8,7 @@
       "QG203": "BLOCKER",
       "QG205": "SEMANTIC"
     },
-    "disable": [
-      "QG187"
-    ]
+    "disable": []
   },
   "nonblocking_paths": [
     "tests/**",

@@ -433,31 +433,16 @@ def _install_rqgtest(bundle: Path) -> None:
     ).is_file():
         raise RuntimeError("rqgtest source missing from source distribution")
     with tempfile.TemporaryDirectory(prefix="rqgtest-wheel-") as directory:
-        scratch = Path(directory)
-        build_source = scratch / "source"
-        shutil.copytree(project, build_source, ignore=shutil.ignore_patterns(
-            "build", "dist", "*.egg-info", "__pycache__", "*.pyc", ".pytest_cache"
-        ))
-        wheel_dir = scratch / "wheels"
-        wheel_dir.mkdir()
-        # Prefer the host's available build backend for offline clone installs;
-        # otherwise let pip bootstrap the declared PEP 517 build requirements.
-        has_build_backend = importlib.util.find_spec("setuptools") is not None and (
-            importlib.util.find_spec("wheel") is not None
+        module_name, builder = _load_module(
+            bundle / "runtime" / "build_rqgtest.py", "rqgtest_builder"
         )
-        command = [sys.executable, "-m", "pip", "wheel", "--no-deps"]
-        if has_build_backend:
-            command.append("--no-build-isolation")
-        subprocess.run(
-            [*command, "--wheel-dir", str(wheel_dir), str(build_source)],
-            check=True, timeout=180,
-        )
-        built = sorted(wheel_dir.glob("rqgtest-*.whl"))
-        if len(built) != 1:
-            raise RuntimeError("rqgtest source build did not produce exactly one wheel")
+        try:
+            wheel = builder.build_rqgtest_wheel(project, Path(directory))
+        finally:
+            del sys.modules[module_name]
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps",
-             "--force-reinstall", str(built[0])],
+             "--force-reinstall", str(wheel)],
             check=True, timeout=180,
         )
 

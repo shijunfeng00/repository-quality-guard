@@ -25,6 +25,7 @@ _PROTECTED_ROOT_FILES = frozenset(
         "references/AUDIT.md",
         "references/CODING_GUIDE.md",
         "runtime/deploy.py",
+        "runtime/build_rqgtest.py",
         "runtime/profile_build.py",
         "runtime/requirements.txt",
         "runtime/dependencies.lock.json",

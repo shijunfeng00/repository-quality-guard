@@ -496,5 +496,3 @@ def repository_directory_layout_findings(
                     line=symbol.line,
                 )
     return findings
-
-

@@ -822,8 +822,7 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
         "passed": observed["passed"],
         "cases": [[c["case_id"], c["status"]] for c in observed["cases"]],
         "steps": [
-            [step["method"], step["status"]]
-            for step in observed["cases"][6]["steps"]
+            [step["method"], step["status"]] for step in observed["cases"][6]["steps"]
         ],
         "keys": all(
             set(c) == {"case_id", "status", "detail", "steps_executed", "steps"}
@@ -846,9 +845,7 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     if any(not (tests / name).is_file() for name in required_sources):
         raise RuntimeError("missing flattened native TestUnit fixture sources")
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-b69.json").read_text(
-            encoding="utf-8"
-        )
+        (bundle / "tests/cases/native-oracle-b69.json").read_text(encoding="utf-8")
     )["cases"]
     expected = {
         item["kind"] + ":" + str(item.get("language", "")): item["expected"]
@@ -1110,9 +1107,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
         ],
         timeout=60,
     )
-    ts_entry = (
-        ts_compiled / "tests/cases/TypeScriptNativeCase.js"
-    )
+    ts_entry = ts_compiled / "tests/cases/TypeScriptNativeCase.js"
     observed = json.loads(_execute(["node", str(ts_entry)], timeout=30))
     expected = {"case_id": "sum-7", "kind": "RETURN", "matched": True}
     if observed != expected:
@@ -1205,9 +1200,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
 def _source_witness_release_smoke(bundle: Path, workspace: Path) -> None:
     """Verify source-bound R2/R3 evidence survives official audit and readonly verify."""
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-b69.json").read_text(
-            encoding="utf-8"
-        )
+        (bundle / "tests/cases/native-oracle-b69.json").read_text(encoding="utf-8")
     )["cases"]
     row = next(item for item in rows if item["kind"] == "r2r3")
     project = workspace / "r2r3-witness"

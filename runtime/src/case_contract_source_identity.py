@@ -166,27 +166,30 @@ def stable_reference(
     declarations: list[tuple[str, ast.expr | None]] = []
     for item in tree.body:
         if isinstance(item, ast.ImportFrom):
-            for alias in item.names:
-                if (alias.asname or alias.name) == name:
-                    declarations.append((f"import:{item.module}.{alias.name}", None))
-        elif isinstance(item, ast.Import):
-            for alias in item.names:
-                if (alias.asname or alias.name.split(".")[0]) == name:
-                    declarations.append((f"import:{alias.name}", None))
-        elif isinstance(item, ast.Assign):
+            declarations.extend(
+                (f"import:{item.module}.{alias.name}", None)
+                for alias in item.names
+                if (alias.asname or alias.name) == name
+            )
+            continue
+        if isinstance(item, ast.Import):
+            declarations.extend(
+                (f"import:{alias.name}", None)
+                for alias in item.names
+                if (alias.asname or alias.name.split(".")[0]) == name
+            )
+            continue
+        if isinstance(item, ast.Assign):
             if any(isinstance(t, ast.Name) and t.id == name for t in item.targets):
                 declarations.append(("alias", item.value))
-        elif (
-            isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            and item.name == name
-        ):
-            declarations.append((f"local:{name}", None))
-        elif (
-            isinstance(item, (ast.AnnAssign, ast.AugAssign))
-            and isinstance(item.target, ast.Name)
-            and item.target.id == name
-        ):
-            declarations.append(("unknown", None))
+            continue
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if item.name == name:
+                declarations.append((f"local:{name}", None))
+            continue
+        if isinstance(item, (ast.AnnAssign, ast.AugAssign)):
+            if isinstance(item.target, ast.Name) and item.target.id == name:
+                declarations.append(("unknown", None))
     if len(declarations) != 1:
         return None
     binding, target = declarations[0]
@@ -307,10 +310,10 @@ def entrypoint_call_witness(
             bound: str | None = None
             if isinstance(expression, (ast.Name, ast.Attribute)):
                 bound = stable_reference(expression, tree)
-                if bound is None and isinstance(expression, ast.Name):
-                    previous = local_aliases.get(expression.id)
-                    if previous is not None and previous[1] < stmt.lineno:
-                        bound = previous[0]
+            if bound is None and isinstance(expression, ast.Name):
+                previous = local_aliases.get(expression.id)
+                if previous is not None and previous[1] < stmt.lineno:
+                    bound = previous[0]
             if (
                 isinstance(expression, ast.Call)
                 and isinstance(expression.func, ast.Attribute)

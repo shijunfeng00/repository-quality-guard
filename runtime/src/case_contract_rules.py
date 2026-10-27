@@ -816,7 +816,20 @@ def _case_entrypoint_origin_findings(
             and target.attr == "run"
         ):
             continue
-        origin = _repository_module_path(repository_root, module)
+        origin = next(
+            (
+                candidate
+                for prefix in (
+                    repository_root,
+                    repository_root / "src",
+                    repository_root / "sources",
+                )
+                for base in (prefix.joinpath(*module.split(".")),)
+                for candidate in (base.with_suffix(".py"), base / "__init__.py")
+                if candidate.is_file()
+            ),
+            None,
+        )
         if origin is None or is_test_source_path(
             origin.relative_to(repository_root), test_roots=test_roots
         ):
@@ -831,17 +844,6 @@ def _case_entrypoint_origin_findings(
                 )
             )
     return findings
-
-
-def _repository_module_path(root: Path, module: str) -> Path | None:
-    """Return a physical in-repository module, never a matching name guess."""
-    parts = module.split(".")
-    for prefix in (root, root / "src", root / "sources"):
-        target = prefix.joinpath(*parts)
-        for candidate in (target.with_suffix(".py"), target / "__init__.py"):
-            if candidate.is_file():
-                return candidate
-    return None
 
 
 def _case_callable_definitions(
@@ -1755,14 +1757,16 @@ def _is_asserted_rejection(
                     pytest_imports.add(statement)
                 else:
                     foreign_names.add(local)
-        elif isinstance(statement, ast.ImportFrom):
-            for alias in statement.names:
-                local = alias.asname or alias.name
-                if statement.module == "pytest" and alias.name == "raises":
-                    raises_aliases.add(local)
-                    pytest_imports.add(statement)
-                else:
-                    foreign_names.add(local)
+            continue
+        if not isinstance(statement, ast.ImportFrom):
+            continue
+        for alias in statement.names:
+            local = alias.asname or alias.name
+            if statement.module == "pytest" and alias.name == "raises":
+                raises_aliases.add(local)
+                pytest_imports.add(statement)
+            else:
+                foreign_names.add(local)
     # A foreign import, global assignment or duplicate binding means the
     # advertised pytest.raises guard is not source-proven anymore.
     shadowed = (
@@ -1777,33 +1781,33 @@ def _is_asserted_rejection(
     raises_aliases.difference_update(shadowed)
     current = parents.get(node)
     while current is not None and not isinstance(current, ast.Module):
-        if isinstance(current, ast.With):
-            for item in current.items:
-                ctx = item.context_expr
-                if not (
-                    isinstance(ctx, ast.Call)
-                    and len(ctx.args) == 1
-                    and not ctx.keywords
-                ):
-                    continue
-                expected = ctx.args[0]
-                if not isinstance(expected, ast.Name) or expected.id != error:
-                    continue
-                name = ctx.func
-                if (
-                    isinstance(name, ast.Name)
-                    and name.id in raises_aliases
-                    and not _locally_bound(name.id, ctx, parents)
-                ):
-                    return True
-                if (
-                    isinstance(name, ast.Attribute)
-                    and name.attr == "raises"
-                    and isinstance(name.value, ast.Name)
-                    and name.value.id in pytest_aliases
-                    and not _locally_bound(name.value.id, ctx, parents)
-                ):
-                    return True
+        if not isinstance(current, ast.With):
+            current = parents.get(current)
+            continue
+        for item in current.items:
+            ctx = item.context_expr
+            if not (
+                isinstance(ctx, ast.Call) and len(ctx.args) == 1 and not ctx.keywords
+            ):
+                continue
+            expected = ctx.args[0]
+            if not isinstance(expected, ast.Name) or expected.id != error:
+                continue
+            name = ctx.func
+            if (
+                isinstance(name, ast.Name)
+                and name.id in raises_aliases
+                and not _locally_bound(name.id, ctx, parents)
+            ):
+                return True
+            if (
+                isinstance(name, ast.Attribute)
+                and name.attr == "raises"
+                and isinstance(name.value, ast.Name)
+                and name.value.id in pytest_aliases
+                and not _locally_bound(name.value.id, ctx, parents)
+            ):
+                return True
         current = parents.get(current)
     return False
 

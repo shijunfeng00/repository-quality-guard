@@ -77,38 +77,38 @@ def _case_nodes(source: str) -> dict[str, tuple[ast.ClassDef, str]]:
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             _register_case_import(node, bound)
-        elif isinstance(node, ast.ClassDef):
-            matched = False
+            continue
+        if isinstance(node, ast.ClassDef):
             for base in node.bases:
                 qualified = _qualified_name(base)
-                for reference, origin in bound.items():
-                    if (
-                        qualified == reference
-                        and origin.rsplit(".", 1)[-1] in _CASE_BASES
-                    ):
-                        cases[node.name] = (node, origin)
-                        matched = True
-                        break
-                    if (
-                        qualified.startswith(reference + ".")
-                        and origin in _CASE_MODULES
-                    ):
-                        suffix = qualified[len(reference) + 1 :]
-                        if suffix in _CASE_BASES:
-                            cases[node.name] = (node, origin + "." + suffix)
-                            matched = True
-                            break
-                if matched:
+                direct = bound.get(qualified)
+                if direct is not None and direct.rsplit(".", 1)[-1] in _CASE_BASES:
+                    cases[node.name] = (node, direct)
+                    break
+                reference, dot, suffix = qualified.rpartition(".")
+                if (
+                    dot
+                    and suffix in _CASE_BASES
+                    and bound.get(reference) in _CASE_MODULES
+                ):
+                    cases[node.name] = (node, bound[reference] + "." + suffix)
                     break
             _forget_shadowed(bound, node.name)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             _forget_shadowed(bound, node.name)
-        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                for child in ast.walk(target):
-                    if isinstance(child, ast.Name):
-                        _forget_shadowed(bound, child.id)
+            continue
+        if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        shadowed = {
+            child.id
+            for target in targets
+            for child in ast.walk(target)
+            if isinstance(child, ast.Name)
+        }
+        for name in shadowed:
+            _forget_shadowed(bound, name)
     return cases
 
 

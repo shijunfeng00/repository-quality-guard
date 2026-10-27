@@ -1,0 +1,10 @@
+{
+  "contract": "modern-independent-oracle",
+  "input_fixture": "debt-scoped-history.json",
+  "expected": {
+    "reduced_count": 1,
+    "current_ordinary_count": 2,
+    "paid_down_rule": "QG123",
+    "current_severity": "WARNING"
+  }
+}

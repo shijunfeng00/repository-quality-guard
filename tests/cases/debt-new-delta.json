@@ -1,0 +1,10 @@
+{
+  "contract": "modern-independent-oracle",
+  "input_fixture": "debt-scoped-history.json",
+  "expected": {
+    "new_delta_count": 1,
+    "new_rule": "QG125",
+    "historical_rule": "QG123",
+    "new_rule_not_historical": true
+  }
+}

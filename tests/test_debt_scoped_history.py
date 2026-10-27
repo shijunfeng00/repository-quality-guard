@@ -20,7 +20,7 @@ class DebtScopedHistoryCase(TestCase):
         return render_compact_report
 
     def get_input_data(self):
-        fixture_path = Path(__file__).parent / "cases/b31-debt-scoped-history-v1.json"
+        fixture_path = Path(__file__).parent / "cases/debt-scoped-history.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         snapshot = Path(__file__).parent / "cases" / fixture["git_fixture"]
         with tempfile.TemporaryDirectory(prefix="rqg-debt-scope-") as directory:
@@ -69,7 +69,7 @@ class DebtScopedHistoryCase(TestCase):
 
     def get_output_data(self):
         fixture = json.loads(
-            (Path(__file__).parent / "cases/b31-debt-scoped-history-v1.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/debt-scoped-history.json").read_text(encoding="utf-8")
         )
         yield fixture["expected"]
 

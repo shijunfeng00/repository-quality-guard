@@ -17,7 +17,7 @@ from .model import Finding, ScanReport
 from .report_contract import ReportFacts, build_report_facts
 from .report_schema import escape, front_matter
 from .semantic_review import semantic_review_candidates, semantic_review_key
-from .test_case_purpose_review import changed_case_purposes
+from .case_purpose_review import changed_case_purposes
 
 REPORT_SCHEMA = "repository-quality-guard/audit-v18.0"
 REPORT_FILENAME = "修改说明.md"

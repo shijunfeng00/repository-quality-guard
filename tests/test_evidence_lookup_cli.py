@@ -24,14 +24,14 @@ class EvidenceLookupCliCase(TestCase):
     def get_input_data(self):
         project = Path(__file__).resolve().parents[1]
         fixture = json.loads(
-            (Path(__file__).parent / "cases/qg-evidence-lookup-cli-v1.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/qg-evidence-lookup-cli.json").read_text(encoding="utf-8")
         )
         for row in fixture["cases"]:
             with tempfile.TemporaryDirectory(prefix="rqg-evidence-cli-case-") as directory:
                 repo = Path(directory)
                 source = row.get("source", fixture["source"])
                 if row.get("git_snapshot"):
-                    snapshot = Path(__file__).parent / "cases/qg-evidence-lookup-git-snapshot-v1.tar.gz"
+                    snapshot = Path(__file__).parent / "cases/qg-evidence-lookup-git-snapshot.tar.gz"
                     with tarfile.open(snapshot, "r:gz") as archive:
                         archive.extractall(repo)
                     if not (repo / ".git").is_dir():
@@ -51,7 +51,7 @@ class EvidenceLookupCliCase(TestCase):
 
     def get_output_data(self):
         fixture = json.loads(
-            (Path(__file__).parent / "cases/qg-evidence-lookup-cli-v1.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/qg-evidence-lookup-cli.json").read_text(encoding="utf-8")
         )
         for row in fixture["cases"]:
             yield row
@@ -95,7 +95,7 @@ class EvidenceLookupCacheCliCase(TestCase):
     def get_input_data(self):
         project = Path(__file__).resolve().parents[1]
         fixture = json.loads(
-            (Path(__file__).parent / "cases/b33-evidence-trace-v1.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/evidence-trace.json").read_text(encoding="utf-8")
         )
         row = next(item for item in fixture["cases"] if item["scenario"] == "cache-invalidate")
         with tempfile.TemporaryDirectory(prefix="rqg-evidence-cache-case-") as directory:
@@ -142,7 +142,7 @@ class EvidenceGraphCliCase(TestCase):
     def get_input_data(self):
         project = Path(__file__).resolve().parents[1]
         fixture = json.loads(
-            (Path(__file__).parent / "cases/b32-graph-observable-v1.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/graph-callback-topology-and-statistics.json").read_text(encoding="utf-8")
         )
         for row in fixture["cases"]:
             if row["scenario"] not in ("constructor-cli", "stats-cli"):
@@ -169,7 +169,7 @@ class EvidenceGraphCliCase(TestCase):
 
     def get_output_data(self):
         fixture = json.loads(
-            (Path(__file__).parent / "cases/b32-graph-observable-v1.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/graph-callback-topology-and-statistics.json").read_text(encoding="utf-8")
         )
         for row in fixture["cases"]:
             if row["scenario"] in ("constructor-cli", "stats-cli"):

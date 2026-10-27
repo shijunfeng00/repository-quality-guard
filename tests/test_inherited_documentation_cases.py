@@ -22,7 +22,7 @@ class InheritedDocumentationCase(TestCase):
     def get_input_data(self):
         """Build a snapshot and graph from authored inheritance source."""
         for case_id in ('QG027-DOC-INHERIT-single-abstract-override', 'QG027-DOC-INHERIT-multiple-abstract-with-unrelated-first', 'QG027-DOC-INHERIT-multiple-first-undocumented-shadows', 'QG027-DOC-INHERIT-same-name-without-inheritance', 'QG027-DOC-INHERIT-concrete-parent-no-abstract-marker', 'QG027-DOC-INHERIT-incomplete-abstract-parent-doc', 'QG027-DOC-INHERIT-signature-drift', 'QG027-DOC-INHERIT-local-incomplete-doc-keeps-QG028', 'QG027-DOC-INHERIT-unresolved-leading-base-no-exemption', 'QG027-DOC-INHERIT-multiple-first-contract-takes-precedence'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'qg027-inherited-documentation-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'qg027-inherited-documentation.json').read_text(encoding='utf-8'))['cases']
             row = next((entry for entry in rows if entry['case_id'] == case_id))
             source = str(row['source'])
             root = Path(tempfile.mkdtemp(prefix='rqg-doc-override-'))
@@ -36,7 +36,7 @@ class InheritedDocumentationCase(TestCase):
     def get_output_data(self):
         """Read the original independent per-fixture documentation oracle."""
         for case_id in ('QG027-DOC-INHERIT-single-abstract-override', 'QG027-DOC-INHERIT-multiple-abstract-with-unrelated-first', 'QG027-DOC-INHERIT-multiple-first-undocumented-shadows', 'QG027-DOC-INHERIT-same-name-without-inheritance', 'QG027-DOC-INHERIT-concrete-parent-no-abstract-marker', 'QG027-DOC-INHERIT-incomplete-abstract-parent-doc', 'QG027-DOC-INHERIT-signature-drift', 'QG027-DOC-INHERIT-local-incomplete-doc-keeps-QG028', 'QG027-DOC-INHERIT-unresolved-leading-base-no-exemption', 'QG027-DOC-INHERIT-multiple-first-contract-takes-precedence'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'qg027-inherited-documentation-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'qg027-inherited-documentation.json').read_text(encoding='utf-8'))['cases']
             row = next((entry for entry in rows if entry['case_id'] == case_id))
             yield row['expected']
 

@@ -21,7 +21,7 @@ class CaseContractMigratedLegacyCase(TestCase):
 
     def get_input_data(self):
         """Provide the original independent QG240 and QG241–244 source fixtures."""
-        for name in ("qg240-reviewed-legacy-v2.json", "qg241-244-reviewed-legacy-v2.json"):
+        for name in ("qg240-reviewed-legacy.json", "qg241-244-reviewed-legacy.json"):
             rows = json.loads((Path(__file__).parent / "cases" / name).read_text(encoding="utf-8"))
             for row in rows:
                 yield (
@@ -31,7 +31,7 @@ class CaseContractMigratedLegacyCase(TestCase):
 
     def get_output_data(self):
         """Load the preserved TP/TN rule codes independently of scanner output."""
-        for name in ("qg240-reviewed-legacy-v2.json", "qg241-244-reviewed-legacy-v2.json"):
+        for name in ("qg240-reviewed-legacy.json", "qg241-244-reviewed-legacy.json"):
             rows = json.loads((Path(__file__).parent / "cases" / name).read_text(encoding="utf-8"))
             for row in rows:
                 yield {"codes": row["expected_codes"], "path": row["path"], "source": row["source"]}

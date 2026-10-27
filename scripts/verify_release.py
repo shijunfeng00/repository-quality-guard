@@ -605,7 +605,7 @@ from runtime.src.analysis_snapshot import directory_analysis_snapshot
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner,snapshot_only_rule_findings
 from runtime.src.topology_facts import RepositoryTopology
-rows=json.loads((Path(sys.argv[1])/'tests/cases/b33-scanner-equivalence-v1.json').read_text())['cases']
+rows=json.loads((Path(sys.argv[1])/'tests/cases/scanner-equivalence.json').read_text())['cases']
 for row in rows:
     with tempfile.TemporaryDirectory(prefix='rqg-snapshot-release-') as directory:
         root=Path(directory)
@@ -809,7 +809,7 @@ def _native_cpp_release_smoke(bundle: Path, workspace: Path) -> None:
     _execute(["ctest", "--test-dir", str(build), "--output-on-failure"], timeout=60)
     observed = json.loads(_execute([str(build / "rqg_testunit_cpp")], timeout=40))
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-b69.json").read_text(encoding="utf-8")
+        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(encoding="utf-8")
     )["cases"]
     oracle = next(item["expected"] for item in rows if item["kind"] == "cpp-native")
     checks = {
@@ -845,7 +845,7 @@ def _native_c_java_release_smoke(bundle: Path, workspace: Path) -> None:
     if any(not (tests / name).is_file() for name in required_sources):
         raise RuntimeError("missing flattened native TestUnit fixture sources")
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-b69.json").read_text(encoding="utf-8")
+        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(encoding="utf-8")
     )["cases"]
     expected = {
         item["kind"] + ":" + str(item.get("language", "")): item["expected"]
@@ -1200,7 +1200,7 @@ def _native_ts_go_interface_smoke(bundle: Path, workspace: Path) -> None:
 def _source_witness_release_smoke(bundle: Path, workspace: Path) -> None:
     """Verify source-bound R2/R3 evidence survives official audit and readonly verify."""
     rows = json.loads(
-        (bundle / "tests/cases/native-oracle-b69.json").read_text(encoding="utf-8")
+        (bundle / "tests/cases/native-oracle-cross-language.json").read_text(encoding="utf-8")
     )["cases"]
     row = next(item for item in rows if item["kind"] == "r2r3")
     project = workspace / "r2r3-witness"
@@ -1247,7 +1247,7 @@ def _qg003_dual_oracle_release_smoke(bundle: Path, workspace: Path) -> None:
     they are exercised as a release integration contract rather than a
     synthetic TestCase method hiding an entire execution workflow.
     """
-    dataset = bundle / "tests/cases/qg003-business-v1.json"
+    dataset = bundle / "tests/cases/qg003-business.json"
     if not dataset.is_file():
         raise RuntimeError("QG003 release fixture missing: " + str(dataset))
     script = r"""
@@ -1256,7 +1256,7 @@ import tempfile
 from pathlib import Path
 from runtime.src.config import GuardConfig
 from runtime.src.scanner import RepositoryScanner
-rows=json.loads(Path('tests/cases/qg003-business-v1.json').read_text(encoding='utf-8'))['cases']
+rows=json.loads(Path('tests/cases/qg003-business.json').read_text(encoding='utf-8'))['cases']
 if {row['kind'] for row in rows} != {'TP','TN'}:
     raise RuntimeError('QG003 independent polarity oracles are incomplete')
 for row in rows:

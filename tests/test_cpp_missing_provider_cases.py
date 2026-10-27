@@ -17,7 +17,7 @@ class CppUnavailableProviderCase(TestCase):
 
     def get_input_data(self):
         """Create snapshots using the original no-compiler source program."""
-        rows = json.loads((Path(__file__).parent / 'cases' / 'native-missing-compiler-v1.json').read_text(encoding='utf-8'))['cases']
+        rows = json.loads((Path(__file__).parent / 'cases' / 'native-missing-compiler.json').read_text(encoding='utf-8'))['cases']
         for row in rows:
             if row['kind'] != 'topology':
                 continue
@@ -30,7 +30,7 @@ class CppUnavailableProviderCase(TestCase):
 
     def get_output_data(self):
         """Keep exact authored zero-fact oracle."""
-        rows = json.loads((Path(__file__).parent / 'cases' / 'native-missing-compiler-v1.json').read_text(encoding='utf-8'))['cases']
+        rows = json.loads((Path(__file__).parent / 'cases' / 'native-missing-compiler.json').read_text(encoding='utf-8'))['cases']
         for row in rows:
             if row['kind'] == 'topology':
                 yield row['expected']

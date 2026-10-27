@@ -20,7 +20,7 @@ class DebtDeferralSurvivesCase(TestCase):
         return render_compact_report
 
     def get_input_data(self):
-        case_path = Path(__file__).parent / "cases/b31-debt-deferral-survives-v1.json"
+        case_path = Path(__file__).parent / "cases/debt-deferral-survives.json"
         case = json.loads(case_path.read_text(encoding="utf-8"))
         fixture_path = Path(__file__).parent / "cases" / case["input_fixture"]
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -75,7 +75,7 @@ class DebtDeferralSurvivesCase(TestCase):
             })
 
     def get_output_data(self):
-        case_path = Path(__file__).parent / "cases/b31-debt-deferral-survives-v1.json"
+        case_path = Path(__file__).parent / "cases/debt-deferral-survives.json"
         case = json.loads(case_path.read_text(encoding="utf-8"))
         yield case["expected"]
 

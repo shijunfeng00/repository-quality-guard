@@ -19,7 +19,7 @@ class ExternalApiPublicCase(TestCase):
     def get_input_data(self):
         """Build the original source fixture and pass an actual scanner instance."""
         for case_id in ('external-binding-canonical', 'external-binding-aliases', 'external-binding-unimported', 'external-binding-renamed', 'external-binding-shadow1', 'external-binding-shadow2', 'external-binding-shadow3', 'external-binding-shadow4', 'external-binding-shadow5', 'external-binding-shadow6', 'external-binding-shadow7', 'external-binding-unknown-splat', 'external-binding-explicit-timeout', 'external-binding-blocking-async', 'external-binding-local-module', 'external-binding-comprehension-shadow', 'external-binding-httpx-constructor', 'external-binding-multiple-real-calls', 'external-binding-multiple-shadowed-calls', 'external-binding-local-package-repeated', 'external-binding-other-local-package-independent'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'bound-external-api-functional-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'bound-external-api-functional.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-case-'))
             (root / 'module.py').write_text(row['source'], encoding='utf-8')
             for name, source in row['files'].items():
@@ -33,7 +33,7 @@ class ExternalApiPublicCase(TestCase):
     def get_output_data(self):
         """Read the independently frozen expected result."""
         for case_id in ('external-binding-canonical', 'external-binding-aliases', 'external-binding-unimported', 'external-binding-renamed', 'external-binding-shadow1', 'external-binding-shadow2', 'external-binding-shadow3', 'external-binding-shadow4', 'external-binding-shadow5', 'external-binding-shadow6', 'external-binding-shadow7', 'external-binding-unknown-splat', 'external-binding-explicit-timeout', 'external-binding-blocking-async', 'external-binding-local-module', 'external-binding-comprehension-shadow', 'external-binding-httpx-constructor', 'external-binding-multiple-real-calls', 'external-binding-multiple-shadowed-calls', 'external-binding-local-package-repeated', 'external-binding-other-local-package-independent'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'bound-external-api-functional-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'bound-external-api-functional.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             yield tuple(row['expected'])
 
     def equals(self, ground_truth, output):

@@ -13,7 +13,7 @@ class CommitCompactPolicyCase(TestCase):
 
     def get_input_data(self):
         rows = json.loads(
-            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+            (Path(__file__).parent / "cases/commit-policy-contract.json").read_text(
                 encoding="utf-8"
             )
         )["cases"]
@@ -31,7 +31,7 @@ class CommitCompactPolicyCase(TestCase):
 
     def get_output_data(self):
         rows = json.loads(
-            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+            (Path(__file__).parent / "cases/commit-policy-contract.json").read_text(
                 encoding="utf-8"
             )
         )["cases"]
@@ -48,7 +48,7 @@ class CommitFullReportPolicyCase(TestCase):
 
     def get_input_data(self):
         rows = json.loads(
-            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+            (Path(__file__).parent / "cases/commit-policy-contract.json").read_text(
                 encoding="utf-8"
             )
         )["cases"]
@@ -66,7 +66,7 @@ class CommitFullReportPolicyCase(TestCase):
 
     def get_output_data(self):
         rows = json.loads(
-            (Path(__file__).parent / "cases/commit-policy-contract-v1.json").read_text(
+            (Path(__file__).parent / "cases/commit-policy-contract.json").read_text(
                 encoding="utf-8"
             )
         )["cases"]

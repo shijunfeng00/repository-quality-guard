@@ -1,0 +1,12 @@
+{
+  "contract": "modern-independent-oracle",
+  "input_fixture": "debt-scoped-history.json",
+  "expected": {
+    "ordinary_debt_count": 2,
+    "excluded_gate_code": "QG179",
+    "ordinary_rules": [
+      "QG123",
+      "QG124"
+    ]
+  }
+}

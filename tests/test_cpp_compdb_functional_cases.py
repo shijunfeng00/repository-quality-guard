@@ -21,7 +21,7 @@ class CppCompdbFunctionalCase(TestCase):
     def get_input_data(self):
         """Freeze a source snapshot with normalized synthetic build paths."""
         for case_id in ('b31-cpp-gcc-compile-flags', 'b31-cpp-malformed-arguments-fail-closed', 'b31-cpp-clang-command', 'b31-cpp-ccache-wrapper', 'b31-cpp-msvc-syntax-contract', 'b31-cpp-two-subproject-tu', 'b31-cpp-duplicate-conflict-no-guess', 'b31-cpp-revision-does-not-steal-worktree'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'b31-cpp-compdb-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'cpp-compilation-database.json').read_text(encoding='utf-8'))['cases']
             row = next((item for item in rows if item['case_id'] == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-cpp-compdb-'))
             atexit.register(shutil.rmtree, root, ignore_errors=True)
@@ -44,7 +44,7 @@ class CppCompdbFunctionalCase(TestCase):
     def get_output_data(self):
         """Load the authored compiler family, arguments and syntax command Oracle."""
         for case_id in ('b31-cpp-gcc-compile-flags', 'b31-cpp-malformed-arguments-fail-closed', 'b31-cpp-clang-command', 'b31-cpp-ccache-wrapper', 'b31-cpp-msvc-syntax-contract', 'b31-cpp-two-subproject-tu', 'b31-cpp-duplicate-conflict-no-guess', 'b31-cpp-revision-does-not-steal-worktree'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'b31-cpp-compdb-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'cpp-compilation-database.json').read_text(encoding='utf-8'))['cases']
             row = next((item for item in rows if item['case_id'] == case_id))
             yield (row['expected'], bool(row['assert_wrapper']))
 

@@ -20,7 +20,7 @@ class QG245ProductionContractCase(TestCase):
     def get_input_data(self):
         """Parse fixed code snippets into real ASTs for the analyzer."""
         rows = json.loads(
-            (Path(__file__).parent / "cases" / "qg240-245-v02.json").read_text(
+            (Path(__file__).parent / "cases" / "qg240-245-case-contracts.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -33,7 +33,7 @@ class QG245ProductionContractCase(TestCase):
     def get_output_data(self):
         """Read frozen, independently reviewed complete expected findings."""
         rows = json.loads(
-            (Path(__file__).parent / "cases" / "qg240-245-v02.json").read_text(
+            (Path(__file__).parent / "cases" / "qg240-245-case-contracts.json").read_text(
                 encoding="utf-8"
             )
         )

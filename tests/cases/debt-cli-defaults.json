@@ -1,0 +1,20 @@
+{
+  "contract": "modern-independent-oracle",
+  "input_fixture": "debt-scoped-history.json",
+  "expected": {
+    "samples": [
+      {
+        "mode": "normal",
+        "debt_mode": "progressive"
+      },
+      {
+        "mode": "ignore-diff",
+        "debt_mode": "progressive"
+      },
+      {
+        "mode": "cleanup",
+        "debt_mode": "cleanup"
+      }
+    ]
+  }
+}

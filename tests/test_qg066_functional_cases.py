@@ -19,7 +19,7 @@ class RequiredMappingFallbackCase(TestCase):
     def get_input_data(self):
         """Build the original source fixture and pass an actual scanner instance."""
         for case_id in ('qg066-b28-required-dict-dict-constructor', 'qg066-b28-required-generic-mapping', 'qg066-b28-optional-union', 'qg066-b28-default-none', 'qg066-b28-untyped-unknown', 'qg066-b28-required-no-fallback', 'qg066-b28-nonempty-fallback', 'qg066-b28-shadowed-dict', 'qg066-b28-reassigned-mapping'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg066-functional-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg066-functional.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-case-'))
             for name, source in row['files'].items():
                 target = root / name
@@ -32,7 +32,7 @@ class RequiredMappingFallbackCase(TestCase):
     def get_output_data(self):
         """Read the independently frozen expected result."""
         for case_id in ('qg066-b28-required-dict-dict-constructor', 'qg066-b28-required-generic-mapping', 'qg066-b28-optional-union', 'qg066-b28-default-none', 'qg066-b28-untyped-unknown', 'qg066-b28-required-no-fallback', 'qg066-b28-nonempty-fallback', 'qg066-b28-shadowed-dict', 'qg066-b28-reassigned-mapping'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg066-functional-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg066-functional.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             yield (row['rule'], row['expected'])
 
     def equals(self, ground_truth, output):

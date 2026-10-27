@@ -20,7 +20,7 @@ class GraphRewriteOracleCase(TestCase):
     def get_input_data(self):
         """Build the source-bound repository graph for normalization."""
         for case_id in ('direct-receiver-dispatch-tp', 'local-binding-rename-preserves-call', 'method-reference-not-call-tn', 'unreachable-member-no-call-tn', 'callback-registration-not-dispatch', 'callback-no-registration-tn', 'distinct-target-direct-call-tp', 'distinct-target-unreferenced-tn'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'graph-rewrite-oracles-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'graph-rewrite-oracles.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-case-'))
             (root / 'flow.py').write_text(row['source'], encoding='utf-8')
             snapshot = directory_analysis_snapshot(root, GuardConfig())
@@ -31,7 +31,7 @@ class GraphRewriteOracleCase(TestCase):
     def get_output_data(self):
         """Read the independently frozen expected result."""
         for case_id in ('direct-receiver-dispatch-tp', 'local-binding-rename-preserves-call', 'method-reference-not-call-tn', 'unreachable-member-no-call-tn', 'callback-registration-not-dispatch', 'callback-no-registration-tn', 'distinct-target-direct-call-tp', 'distinct-target-unreferenced-tn'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'graph-rewrite-oracles-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'graph-rewrite-oracles.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             yield row['expected']
 
     def equals(self, ground_truth, output):

@@ -20,7 +20,7 @@ class ExactFindingOracleCase(TestCase):
     def get_input_data(self):
         """Build the original source fixture and pass an actual scanner instance."""
         for case_id in ('qg149-private-import-tp', 'qg149-public-import-tn', 'qg066-required-dict-tp', 'qg066-optional-dict-tn', 'qg183-private-reflection', 'qg183-public-direct', 'qg184-typed-reflection', 'qg184-unknown-probe', 'qg186-class-monkeypatch', 'qg186-public-direct', 'oracle-qg062-unprotected-zip', 'oracle-qg062-strict', 'oracle-qg063-silent-length-repair', 'oracle-qg063-no-repair', 'oracle-qg069-assert-parameter', 'oracle-qg069-explicit-check', 'oracle-qg070-unused-result', 'oracle-qg070-return-result', 'oracle-qg064-field-alias-fallback', 'oracle-qg064-single-field', 'oracle-qg065-dict-and-attribute', 'oracle-qg065-single-protocol'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'exact-finding-oracles-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'exact-finding-oracles.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-case-'))
             target = root / 'subject.py'
             target.write_text(str(row['source']), encoding='utf-8')
@@ -31,7 +31,7 @@ class ExactFindingOracleCase(TestCase):
     def get_output_data(self):
         """Read the independently frozen expected result."""
         for case_id in ('qg149-private-import-tp', 'qg149-public-import-tn', 'qg066-required-dict-tp', 'qg066-optional-dict-tn', 'qg183-private-reflection', 'qg183-public-direct', 'qg184-typed-reflection', 'qg184-unknown-probe', 'qg186-class-monkeypatch', 'qg186-public-direct', 'oracle-qg062-unprotected-zip', 'oracle-qg062-strict', 'oracle-qg063-silent-length-repair', 'oracle-qg063-no-repair', 'oracle-qg069-assert-parameter', 'oracle-qg069-explicit-check', 'oracle-qg070-unused-result', 'oracle-qg070-return-result', 'oracle-qg064-field-alias-fallback', 'oracle-qg064-single-field', 'oracle-qg065-dict-and-attribute', 'oracle-qg065-single-protocol'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'exact-finding-oracles-v1.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'exact-finding-oracles.json').read_text(encoding='utf-8'))['cases'] if str(row['case_id']) == case_id))
             yield (row['rule'], row['findings'])
 
     def equals(self, ground_truth, output):

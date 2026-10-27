@@ -19,7 +19,7 @@ class ReturnContractCase(TestCase):
     def get_input_data(self):
         """Build independent nullable and required-return source fixtures."""
         for case_id in ('nullable-return-implicit-none', 'required-return-implicit-none'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg046-return-contract-v1.json').read_text(encoding='utf-8'))['cases'] if row['case_id'] == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg046-return-contract.json').read_text(encoding='utf-8'))['cases'] if row['case_id'] == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-qg046-'))
             (root / 'sample.py').write_text(row['source'], encoding='utf-8')
             scanner = RepositoryScanner(root, GuardConfig(require_docstrings=False, require_docstring_sections=False, include_tests=True))
@@ -29,7 +29,7 @@ class ReturnContractCase(TestCase):
     def get_output_data(self):
         """Read the fixed QG046 expectation for each return contract."""
         for case_id in ('nullable-return-implicit-none', 'required-return-implicit-none'):
-            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg046-return-contract-v1.json').read_text(encoding='utf-8'))['cases'] if row['case_id'] == case_id))
+            row = next((row for row in json.loads((Path(__file__).parent / 'cases' / 'qg046-return-contract.json').read_text(encoding='utf-8'))['cases'] if row['case_id'] == case_id))
             yield row['expected']
 
     def equals(self, ground_truth, output):

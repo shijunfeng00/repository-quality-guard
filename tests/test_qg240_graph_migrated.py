@@ -23,7 +23,7 @@ class QG240GraphMigratedCase(TestCase):
     def get_input_data(self):
         """Build the graph for each independently specified re-export fixture."""
         rows = json.loads(
-            (Path(__file__).parent / "cases/qg240-graph-reviewed-v2.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/qg240-graph-reviewed.json").read_text(encoding="utf-8")
         )
         for row in rows:
             with TemporaryDirectory(prefix="rqg-qg240-graph-") as temp_root:
@@ -53,7 +53,7 @@ class QG240GraphMigratedCase(TestCase):
     def get_output_data(self):
         """Load the reviewed expected source-ownership classifications."""
         rows = json.loads(
-            (Path(__file__).parent / "cases/qg240-graph-reviewed-v2.json").read_text(encoding="utf-8")
+            (Path(__file__).parent / "cases/qg240-graph-reviewed.json").read_text(encoding="utf-8")
         )
         for row in rows:
             yield ["QG240"] * row["expected"]

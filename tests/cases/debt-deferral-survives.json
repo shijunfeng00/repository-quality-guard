@@ -1,0 +1,23 @@
+{
+  "contract": "modern-independent-oracle",
+  "input_fixture": "debt-scoped-history.json",
+  "prior_debt_row": {
+    "debt_id": "DEBT-96b7c293c2",
+    "decision": "DEFERRED",
+    "reason": "The touched warning remains because this task verifies report persistence, not source remediation.",
+    "impact": "Only the touched sample.py warning remains accountable; untouched.py stays in the inventory section.",
+    "closure_condition": "Remove this deferral once the touched warning is eliminated and the report case passes."
+  },
+  "expected": {
+    "touched_path": "sample.py",
+    "untouched_path": "untouched.py",
+    "touched_count": 1,
+    "untouched_count": 1,
+    "debt_mode": "progressive",
+    "debt_id": "DEBT-96b7c293c2",
+    "decision": "DEFERRED",
+    "reason": "The touched warning remains because this task verifies report persistence, not source remediation.",
+    "impact": "Only the touched sample.py warning remains accountable; untouched.py stays in the inventory section.",
+    "closure_condition": "Remove this deferral once the touched warning is eliminated and the report case passes."
+  }
+}

@@ -20,7 +20,7 @@ class ProfileNonblockingPathCase(TestCase):
     def get_input_data(self):
         """Construct the source owner and the authored Profile for this identity."""
         for case_id in ('profile-private-import-explicit-nonblocking', 'profile-private-import-default-blocking'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'profile-nonblocking-path-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'profile-nonblocking-path.json').read_text(encoding='utf-8'))['cases']
             row = next((item for item in rows if item['case_id'] == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-nonblocking-profile-'))
             source = root / 'utils' / 'tracing.py'
@@ -35,7 +35,7 @@ class ProfileNonblockingPathCase(TestCase):
     def get_output_data(self):
         """Keep the independently declared severity as the only accepted outcome."""
         for case_id in ('profile-private-import-explicit-nonblocking', 'profile-private-import-default-blocking'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'profile-nonblocking-path-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'profile-nonblocking-path.json').read_text(encoding='utf-8'))['cases']
             row = next((item for item in rows if item['case_id'] == case_id))
             yield [row['expected_severity']]
 

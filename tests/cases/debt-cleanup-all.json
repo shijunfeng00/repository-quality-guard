@@ -1,0 +1,12 @@
+{
+  "contract": "modern-independent-oracle",
+  "input_fixture": "debt-scoped-history.json",
+  "expected": {
+    "cleanup_required_count": 2,
+    "required_paths": [
+      "sample.py",
+      "untouched.py"
+    ],
+    "required_issue": "cleanup-required remaining：2"
+  }
+}

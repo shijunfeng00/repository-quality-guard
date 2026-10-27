@@ -20,7 +20,7 @@ class ShadowStateBehaviorCase(TestCase):
     def get_input_data(self):
         """Create the Git baseline and changed inheritance source for one Case."""
         for case_id in ('qg167-reference-name', 'qg167-reference-attribute', 'qg167-reference-index', 'qg167-computed-expression-not-reference', 'qg167-call-not-reference'):
-            cases_path = Path(__file__).parent / 'cases' / 'qg167-shared-ast-v1.json'
+            cases_path = Path(__file__).parent / 'cases' / 'qg167-shared-ast.json'
             cases = json.loads(cases_path.read_text(encoding='utf-8'))['cases']
             row = next((item for item in cases if item['case_id'] == case_id))
             expression = row['expression']
@@ -39,7 +39,7 @@ class ShadowStateBehaviorCase(TestCase):
     def get_output_data(self):
         """Freeze TP/TN expectation independently of the observed Findings."""
         for case_id in ('qg167-reference-name', 'qg167-reference-attribute', 'qg167-reference-index', 'qg167-computed-expression-not-reference', 'qg167-call-not-reference'):
-            cases_path = Path(__file__).parent / 'cases' / 'qg167-shared-ast-v1.json'
+            cases_path = Path(__file__).parent / 'cases' / 'qg167-shared-ast.json'
             cases = json.loads(cases_path.read_text(encoding='utf-8'))['cases']
             polarity = next((row['polarity'] for row in cases if row['case_id'] == case_id))
             yield ((('QG167', 'Child.shadow', 'critical'),) if polarity == 'TP' else ())

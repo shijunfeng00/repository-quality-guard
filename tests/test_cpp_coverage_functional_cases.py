@@ -23,7 +23,7 @@ class CppCoverageFunctionalCase(TestCase):
     def get_input_data(self):
         """Prepare real source files and an optional authentic compilation database."""
         for case_id in ('b32-cpp-missing-three', 'b32-cpp-missing-report', 'b32-cpp-vendor-header-only', 'b32-cpp-partial-compdb', 'b32-cpp-complete-compdb', 'b32-cpp-unavailable-compiler'):
-            rows = json.loads((Path(__file__).parent / 'cases/b32-cpp-coverage-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases/cpp-coverage.json').read_text(encoding='utf-8'))['cases']
             row = next((candidate for candidate in rows if candidate['case_id'] == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-b32-cpp-coverage-'))
             weakref.finalize(self, shutil.rmtree, root, ignore_errors=True)
@@ -41,7 +41,7 @@ class CppCoverageFunctionalCase(TestCase):
     def get_output_data(self):
         """Read the external C++ coverage expectations, not any scanner result."""
         for case_id in ('b32-cpp-missing-three', 'b32-cpp-missing-report', 'b32-cpp-vendor-header-only', 'b32-cpp-partial-compdb', 'b32-cpp-complete-compdb', 'b32-cpp-unavailable-compiler'):
-            rows = json.loads((Path(__file__).parent / 'cases/b32-cpp-coverage-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases/cpp-coverage.json').read_text(encoding='utf-8'))['cases']
             yield next((row['expected'] for row in rows if row['case_id'] == case_id))
 
     def equals(self, ground_truth, output):

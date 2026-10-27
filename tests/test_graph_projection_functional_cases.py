@@ -21,7 +21,7 @@ class GraphProjectionFunctionalCase(TestCase):
     def get_input_data(self):
         """Build the source snapshot and optional isolated external stubs."""
         for case_id in ('b31-graph-inheritance-and-closure', 'b31-graph-local-class-field', 'b31-graph-lexical-boundaries', 'b31-graph-unimported-stub-protocol', 'b31-graph-unimported-tensorflow-alias'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'b31-graph-projection-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'graph-projection.json').read_text(encoding='utf-8'))['cases']
             row = next((item for item in rows if item['case_id'] == case_id))
             root = Path(tempfile.mkdtemp(prefix='rqg-b31-projection-'))
             project = root / 'project'
@@ -46,7 +46,7 @@ class GraphProjectionFunctionalCase(TestCase):
     def get_output_data(self):
         """Read the required edges, symbols and ownership facts without scanning."""
         for case_id in ('b31-graph-inheritance-and-closure', 'b31-graph-local-class-field', 'b31-graph-lexical-boundaries', 'b31-graph-unimported-stub-protocol', 'b31-graph-unimported-tensorflow-alias'):
-            rows = json.loads((Path(__file__).parent / 'cases' / 'b31-graph-projection-v1.json').read_text(encoding='utf-8'))['cases']
+            rows = json.loads((Path(__file__).parent / 'cases' / 'graph-projection.json').read_text(encoding='utf-8'))['cases']
             yield (next((item['checks'] for item in rows if item['case_id'] == case_id)), next((item['expected'] for item in rows if item['case_id'] == case_id)))
 
     def equals(self, ground_truth, output):

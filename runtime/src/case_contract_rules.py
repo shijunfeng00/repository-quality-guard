@@ -661,7 +661,10 @@ def repository_directory_layout_findings(
             symbol_path = Path(symbol.path)
             if not symbol_path.is_absolute():
                 symbol_path = root / symbol_path
-            symbols_by_path.setdefault(symbol_path.resolve(), []).append(symbol)
+            symbol_path = symbol_path.resolve()
+            if not symbol_path.is_relative_to(root):
+                continue
+            symbols_by_path.setdefault(symbol_path, []).append(symbol)
 
         framework_bases = {
             "TestCase", "StatefulTestCase", "DataLoader", "JSONDataLoader",

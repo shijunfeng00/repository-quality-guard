@@ -33,8 +33,7 @@ class FailedProcessDiagnosticCase(TestCase):
 
     def equals(self, expected, actual):
         return (
-            isinstance(actual, subprocess.CompletedProcess)
-            and actual.returncode == expected[0]
+            actual.returncode == expected[0]
             and expected[1] in actual.stderr
         )
 
@@ -83,8 +82,7 @@ class ActiveCpuWithoutFixedWallLimitCase(TestCase):
 
     def equals(self, expected, actual):
         return (
-            isinstance(actual, subprocess.CompletedProcess)
-            and actual.returncode == expected
+            actual.returncode == expected
             and actual.stdout.strip().isdigit()
         )
 

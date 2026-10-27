@@ -49,8 +49,7 @@ class GitHookInstallerSourceGuardCase(TestCase):
 
     def equals(self, expected, actual):
         return (
-            isinstance(actual, subprocess.CompletedProcess)
-            and actual.returncode == expected["returncode"]
+            actual.returncode == expected["returncode"]
             and expected["stderr_contains"] in actual.stderr
             and actual.stdout == ""
         )

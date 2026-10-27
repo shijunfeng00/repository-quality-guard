@@ -1,4 +1,4 @@
-# rqgtest 0.2.3
+# rqgtest 0.2.4
 
 Python 3.10+ 单元测试框架。测试类声明真实入口、输入和独立预期值；`TestUnit` 负责调用、比较、进程池调度与结果报告。
 
@@ -15,7 +15,7 @@ Python 3.10+ 单元测试框架。测试类声明真实入口、输入和独立�
 安装随发行包提供的 Wheel：
 
 ```bash
-python -m pip install --no-index rqgtest-0.2.3-py3-none-any.whl
+python -m pip install ./packages/rqgtest  # RQG 源码安装到 .agents 时会自动构建安装
 ```
 
 项目目录：
@@ -133,3 +133,5 @@ python -m rqgtest.run --help                             # 其他选项
 ```
 
 定向选择只加载所选文件，并完整检查被选文件；全量运行严格检查整个测试目录。空匹配、无效合同、输入预期不等长均失败。报告包含 PASS、FAIL、INVALID 及样本结果；源码运行期间被修改则标记 INVALID。
+
+异步入口：`TestCase` 和 `StatefulTestCase` 自动等待 `async def` 返回的 Awaitable，支持同步/异步 Case 混跑，不需要 `is_async` 或新基类。Stateful 的异步状态操作共享事件循环，详情见 `packages/rqgtest/README.md`。

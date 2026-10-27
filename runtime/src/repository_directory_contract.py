@@ -19,7 +19,13 @@ from .topology_facts import RepositoryTopology, Visibility
 
 _RQG_FROZEN_DIRECTORY_PATHS = frozenset({
     "agents/", "assets/", "docs/", "docs/api-reference/",
-    "offline/", "offline/wheelhouse/", "profiles/",
+    "offline/", "offline/wheelhouse/", "packages/", "packages/rqgtest/",
+    "packages/rqgtest/examples/", "packages/rqgtest/examples/quickstart/",
+    "packages/rqgtest/examples/quickstart/tests/",
+    "packages/rqgtest/examples/quickstart/tests/data/",
+    "packages/rqgtest/src/", "packages/rqgtest/src/rqgtest/",
+    "packages/rqgtest/src/rqgtest/core/", "packages/rqgtest/src/rqgtest/data/",
+    "packages/rqgtest/src/rqgtest/discovery/", "packages/rqgtest/tests/", "profiles/",
     "profiles/council-of-harnesses/", "profiles/geek-ai-agent/",
     "profiles/geek-ai-rag/", "profiles/qg-example-profile/",
     "profiles/repository-quality-guard/", "references/", "runtime/",

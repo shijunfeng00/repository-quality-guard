@@ -49,3 +49,8 @@ __pycache__/
 /CURRENT-HANDOFF.md
 /CURRENT.mbox
 /CURRENT-OVERLAY.zip
+
+# Local rqgtest build products (the framework itself is tracked source).
+/packages/rqgtest/build/
+/packages/rqgtest/dist/
+/packages/rqgtest/src/*.egg-info/

@@ -37,6 +37,7 @@ _PROTECTED_PREFIXES = (
     "runtime/src/",
     "scripts/",
     "tests/",
+    "packages/rqgtest/",
     "runtime/contracts/",
     "templates/",
     "installed/",

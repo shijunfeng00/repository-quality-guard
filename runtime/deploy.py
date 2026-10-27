@@ -153,6 +153,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
         "node_modules",
         "vendor",
         "wheels",
+        "packages",
     )
 
     def _ignore_distribution_assets(directory: str, names: list[str]) -> set[str]:
@@ -172,6 +173,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
     shutil.copytree(bundle, target, ignore=_ignore_distribution_assets)
     forbidden = [
         target / "offline",
+        target / "packages",
         target / "profiles",
         target / "tests",
         target / "tests_support",
@@ -419,6 +421,47 @@ def _activate_release(
                 (repo / "AGENTS.md").unlink(missing_ok=True)
 
 
+def _install_rqgtest(bundle: Path) -> None:
+    """Build and install the bundled rqgtest source into the active Python.
+
+    No prebuilt rqgtest wheel is required or retained by the source checkout,
+    release archive or installed .agents runtime. Build failures remain visible.
+    """
+    project = bundle / "packages" / "rqgtest"
+    if not (project / "pyproject.toml").is_file() or not (
+        project / "src" / "rqgtest" / "core" / "unit.py"
+    ).is_file():
+        raise RuntimeError("rqgtest source missing from source distribution")
+    with tempfile.TemporaryDirectory(prefix="rqgtest-wheel-") as directory:
+        scratch = Path(directory)
+        build_source = scratch / "source"
+        shutil.copytree(project, build_source, ignore=shutil.ignore_patterns(
+            "build", "dist", "*.egg-info", "__pycache__", "*.pyc", ".pytest_cache"
+        ))
+        wheel_dir = scratch / "wheels"
+        wheel_dir.mkdir()
+        # Prefer the host's available build backend for offline clone installs;
+        # otherwise let pip bootstrap the declared PEP 517 build requirements.
+        has_build_backend = importlib.util.find_spec("setuptools") is not None and (
+            importlib.util.find_spec("wheel") is not None
+        )
+        command = [sys.executable, "-m", "pip", "wheel", "--no-deps"]
+        if has_build_backend:
+            command.append("--no-build-isolation")
+        subprocess.run(
+            [*command, "--wheel-dir", str(wheel_dir), str(build_source)],
+            check=True, timeout=180,
+        )
+        built = sorted(wheel_dir.glob("rqgtest-*.whl"))
+        if len(built) != 1:
+            raise RuntimeError("rqgtest source build did not produce exactly one wheel")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-index", "--no-deps",
+             "--force-reinstall", str(built[0])],
+            check=True, timeout=180,
+        )
+
+
 def deploy(bundle: Path, destination: Path, profile_reference: str = "") -> str:
     """Atomically install QG and freeze exactly one generic/Profile policy.
 
@@ -451,6 +494,8 @@ def deploy(bundle: Path, destination: Path, profile_reference: str = "") -> str:
         installer.prepare_runtime_dependencies(bundle, prune_managed=True)
     finally:
         del sys.modules[module_name]
+
+    _install_rqgtest(bundle)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(

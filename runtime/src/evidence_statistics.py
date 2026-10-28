@@ -37,13 +37,22 @@ def graph_statistics(graph: dict) -> str:
 
     by_kind = {
         name: [
-            edge for edge in graph["edges"]
+            edge
+            for edge in graph["edges"]
             if edge["kind"] == name
-            and edge["source"] in parent and edge["target"] in parent
+            and edge["source"] in parent
+            and edge["target"] in parent
         ]
-        for name in ("direct_call", "may_dispatch", "may_callback", "callback_registration")
+        for name in (
+            "direct_call",
+            "may_dispatch",
+            "may_callback",
+            "callback_registration",
+        )
     }
-    call_edges = by_kind["direct_call"] + by_kind["may_dispatch"] + by_kind["may_callback"]
+    call_edges = (
+        by_kind["direct_call"] + by_kind["may_dispatch"] + by_kind["may_callback"]
+    )
     linked = set()
     for edge in call_edges:
         a, b = root(edge["source"]), root(edge["target"])
@@ -68,7 +77,8 @@ def graph_statistics(graph: dict) -> str:
     augmented_components = {root(symbol) for symbol in callables}
     augmented_largest = max((sizes[x] for x in augmented_components), default=0)
     augmented_linked = linked | {
-        end for edge in by_kind["callback_registration"]
+        end
+        for edge in by_kind["callback_registration"]
         for end in (edge["source"], edge["target"])
     }
     direct = len(by_kind["direct_call"])
@@ -90,7 +100,8 @@ def graph_statistics(graph: dict) -> str:
                 f"包含注册/引用候选后：注册边 {callback_count} · 弱连通分量 {len(augmented_components)} "
                 f"· 最大分量 {augmented_largest} ({augmented_largest / len(callables):.1%}) "
                 f"· 未连接 {len(callables - augmented_linked)}"
-                if callables else "包含注册/引用候选后：空图",
+                if callables
+                else "包含注册/引用候选后：空图",
                 "图关系统计："
                 + ", ".join(
                     f"{name}={value}" for name, value in sorted(relations.items())

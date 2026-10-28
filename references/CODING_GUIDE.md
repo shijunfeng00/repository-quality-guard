@@ -9,7 +9,7 @@
 
 ### QG Finding 的标准修复入口
 
-任何 `QGxxx` 告警在修改代码前，先运行 `python scripts/evidence_lookup.py --rule QG123 --rule QG153`（以实际编号替换；可批量），读取 `references/RULES.md` 的权威定义、修复方向及禁止做法；原 `scripts/rule_lookup.py` 继续兼容。已有能力/接口定位时同一个命令加 `--api "能力描述" --repo <仓库根>`（复用正式 BM25 doc-search 和源码保鲜），再加 `--symbol <完整符号ID> --direction callers --depth 3` 查询上下游，取得既有图的静态已解析调用关系及真实源码定位，随后手动阅读完整函数体和 Producer / Schema / Consumer / Effect，不能凭片段猜测。图中无边、多态或 UNKNOWN 不等于调用不可能发生。Case 驱动证明合法输入/状态确实可达、缺失是否属于业务结果还是 invariant 违约、上游 guard 是否支配且未发生重赋值。**类型声明 NotRequired/Optional、框架允许缺失不构成业务 Case 证据**。必要时构造正反 Case 并与稳定基线比较；告警与真实契约冲突时只登记 RULE_BUG 待裁决，未经授权不改稳定 QG 的判定算法。Finding 消失不等于修复成功。
+任何 `QGxxx` 告警在修改代码前，先运行 `python scripts/quality_guard.py evidence --rule QG123 --rule QG153`（以实际编号替换；可批量），读取 `references/RULES.md` 的权威定义、修复方向及禁止做法；已有能力/接口定位时同一个命令加 `--api "能力描述" --repo <仓库根>`（复用正式 BM25 doc-search 和源码保鲜），再加 `--symbol <完整符号ID> --direction callers --depth 3` 查询上下游，取得既有图的静态已解析调用关系及真实源码定位，随后手动阅读完整函数体和 Producer / Schema / Consumer / Effect，不能凭片段猜测。图中无边、多态或 UNKNOWN 不等于调用不可能发生。Case 驱动证明合法输入/状态确实可达、缺失是否属于业务结果还是 invariant 违约、上游 guard 是否支配且未发生重赋值。**类型声明 NotRequired/Optional、框架允许缺失不构成业务 Case 证据**。必要时构造正反 Case 并与稳定基线比较；告警与真实契约冲突时只登记 RULE_BUG 待裁决，未经授权不改稳定 QG 的判定算法。Finding 消失不等于修复成功。
 
 ### 已裁决 QG003 / QG004 的业务 Case 要求
 
@@ -34,7 +34,7 @@ QG033 暂无本轮规则修改授权，不得借 QG003/004 变更一起豁免。
 
 ### 仓库记忆：先查询、再裁决
 
-针对源码 `文件:行号`，优先用 `evidence_lookup.py --repo ... --file ... --line ... --name ... --kind function|class|variable`。
+针对源码 `文件:行号`，优先用 `quality_guard.py evidence --repo ... --file ... --line ... --name ... --kind function|class|variable`。
 变量追踪必须显示真实调用边上 **实参→形参**、所在函数候选赋值及附近源码，而不是只显示函数头。
 类追踪展示继承/覆盖关系；函数追踪展示调用位置和多层静态链。
 `DIRECT_CALL` 与 `MAY_DISPATCH` 是两种不同证据：前者源码精确绑定，后者

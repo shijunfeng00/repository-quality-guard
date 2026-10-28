@@ -17,11 +17,11 @@ _MARKER = "# managed RQG source pre-push"
 _HOOK = f"""#!/bin/sh
 {_MARKER}
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1
-if [ ! -f "$repo_root/SKILL.md" ] || [ ! -f "$repo_root/scripts/verify_release.py" ]; then
+if [ ! -f "$repo_root/SKILL.md" ] || [ ! -f "$repo_root/maintainer/verify_release.py" ]; then
   echo "RQG source pre-push: 当前仓库不是 RQG 源码仓库，拒绝运行" >&2
   exit 1
 fi
-exec python "$repo_root/scripts/source_pre_push.py"
+exec python "$repo_root/maintainer/source_pre_push.py"
 """
 
 
@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     root = parser.parse_args(argv).repo.resolve()
     if (
         not (root / "SKILL.md").is_file()
-        or not (root / "scripts/verify_release.py").is_file()
+        or not (root / "maintainer/verify_release.py").is_file()
     ):
         print("目标不是 RQG 源码仓库；不会安装开发 hook。", file=sys.stderr)
         return 2

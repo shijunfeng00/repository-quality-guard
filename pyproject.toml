@@ -6,4 +6,7 @@ exclude = [
     "build/**", "dist/**", "site-packages/**", "node_modules/**",
     "migrations/**", "generated/**",
     "packages/rqgtest/**",
+    # Release engineering tools are excluded from deployed .agents and tested by
+    # the independent release verifier rather than the Agent runtime scanner.
+    "maintainer/**",
 ]

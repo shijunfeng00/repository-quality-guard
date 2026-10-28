@@ -1,9 +1,10 @@
-"""Repository Quality Guard Agent-facing 四命令工作流。"""
+"""Repository Quality Guard unified Agent-facing workflow."""
 
 from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import redirect_stdout
 import json
 import os
 import sys
@@ -55,6 +56,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Repository Quality Guard：文档生成、能力检索、审计与最终只读验收。",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    evidence = subparsers.add_parser(
+        "evidence", help="从真实源码快照查询规则、符号、变量来源及调用图。"
+    )
+    from .evidence_lookup import add_arguments as _add_evidence_arguments
+
+    _add_evidence_arguments(evidence)
 
     generate = subparsers.add_parser(
         "doc-generate", help="生成或增量刷新接口文档/catalog。"
@@ -424,7 +432,7 @@ def _run_verify(options: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """
-    执行四个稳定 Agent-facing 命令。
+    执行五个稳定 Agent-facing 命令。
 
     Args:
         argv: 可选命令行参数；为 None 时由 argparse 使用进程参数。
@@ -434,11 +442,20 @@ def main(argv: list[str] | None = None) -> int:
     """
     options = build_parser().parse_args(argv)
     try:
-        integrity = legacy_cli.integrity_gate()
+        if options.command == "evidence":
+            # 证据查询标准输出仅承载查询结果，完整性诊断走 stderr。
+            with redirect_stdout(sys.stderr):
+                integrity = legacy_cli.integrity_gate()
+        else:
+            integrity = legacy_cli.integrity_gate()
         if integrity is not None:
             return integrity
         if options.command == "doc-generate":
             return _run_doc_generate(options)
+        if options.command == "evidence":
+            from .evidence_lookup import execute_query
+
+            return execute_query(options)
         if options.command == "doc-search":
             return _run_doc_search(options)
         if options.command == "audit":

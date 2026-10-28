@@ -29,7 +29,6 @@ def _digest(snapshot, skill_root: Path) -> str:
             digest.update(key.encode("utf-8"))
             digest.update(hashlib.sha256(path.read_bytes()).digest())
     providers = sorted((skill_root / "runtime" / "src").glob("*.py"))
-    providers.append(skill_root / "scripts" / "evidence_graph.py")
     for path in providers:
         digest.update(path.relative_to(skill_root).as_posix().encode("utf-8"))
         digest.update(hashlib.sha256(path.read_bytes()).digest())
@@ -884,15 +883,21 @@ def render(snapshot, graph, anchor, options: TraceOptions):
             result.append("- **TRUNCATED**：已达调用边预算")
     if anchor["kind"] in ("method", "function"):
         registered = [
-            e for e in graph["edges"]
-            if e["kind"] == "callback_registration"
-            and e["target"] == anchor["id"]
+            e
+            for e in graph["edges"]
+            if e["kind"] == "callback_registration" and e["target"] == anchor["id"]
         ]
         if registered and direction in ("both", "callers"):
-            result.extend([
-                "", "## 传入回调/注册参数的源码位点（不是已执行调用）", "",
-            ])
-            for edge in sorted(registered, key=lambda e: (e["path"], e["line"]))[:budget]:
+            result.extend(
+                [
+                    "",
+                    "## 传入回调/注册参数的源码位点（不是已执行调用）",
+                    "",
+                ]
+            )
+            for edge in sorted(registered, key=lambda e: (e["path"], e["line"]))[
+                :budget
+            ]:
                 result.append(
                     f"- `[CALLBACK_ARGUMENT]` `{edge['source']}` → `{anchor['id']}` "
                     f"@ `{edge['path']}:{edge['line']}`（静态参数引用，不证明实际调度）"

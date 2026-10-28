@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _ensure_source_imports() -> None:
@@ -15,9 +15,15 @@ def _ensure_source_imports() -> None:
         sys.path.insert(0, str(ROOT))
 
 
-def _arguments(args: list[str]) -> argparse.Namespace:
-    """解析单入口规则/符号/静态调用关系查询的明确参数。"""
-    parser = argparse.ArgumentParser(description=__doc__)
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    """Attach evidence query flags to the official parser.
+
+    Args:
+        parser: Public CLI parser that owns evidence query options.
+
+    Returns:
+        None; registers options on the supplied parser.
+    """
     parser.add_argument("--rule", action="append", default=[], metavar="QG003")
     parser.add_argument(
         "--api", metavar="CAPABILITY", help="从已有 API Catalog BM25 检索能力"
@@ -54,7 +60,20 @@ def _arguments(args: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--snippet-lines", type=int, default=8, help="源码预览行数，0..20"
     )
-    parsed = parser.parse_args(args)
+
+
+def _validate_arguments(
+    parsed: argparse.Namespace, parser: argparse.ArgumentParser
+) -> argparse.Namespace:
+    """Reject inconsistent graph/rule query arguments before doing I/O.
+
+    Args:
+        parsed: Namespace returned by the shared evidence parser.
+        parser: ArgumentParser providing bounded validation errors.
+
+    Returns:
+        Validated query parameters without inferred defaults.
+    """
     if (
         not parsed.rule
         and parsed.symbol is None
@@ -163,7 +182,12 @@ def _render_symbol_evidence(parsed, snapshot, graph, file, cache_status, digest)
         Complete Markdown source evidence, or an explicit query error.
     """
     import ast
-    from scripts.evidence_graph import select_symbol, render, TraceOptions, find_node
+    from runtime.src.evidence_graph import (
+        select_symbol,
+        render,
+        TraceOptions,
+        find_node,
+    )
 
     anchor = select_symbol(
         graph, parsed.symbol, file, parsed.line, parsed.name, parsed.kind
@@ -201,21 +225,34 @@ def _render_symbol_evidence(parsed, snapshot, graph, file, cache_status, digest)
     )
 
 
-def main(args: list[str] | None = None) -> int:
-    """执行只读规则、API 与源码事实查询，不输出不完整成功。
+def execute_query(parsed: argparse.Namespace) -> int:
+    """Execute an evidence query using the official workflow parser.
 
     Args:
-        args: 可选的 CLI 实参；未给定时使用当前进程参数。
+        parsed: Parsed, source-bound evidence query options.
 
     Returns:
-        查询成功为 0，解析或查询出错为非零退出状态。
+        Process return code: zero on success, nonzero on query failure.
+    """
+    parser = argparse.ArgumentParser(description=__doc__)
+    _validate_arguments(parsed, parser)
+    return _execute_query(parsed)
+
+
+def _execute_query(parsed: argparse.Namespace) -> int:
+    """Render rule, API, call graph and trace evidence for validated arguments.
+
+    Args:
+        parsed: Explicit, validated query parameters.
+
+    Returns:
+        Zero on rendered evidence; two for execution errors.
     """
     try:
-        parsed = _arguments(sys.argv[1:] if args is None else args)
         parts = []
         if parsed.rule:
             _ensure_source_imports()
-            from scripts.rule_lookup import (
+            from runtime.src.rule_lookup import (
                 RULES_PATH,
                 requested_codes,
                 render_rule_cards,
@@ -235,7 +272,7 @@ def main(args: list[str] | None = None) -> int:
             or parsed.graph_stats
         ):
             _ensure_source_imports()
-            from scripts.evidence_graph import (
+            from runtime.src.evidence_graph import (
                 load_graph,
             )
 
@@ -251,7 +288,7 @@ def main(args: list[str] | None = None) -> int:
                 raise ValueError(
                     f"文件不在权威源码快照中或 Python Provider 未覆盖: {file}"
                 )
-            from scripts.evidence_statistics import graph_statistics
+            from runtime.src.evidence_statistics import graph_statistics
 
             graph, cache_status, digest = load_graph(snapshot, ROOT, parsed.cache_dir)
             if parsed.graph_stats:
@@ -263,11 +300,7 @@ def main(args: list[str] | None = None) -> int:
                     )
                 )
     except (OSError, ValueError, RuntimeError) as error:
-        print(f"[QG evidence] {error}", file=sys.stderr)
+        sys.stderr.write(f"[QG evidence] {error}\n")
         return 2
     sys.stdout.write("\n".join(parts))
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

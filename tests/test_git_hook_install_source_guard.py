@@ -21,12 +21,14 @@ class GitHookInstallerSourceGuardCase(TestCase):
         target = Path(tempfile.mkdtemp(prefix="rqg-source-guard-"))
         (target / "SKILL.md").write_text("# source marker\n", encoding="utf-8")
         (target / "runtime").mkdir()
-        (target / "runtime" / "RELEASE.lock").write_text(
+        (target / "metadata").mkdir()
+        (target / "metadata" / "RELEASE.lock").write_text(
             "schema=repository-quality-guard/release-v1\nversion=0.22.6\n",
             encoding="utf-8",
         )
         (target / "scripts").mkdir()
-        (target / "scripts" / "verify_release.py").write_text(
+        (target / "maintainer").mkdir()
+        (target / "maintainer" / "verify_release.py").write_text(
             "# current release verifier marker\n", encoding="utf-8"
         )
         weakref.finalize(self, shutil.rmtree, target, ignore_errors=True)
@@ -36,13 +38,16 @@ class GitHookInstallerSourceGuardCase(TestCase):
             str(project / "scripts" / "git_hook_install.py"),
             str(target),
         ]
-        return ((command,), {
-            "cwd": str(project),
-            "text": True,
-            "capture_output": True,
-            "check": False,
-            "timeout": 10,
-        })
+        return (
+            (command,),
+            {
+                "cwd": str(project),
+                "text": True,
+                "capture_output": True,
+                "check": False,
+                "timeout": 10,
+            },
+        )
 
     def get_output_data(self):
         return {"returncode": 2, "stderr_contains": "目标是 RQG 源码仓库"}

@@ -892,7 +892,7 @@ def _release_distribution(release_root: Any | None = None) -> str:
     from pathlib import Path
 
     root = Path(release_root or _release_root())
-    lock = root / "runtime" / "RELEASE.lock"
+    lock = root / "metadata" / "RELEASE.lock"
     if not lock.is_file():
         return "skill"
     values: dict[str, str] = {}
@@ -901,7 +901,7 @@ def _release_distribution(release_root: Any | None = None) -> str:
             key, value = line.split("=", 1)
             values[key.strip()] = value.strip()
     if "distribution" not in values:
-        raise ValueError("runtime/RELEASE.lock is missing distribution")
+        raise ValueError("metadata/RELEASE.lock is missing distribution")
     return values["distribution"]
 
 

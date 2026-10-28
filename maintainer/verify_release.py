@@ -30,15 +30,15 @@ _ROOT = "repository-quality-guard"
 _REQUIRED_FILES = (
     "SKILL.md",
     ".git/HEAD",
-    "runtime/RELEASE.lock",
+    "metadata/RELEASE.lock",
     "runtime/dependencies.lock.json",
     "runtime/deploy.py",
     "runtime/install_dependencies.py",
     "runtime/src/integrity.py",
     "scripts/quality_guard.py",
     "scripts/git_hook_install.py",
-    "scripts/build_release.py",
-    "scripts/verify_release.py",
+    "maintainer/build_release.py",
+    "maintainer/verify_release.py",
     "offline/node_modules.zip",
 )
 
@@ -172,7 +172,7 @@ def _install_and_hook_smoke(bundle: Path, workspace: Path) -> None:
         ],
         timeout=180,
     )
-    if not (destination / "runtime/RELEASE.lock").is_file():
+    if not (destination / "metadata/RELEASE.lock").is_file():
         raise RuntimeError("installed runtime release lock missing")
     if (destination / "offline").exists():
         raise RuntimeError("installed runtime unexpectedly retains release media")
@@ -658,16 +658,25 @@ for row in rows:
 
 def _rule_lookup_smoke(destination: Path, workspace: Path) -> None:
     """Verify official rule lookup accepts defined and rejects undefined rules."""
-    entry = destination / "scripts/rule_lookup.py"
+    entry = destination / "scripts/quality_guard.py"
     known = _execute(
-        [sys.executable, "-B", str(entry), "-QG210", "-QG215"],
+        [
+            sys.executable,
+            "-B",
+            str(entry),
+            "evidence",
+            "--rule",
+            "QG210",
+            "--rule",
+            "QG215",
+        ],
         timeout=30,
         cwd=workspace,
     )
     if "## QG210" not in known or "## QG215" not in known:
         raise RuntimeError("installed lookup omitted a known rule contract")
     unknown = subprocess.run(
-        [sys.executable, "-B", str(entry), "-QG456"],
+        [sys.executable, "-B", str(entry), "evidence", "--rule", "QG456"],
         text=True,
         capture_output=True,
         check=False,
@@ -1367,7 +1376,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "archive", type=Path, help="full release ZIP from scripts/build_release.py"
+        "archive", type=Path, help="full release ZIP from maintainer/build_release.py"
     )
     args = parser.parse_args(argv)
     artifact = args.archive.resolve(strict=True)

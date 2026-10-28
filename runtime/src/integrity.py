@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-MANIFEST_NAME = "runtime/MANIFEST.sha256"
-RELEASE_LOCK_NAME = "runtime/RELEASE.lock"
+MANIFEST_NAME = "metadata/MANIFEST.sha256"
+RELEASE_LOCK_NAME = "metadata/RELEASE.lock"
 RELEASE_HOME_ENV = "REPO_QUALITY_GUARD_HOME"
 RELEASE_SEAL_ENV = "REPO_QUALITY_GUARD_RELEASE_SEAL"
 INTEGRITY_RULE_CODE = "QG990"
@@ -16,10 +16,8 @@ _PROTECTED_ROOT_FILES = frozenset(
         ".gitattributes",
         "SKILL.md",
         "scripts/quality_guard.py",
-        "scripts/rule_lookup.py",
-        "scripts/evidence_lookup.py",
-        "scripts/evidence_graph.py",
-        "scripts/evidence_statistics.py",
+        "runtime/src/evidence_graph.py",
+        "runtime/src/evidence_statistics.py",
         "scripts/git_hook_install.py",
         "references/RULES.md",
         "references/AUDIT.md",
@@ -27,15 +25,16 @@ _PROTECTED_ROOT_FILES = frozenset(
         "runtime/deploy.py",
         "runtime/build_rqgtest.py",
         "runtime/profile_build.py",
-        "runtime/requirements.txt",
+        "requirements.txt",
         "runtime/dependencies.lock.json",
         "runtime/install_dependencies.py",
-        "runtime/THIRD_PARTY_NOTICES.md",
-        "runtime/RELEASE.lock",
+        "metadata/THIRD_PARTY_NOTICES.md",
+        "metadata/RELEASE.lock",
     }
 )
 _PROTECTED_PREFIXES = (
     "runtime/src/",
+    "maintainer/",
     "scripts/",
     "tests/",
     "packages/rqgtest/",
@@ -141,8 +140,9 @@ def _protected_candidates(root: Path) -> set[str]:
             _IGNORED_SUFFIXES
         ):
             continue
-        if relative in _PROTECTED_ROOT_FILES or relative.startswith(
-            _PROTECTED_PREFIXES
+        if relative != MANIFEST_NAME and (
+            relative in _PROTECTED_ROOT_FILES
+            or relative.startswith(_PROTECTED_PREFIXES)
         ):
             result.add(relative)
     return result
@@ -206,10 +206,11 @@ def _legacy_payload_issues(root: Path) -> list[str]:
                 "README_zh.md",
                 "tests_support",
                 "tools",
-                "scripts/build_release.py",
-                "scripts/verify_release.py",
-                "scripts/install_dev_hooks.py",
-                "scripts/source_pre_push.py",
+                "maintainer",
+                "maintainer/build_release.py",
+                "maintainer/verify_release.py",
+                "maintainer/install_dev_hooks.py",
+                "maintainer/source_pre_push.py",
                 "profiles",
                 "installed/profile/AGENTS.md",
                 "installed/profile/README.md",
@@ -235,7 +236,7 @@ def seal_release_tree(root: Path, distribution: str) -> str:
         distribution: ``skill`` 或 ``agents``。
 
     Returns:
-        ``runtime/MANIFEST.sha256`` 的 SHA-256。
+        ``metadata/MANIFEST.sha256`` 的 SHA-256。
 
     Raises:
         ValueError: distribution 非法或现有 RELEASE.lock 缺少版本。
@@ -246,11 +247,11 @@ def seal_release_tree(root: Path, distribution: str) -> str:
     root = root.resolve()
     lock_path = root / RELEASE_LOCK_NAME
     if not lock_path.is_file():
-        raise ValueError("release 缺少 runtime/RELEASE.lock。")
+        raise ValueError("release 缺少 metadata/RELEASE.lock。")
     current_lock = _lock_values(lock_path)
     version = current_lock["version"]
     if not version:
-        raise ValueError("runtime/RELEASE.lock 的 version 不能为空。")
+        raise ValueError("metadata/RELEASE.lock 的 version 不能为空。")
 
     launcher = root / "scripts" / "quality_guard.py"
 

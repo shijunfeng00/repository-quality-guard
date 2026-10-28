@@ -15,7 +15,7 @@ def main() -> int:
         Zero for ACCEPT/REVIEW_REQUIRED; a nonzero gate status blocks the push.
     """
     root = Path(__file__).resolve().parents[1]
-    if not (root / ".git").exists() or not (root / "runtime/RELEASE.lock").is_file():
+    if not (root / ".git").exists() or not (root / "metadata/RELEASE.lock").is_file():
         print(
             "RQG source pre-push: source root or Git metadata missing", file=sys.stderr
         )

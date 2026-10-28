@@ -160,7 +160,7 @@ def _validate_source(source: Path) -> None:
     try:
         seal = lock["manifest_sha256"]
     except KeyError as error:
-        raise RuntimeError("runtime/RELEASE.lock missing manifest_sha256") from error
+        raise RuntimeError("metadata/RELEASE.lock missing manifest_sha256") from error
     result = integrity.verify_release_integrity(
         {
             integrity.RELEASE_HOME_ENV: str(source),

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
-RULES_PATH = Path(__file__).resolve().parents[1] / "references" / "RULES.md"
+RULES_PATH = Path(__file__).resolve().parents[2] / "references" / "RULES.md"
 RULE_INPUT = re.compile(r"-?(QG\d{3}|RUF:FORMAT)\Z", re.IGNORECASE)
 RULE_ROW = re.compile(r"^\| `(QG\d{3}|RUF:FORMAT)` \| (.*) \|$")
 RULE_SECTION = re.compile(r"^### (QG\d{3}(?: / QG\d{3})*) · (.+)$")
@@ -24,7 +23,7 @@ def requested_codes(args: list[str]) -> list[str]:
     """
     if not args:
         raise ValueError(
-            "用法: python scripts/rule_lookup.py -QG123 -QG153 [更多规则编号]"
+            "用法: python scripts/quality_guard.py evidence --rule QG123 --rule QG153"
         )
     codes: list[str] = []
     for argument in args:
@@ -182,30 +181,3 @@ def render_rule_cards(codes: list[str], rules_text: str) -> str:
                 ]
             )
     return "\n".join(output) + "\n"
-
-
-def main(args: list[str] | None = None) -> int:
-    """执行离线规则查询，成功只输出 Markdown，失败拒绝部分成功。
-
-    Args:
-        args: 命令行中的规则编号；None 时使用进程参数。
-
-    Returns:
-        成功或显示帮助为 0；输入和规则字典错误为 2。
-    """
-    raw_args = sys.argv[1:] if args is None else args
-    if raw_args in (["--help"], ["-h"]):
-        print("用法: python scripts/rule_lookup.py -QG123 -QG153 [更多规则编号]")
-        return 0
-    try:
-        requested = requested_codes(raw_args)
-        markdown = render_rule_cards(requested, RULES_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        print(f"[QG rules] {exc}", file=sys.stderr)
-        return 2
-    sys.stdout.write(markdown)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

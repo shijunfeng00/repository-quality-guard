@@ -110,13 +110,13 @@ QG finding 不是“把命中的语法改没了”就算关闭。除非某条规
 **统一证据查询入口（只读）**：
 
 ```bash
-python scripts/evidence_lookup.py --rule QG003 --rule QG004 --api "consumer validation" --repo /path/to/repository --symbol package.module.consumer --direction callers --depth 3
-python scripts/evidence_lookup.py --repo /path/to/repository --api "existing capability" --api-limit 5
-python scripts/evidence_lookup.py --repo /path/to/repository --symbol package.module.consumer --direction both --depth 2
-python scripts/evidence_lookup.py --rule QG033
+python scripts/quality_guard.py evidence --rule QG003 --rule QG004 --api "consumer validation" --repo /path/to/repository --symbol package.module.consumer --direction callers --depth 3
+python scripts/quality_guard.py evidence --repo /path/to/repository --api "existing capability" --api-limit 5
+python scripts/quality_guard.py evidence --repo /path/to/repository --symbol package.module.consumer --direction both --depth 2
+python scripts/quality_guard.py evidence --rule QG033
 ```
 
-`--rule` 直接投影本文件的规则定义及修复卡；`--api` 复用现有 `doc-search` 的 BM25 Catalog、强内容摘要保鲜和可再生 `docs/api-reference/` 缓存（只生成派生文档，不修改源码）；`--symbol` 使用既有 `RepositoryAnalysisSnapshot → RepositoryRelationGraph → RepositoryTopology` 导出有位置的 `DIRECT_CALL` 已解析前驱/后继和有限源码片段，**不是运行时 traceback 或 MUST 证明**。缺少调用边不代表不存在调用；跨语言/动态调用/插件/反射/外部消费者可能不在静态图中。多名称冲突必须显式给出完整 symbol ID；预算溢出必须标注截断。不得只贴工具返回的片段而不阅读实际函数体、来源文件和调用入口。历史 `scripts/rule_lookup.py` 仍兼容纯规则查询；不额外建设第二套静态图或 runtime agent 服务。
+`--rule` 直接投影本文件的规则定义及修复卡；`--api` 复用现有 `doc-search` 的 BM25 Catalog、强内容摘要保鲜和可再生 `docs/api-reference/` 缓存（只生成派生文档，不修改源码）；`--symbol` 使用既有 `RepositoryAnalysisSnapshot → RepositoryRelationGraph → RepositoryTopology` 导出有位置的 `DIRECT_CALL` 已解析前驱/后继和有限源码片段，**不是运行时 traceback 或 MUST 证明**。缺少调用边不代表不存在调用；跨语言/动态调用/插件/反射/外部消费者可能不在静态图中。多名称冲突必须显式给出完整 symbol ID；预算溢出必须标注截断。不得只贴工具返回的片段而不阅读实际函数体、来源文件和调用入口。规则查询同样通过统一入口，不额外建设第二套静态图或 runtime Agent 服务。
 
 #### QG003 / QG026 · 方法真实 owner
 
@@ -143,7 +143,7 @@ python scripts/evidence_lookup.py --rule QG033
 两侧不同处理均有源码证据，才可排除 QG003。单独声明 Optional、
 单独出现 `if value is None: pass`、存在未审的其它消费路径均不充分。
 
-检索入口：`scripts/evidence_lookup.py --repo <repo> --file <path> --line <line>
+检索入口：`scripts/quality_guard.py evidence --repo <repo> --file <path> --line <line>
 --name <symbol-or-field> --kind variable --direction callers --depth 3`；
 需结合真实正反 Case 和完整函数体审查，不能把 `[UNKNOWN]` 边当作排除证据。
 特别注意必填 TypedDict 字段、伪造非空 ID、没有证据的同名 `.get()`
@@ -227,14 +227,14 @@ python scripts/evidence_lookup.py --rule QG033
 复制并替换实际项目、符号与位置：
 
 ```bash
-python scripts/evidence_lookup.py --rule QG019
-python scripts/evidence_lookup.py --repo /path/to/repo \
+python scripts/quality_guard.py evidence --rule QG019
+python scripts/quality_guard.py evidence --repo /path/to/repo \
   --symbol package.module.function --direction both --depth 3 \
   --trace --context 4 --graph-stats
-python scripts/evidence_lookup.py --repo /path/to/repo \
+python scripts/quality_guard.py evidence --repo /path/to/repo \
   --file package/module.py --line 123 --name function_name \
   --direction callers --depth 3 --trace
-python scripts/evidence_lookup.py --repo /path/to/repo \
+python scripts/quality_guard.py evidence --repo /path/to/repo \
   --symbol package.module.function --variable field_name \
   --direction both --depth 3 --trace
 ```
@@ -575,7 +575,7 @@ Schema 契约违例，源码、Schema 行号、生产者、必需字段差集写
 上述规则发生 CODE_BUG/RULE_BUG 争议时，可对命中源位置执行：
 
 ```bash
-python scripts/evidence_lookup.py --repo <repo> --rule QG004 \
+python scripts/quality_guard.py evidence --repo <repo> --rule QG004 \
   --file <repo-relative-path> --line <1-based-line> --name <variable> --kind variable --depth 3
 ```
 

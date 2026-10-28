@@ -86,11 +86,11 @@ def main() -> int:
     root = args.repo.resolve()
     if (
         (root / "SKILL.md").is_file()
-        and (root / "runtime" / "RELEASE.lock").is_file()
-        and (root / "scripts" / "verify_release.py").is_file()
+        and (root / "metadata" / "RELEASE.lock").is_file()
+        and (root / "maintainer" / "verify_release.py").is_file()
     ):
         print(
-            "目标是 RQG 源码仓库；宿主项目 hook 安装器不能用于自身开发，请运行 scripts/install_dev_hooks.py。",
+            "目标是 RQG 源码仓库；宿主项目 hook 安装器不能用于自身开发，请运行 maintainer/install_dev_hooks.py。",
             file=sys.stderr,
         )
         return 2

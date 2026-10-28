@@ -18,7 +18,7 @@ RQG 当前覆盖 Python、JavaScript、TypeScript、CSS、HTML 与 C/C++，并�
 
 ## Where to look before making changes
 
-- **Finding or suspected defect (`QGxxx`)** → look up the exact rule and required *repair direction* in `references/RULES.md` by running `python scripts/evidence_lookup.py --rule QGxxx`. Use the same CLI with `--repo`, `--file/--line/--name` or `--symbol` to follow producer → initialization/assignment → schema/guard → consumer and its real effects. Read the actual complete functions, not just the returned excerpt. The CLI is an evidence locator, **not** a business-necessity oracle.
+- **Finding or suspected defect (`QGxxx`)** → look up the exact rule and required *repair direction* in `references/RULES.md` by running `python scripts/quality_guard.py evidence --rule QGxxx`. Use the same CLI with `--repo`, `--file/--line/--name` or `--symbol` to follow producer → initialization/assignment → schema/guard → consumer and its real effects. Read the actual complete functions, not just the returned excerpt. The CLI is an evidence locator, **not** a business-necessity oracle.
 - **Writing or restructuring code or an interface** → read `references/CODING_GUIDE.md` first.
 - **Writing or restructuring Python unit tests** → read `references/TEST.md` for the standard Case API and execution commands; apply `references/CODING_GUIDE.md` for test quality requirements.
 - **Changing a QG detector, exemption, severity or existing Case oracle** → require reproducible TP/TN evidence and **explicit maintainer approval of rule semantics first**. Neither a type annotation, a protocol's theoretical possibilities, a framework allowance nor a passing test alone authorizes a detection downgrade. Fix upstream/consumer code before considering a rule change.
@@ -36,17 +36,17 @@ This section only routes to the authoritative references; the detailed evidence 
 
 ### 仓库证据 CLI（只读定位，不代替裁决）
 
-处理 QG finding 前，先运行同一个 `scripts/evidence_lookup.py`：
+处理 QG finding 前，先运行同一个 `scripts/quality_guard.py evidence`：
 
 ```bash
-python scripts/evidence_lookup.py --rule QG004 --repo /repo --api "数据契约消费"
-python scripts/evidence_lookup.py --repo /repo --rule QG004 \
+python scripts/quality_guard.py evidence --rule QG004 --repo /repo --api "数据契约消费"
+python scripts/quality_guard.py evidence --repo /repo --rule QG004 \
   --file runtime/src/topology_facts.py --line 396 \
   --name _incoming_index --kind variable --direction callers --depth 3
-python scripts/evidence_lookup.py --repo /repo \
+python scripts/quality_guard.py evidence --repo /repo \
   --file pkg/module.py --line 88 --name Handler --kind class
-python scripts/evidence_lookup.py --repo /repo --graph-stats
-python scripts/evidence_lookup.py --repo /repo \
+python scripts/quality_guard.py evidence --repo /repo --graph-stats
+python scripts/quality_guard.py evidence --repo /repo \
   --symbol pkg.module.Consumer.method --variable self.provider --depth 3
 ```
 
@@ -76,7 +76,7 @@ Agent 必须逐个核验真实 Producer/Consumer/Guard/Case；找不到边不等
 
 ## 1. 稳定命令
 
-Agent-facing CLI 只保留四个一级命令：
+Agent-facing CLI 提供五个工作流命令：
 
 ```bash
 QG=.agents/skills/repository-quality-guard
@@ -172,9 +172,7 @@ python scripts/quality_guard.py audit <repo> --diff-base <commit>
 收到一个或多个 `QGxxx` Finding 后，**在修改生产代码、填写 JUSTIFIED 或批准修复前**，必须先按编号检索权威修复规则；不得仅依据报告中的短消息或严重度直接整改。
 
 ```bash
-python "$QG/scripts/evidence_lookup.py" --rule QG123 --rule QG153
-# 原 `rule_lookup.py -QG123` 保持兼容，但新任务推荐统一查询入口：
-python scripts/evidence_lookup.py --rule QG153 --rule QG176
+python "$QG/scripts/quality_guard.py" evidence --rule QG123 --rule QG153
 ```
 
 命令直接从 `references/RULES.md` 批量输出 Markdown：规则定义、对应规则族的真实风险、正确修复方向、禁止做法和原文行号。可离线执行，无须目标仓库、API catalog 或额外依赖。编号未知时明确失败，不猜测修复办法。
@@ -199,19 +197,19 @@ python scripts/evidence_lookup.py --rule QG153 --rule QG176
 对 `.get()`、可能缺失、空值/异常兜底、继承分派或跨函数缺陷整改，**不仅检索 QG 规则，还必须主动查询 upstream callers / owner / source**；不能仅凭当前代码片段、类型系统允许或告警消息判断业务需求。
 
 ```bash
-python "$QG/scripts/evidence_lookup.py" --rule QG003 --rule QG004 \
+python "$QG/scripts/quality_guard.py" evidence --rule QG003 --rule QG004 \
   --api "consumer validation" --repo /path/to/repository \
   --symbol package.module.consumer --direction callers --depth 3
 # 查询单个符号的直接调用上游/下游，缺省只查上游
-python "$QG/scripts/evidence_lookup.py" --repo /path/to/repository \
+python "$QG/scripts/quality_guard.py" evidence --repo /path/to/repository \
   --symbol package.module.consumer --direction both --depth 2
 # 不涉及源码图时，只查权威规则
-python "$QG/scripts/evidence_lookup.py" --rule QG033
+python "$QG/scripts/quality_guard.py" evidence --rule QG033
 ```
 
 `--api` 直接复用现有 `doc-search` 的 BM25 API Catalog 和强源码摘要保鲜，仅更新可再生的 `docs/api-reference/` 缓存（无新图数据库），不复刻 BM25/parser；候选搜索不证明 owner 唯一，必须明确 `--symbol` 选择要追的函数。工具复用现有 RepositoryTopology，不运行被审计代码，不额外安装图索引。只输出静态已解析的直接调用边、声明位置和有限源码片段，**不证明某条调用路径实际执行，也不证明全部合法 caller 已发现**。多态、回调、跨语言、动态调用等未覆盖的边必须明确按 UNKNOWN 处理；无边不得推出业务不可达。`--direction callers` 用于从报错函数逆向看已知调用链；`--direction both` 帮助人工阅读相关的 producer/consumer，不是强制无限展开全图。
 
-Agent 必须实际打开相应函数体、schema、校验入口和测试 Case，证明真实可达的合法缺失是否存在、guard 是否支配当前消费点、值是否变异以及失败时是否有独立业务语义。不存在合法缺失 Case 时，required contract 直接访问并 fail-fast；不得因为 `NotRequired` 或 `.get()` 本身语法有效就放行。处理稳定 QG 疑似误报时，记录成对 Cases 并上报人工裁决；不可擅改既有稳定 QG。旧 `rule_lookup.py` 作为兼容命令保留，无需学习第二套图服务。
+Agent 必须实际打开相应函数体、schema、校验入口和测试 Case，证明真实可达的合法缺失是否存在、guard 是否支配当前消费点、值是否变异以及失败时是否有独立业务语义。不存在合法缺失 Case 时，required contract 直接访问并 fail-fast；不得因为 `NotRequired` 或 `.get()` 本身语法有效就放行。处理稳定 QG 疑似误报时，记录成对 Cases 并上报人工裁决；不可擅改既有稳定 QG。图与规则查询均由唯一工作流入口提供。
 
 ### `verify`
 
@@ -366,11 +364,11 @@ git add -A -- .agents/skills/repository-quality-guard
 
 记录新增、修改和删除。
 
-`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。托管 `.git/hooks/pre-push` 同样不进入 Git 历史；Agent 必须在 fresh clone / 任务开始时确认它存在，并通过 `scripts/git_hook_install.py` 安装缺失 hook。已有非托管 hook 不得被覆盖。 RQG 源码仓库自己的开发 hook 由 source-only `scripts/install_dev_hooks.py` 安装，使用独立 marker 与自审入口；它不得由面向宿主项目的 `scripts/git_hook_install.py` 代装，也不得随 `.agents` 部署。
+`修改说明.md` 与运行时相反：它必须作为审计附件交付，但默认不进入业务 commit。托管 `.git/hooks/pre-push` 同样不进入 Git 历史；Agent 必须在 fresh clone / 任务开始时确认它存在，并通过 `scripts/git_hook_install.py` 安装缺失 hook。已有非托管 hook 不得被覆盖。 RQG 源码仓库自己的开发 hook 由 source-only `maintainer/install_dev_hooks.py` 安装，使用独立 marker 与自审入口；它不得由面向宿主项目的 `scripts/git_hook_install.py` 代装，也不得随 `.agents` 部署。
 
 ## 8. 完整性与依赖
 
-RQG release 通过 `runtime/MANIFEST.sha256`、`runtime/RELEASE.lock` 和 launcher seal 校验受保护文件。运行过程中生成的 `__pycache__`、`*.pyc`、`*.pyo`、`.pytest_cache`、`.ruff_cache`、`.mypy_cache` 属于可再生缓存，不参与 QG990 runtime integrity；release builder 仍会在正式发行介质中剥离它们。Portable Skill 与 Installed tree 使用不同 distribution policy：
+RQG release 通过 `metadata/MANIFEST.sha256`、`metadata/RELEASE.lock` 和 launcher seal 校验受保护文件。运行过程中生成的 `__pycache__`、`*.pyc`、`*.pyo`、`.pytest_cache`、`.ruff_cache`、`.mypy_cache` 属于可再生缓存，不参与 QG990 runtime integrity；release builder 仍会在正式发行介质中剥离它们。Portable Skill 与 Installed tree 使用不同 distribution policy：
 
 - `skill`：允许并要求正式离线依赖介质；
 - `agents`：只保留第一方 runtime 与锁，不携带完整 wheelhouse / node_modules archive。

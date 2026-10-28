@@ -43,9 +43,9 @@ def _release_identity(bundle: Path) -> str:
         bundle / "runtime" / "src" / "integrity.py", "rqg_integrity"
     )
     try:
-        manifest = bundle / "runtime" / "MANIFEST.sha256"
+        manifest = bundle / "metadata" / "MANIFEST.sha256"
         if not manifest.is_file():
-            raise RuntimeError("source Skill is missing runtime/MANIFEST.sha256")
+            raise RuntimeError("source Skill is missing metadata/MANIFEST.sha256")
         digest = hashlib.sha256()
         with manifest.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -154,6 +154,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
         "vendor",
         "wheels",
         "packages",
+        "maintainer",
     )
 
     def _ignore_distribution_assets(directory: str, names: list[str]) -> set[str]:
@@ -178,6 +179,7 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
         target / "tests",
         target / "tests_support",
         target / "tools",
+        target / "maintainer",
         *(
             target / "scripts" / name
             for name in (
@@ -206,13 +208,13 @@ def _copy_agents_tree(bundle: Path, target: Path) -> None:
     required = (
         "SKILL.md",
         "scripts/quality_guard.py",
-        "scripts/evidence_lookup.py",
-        "scripts/evidence_graph.py",
-        "scripts/rule_lookup.py",
+        "runtime/src/evidence_graph.py",
         "scripts/git_hook_install.py",
         "runtime/install_dependencies.py",
         "runtime/dependencies.lock.json",
         "runtime/src/workflow.py",
+        "runtime/src/evidence_lookup.py",
+        "runtime/src/evidence_graph.py",
         "runtime/src/profile_api.py",
         "runtime/src/integrity.py",
     )
@@ -333,8 +335,7 @@ def _git_persistence_preflight(repo: Path, destination: Path) -> None:
     required = [
         relative / "SKILL.md",
         relative / "scripts" / "quality_guard.py",
-        relative / "scripts" / "evidence_lookup.py",
-        relative / "scripts" / "evidence_graph.py",
+        relative / "runtime" / "src" / "evidence_graph.py",
         relative / "scripts" / "git_hook_install.py",
         relative / "runtime" / "install_dependencies.py",
         relative / "runtime" / "src" / "workflow.py",

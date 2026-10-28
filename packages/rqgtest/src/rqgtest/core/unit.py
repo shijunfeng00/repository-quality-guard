@@ -62,16 +62,14 @@ def _stateful_loop():
 
 
 def _invocation(value):
-    if (
-        not isinstance(value, tuple)
-        or len(value) != 2
-        or not isinstance(value[0], tuple)
-        or not isinstance(value[1], dict)
-    ):
-        raise TypeError(
-            "Each invocation must be (tuple(args), dict(kwargs)); wrap a dict argument as ((payload,), {})"
-        )
-    return value
+    """Normalize positional-only and positional/keyword invocation records."""
+    if not isinstance(value, tuple):
+        raise TypeError("Each invocation must be (args,) or (args, kwargs)")
+    if len(value) == 1 and isinstance(value[0], tuple):
+        return value[0], {}
+    if len(value) == 2 and isinstance(value[0], tuple) and isinstance(value[1], dict):
+        return value
+    raise TypeError("Each invocation must be (args,) or (args, kwargs)")
 
 
 class TestUnit:
@@ -93,10 +91,9 @@ class TestUnit:
             return TestUnit._stateful(case, entry, name, max_samples)
         inputs = case.get_input_data()
         expected = case.get_output_data()
-        if (
-            isinstance(inputs, tuple)
-            and len(inputs) == 2
-            and isinstance(inputs[1], dict)
+        if isinstance(inputs, tuple) and (
+            (len(inputs) == 1 and isinstance(inputs[0], tuple))
+            or (len(inputs) == 2 and isinstance(inputs[1], dict))
         ):
             args, kwargs = _invocation(inputs)
             if isinstance(expected, (Iterator, DataLoader)):
@@ -199,8 +196,8 @@ class TestUnit:
 
         Initialization: a leading (args, kwargs) row, if present, constructs
         a class or calls a function factory. It is not a measured operation.
-        Operations: (method_or_None, args, kwargs) tuples, paired 1:1 with
-        the independent oracle stream from get_output_data().
+        Operations: (method_or_None, args, kwargs), or (receiver, args[, kwargs])
+        for a declared unbound method. Every operation has one oracle.
         """
         inputs = case.get_input_data()
         if isinstance(inputs, (str, bytes, Mapping)) or not isinstance(
@@ -219,7 +216,12 @@ class TestUnit:
         first = _safe_next(iterator, name, "input", [])
         if first is _MISSING:
             raise ValueError(f"Empty stateful input stream for {name}")
-        if isinstance(first, tuple) and len(first) == 2:
+        if (
+            isinstance(first, tuple)
+            and len(first) == 2
+            and isinstance(first[0], tuple)
+            and isinstance(first[1], dict)
+        ):
             args, kwargs = _invocation(first)
             try:
                 target = entry(*args, **kwargs)
@@ -265,20 +267,40 @@ class TestUnit:
                     ValueError(f"Stateful input/output lengths differ at row {i}"),
                     results,
                 )
-            if not isinstance(call, tuple) or len(call) != 3:
-                raise TypeError(
-                    f"Stateful operation {i} must be (method_or_None, args, kwargs)"
-                )
-            method, raw_args, raw_kwargs = call
-            if method is not None and (not isinstance(method, str) or not method):
-                raise TypeError(f"Stateful operation {i} has an invalid method name")
-            args, kwargs = _invocation((raw_args, raw_kwargs))
-            operation = target if method is None else getattr(target, method)
+            # Each explicit receiver row executes the declared instance method.
+            # One row maps to exactly one independent Oracle.
+            receiver_row = (
+                isinstance(call, tuple)
+                and len(call) in (2, 3)
+                and isinstance(call[1], tuple)
+                and (len(call) == 2 or isinstance(call[2], dict))
+                and not isinstance(call[0], (str, type(None)))
+            )
+            if receiver_row:
+                if inspect.isclass(entry):
+                    raise TypeError("Receiver operations require a method entrypoint")
+                receiver, raw_args = call[:2]
+                operation = entry
+                args = (receiver, *raw_args)
+                kwargs = call[2] if len(call) == 3 else {}
+                label = "call"
+            else:
+                if not isinstance(call, tuple) or len(call) != 3:
+                    raise TypeError(
+                        f"Stateful operation {i} must be (receiver, args[, kwargs]) or (method_or_None, args, kwargs)"
+                    )
+                method, raw_args, raw_kwargs = call
+                if method is not None and (not isinstance(method, str) or not method):
+                    raise TypeError(
+                        f"Stateful operation {i} has an invalid method name"
+                    )
+                args, kwargs = _invocation((raw_args, raw_kwargs))
+                operation = target if method is None else getattr(target, method)
+                label = method if method is not None else "call"
             if not callable(operation):
                 raise TypeError(
                     f"Stateful operation target is not callable: {name}[{i}]"
                 )
-            label = method if method is not None else "call"
             # An exception class as the independent oracle explicitly states
             # that this one transition is expected to throw. This supports
             # mixed return/exception FSM sequences without Step/type metadata.

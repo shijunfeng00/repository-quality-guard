@@ -378,3 +378,85 @@ class Regression(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PositionalOnlyCalculatorCase(TestCase):
+    def get_enterpoint(self):
+        return Counter.add
+
+    def get_input_data(self):
+        return ((Counter(10), 2),)
+
+    def get_output_data(self):
+        return 12
+
+    def equals(self, expected, actual):
+        return expected == actual
+
+
+class StatefulReceiverCase(StatefulTestCase):
+    def get_enterpoint(self):
+        return Counter.add
+
+    def get_input_data(self):
+        counter = Counter(10)
+        yield counter, (2,)
+        yield counter, (3,)
+
+    def get_output_data(self):
+        yield 12
+        yield 15
+
+    def equals(self, expected, actual):
+        return expected == actual
+
+
+class StatefulReceiverKeywordCase(StatefulTestCase):
+    def get_enterpoint(self):
+        return Counter.add
+
+    def get_input_data(self):
+        counter = Counter(10)
+        yield counter, (), {"amount": 2}
+        yield counter, (), {"amount": 3}
+
+    def get_output_data(self):
+        yield 12
+        yield 15
+
+    def equals(self, expected, actual):
+        return expected == actual
+
+
+class StatefulReceiverLengthMismatchCase(StatefulTestCase):
+    def get_enterpoint(self):
+        return Counter.add
+
+    def get_input_data(self):
+        counter = Counter(10)
+        yield counter, (2,)
+        yield counter, (3,)
+
+    def get_output_data(self):
+        yield 12
+
+    def equals(self, expected, actual):
+        return expected == actual
+
+
+class PositionalOnlyInvocationTests(unittest.TestCase):
+    def test_single_unbound_method(self):
+        results = TestUnit.run(PositionalOnlyCalculatorCase(), "Calculator")
+        self.assertEqual([r.status for r in results], ["PASS"])
+
+    def test_stateful_receiver_matches_oracles(self):
+        results = TestUnit.run(StatefulReceiverCase(), "Counter")
+        self.assertEqual([r.status for r in results], ["PASS", "PASS"])
+
+    def test_stateful_receiver_kwargs(self):
+        results = TestUnit.run(StatefulReceiverKeywordCase(), "Counter")
+        self.assertEqual([r.status for r in results], ["PASS", "PASS"])
+
+    def test_stateful_receiver_requires_one_oracle_per_call(self):
+        with self.assertRaisesRegex(RuntimeError, "lengths differ"):
+            TestUnit.run(StatefulReceiverLengthMismatchCase(), "Counter")

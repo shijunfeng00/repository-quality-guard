@@ -111,7 +111,8 @@ class TestCase(ITestCase):
 class StatefulTestCase(ITestCase):
     """Execute an ordered input sequence while retaining the production state.
 
-    First (args, kwargs) optionally creates a class instance or function-factory
-    product. Subsequent (method_or_None, args, kwargs) tuples invoke the same
-    retained target. Every operation has exactly one independent output oracle.
+    For unbound instance methods, each (receiver, args[, kwargs]) row executes the method
+    on the supplied receiver with a matching oracle. For class/factory targets,
+    a leading (args, kwargs) constructs state, followed by ordered
+    (method_or_None, args, kwargs) steps with independent oracles.
     """

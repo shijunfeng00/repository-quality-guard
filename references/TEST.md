@@ -46,7 +46,7 @@ class AddCase(TestCase):
         return add
 
     def get_input_data(self):
-        return ((2, 3), {})
+        return ((2, 3),)
 
     def get_output_data(self):
         return 5
@@ -64,7 +64,7 @@ class AddCase(TestCase):
 | 方法 | 职责 |
 | --- | --- |
 | `get_enterpoint(self)` | 返回生产函数、可调用对象或类对象本身 |
-| `get_input_data(self)` | 返回 `(args: tuple, kwargs: dict)`，或按序提供多组输入 |
+| `get_input_data(self)` | 返回 `(args,)` 或 `(args, kwargs)`，多组样本逐项提供 |
 | `get_output_data(self)` | 提供独立确定的预期值，或与输入逐项对应的预期值 |
 | `equals(self, expected, actual)` | 消费执行器传入的实际结果，返回 `bool` |
 
@@ -74,35 +74,59 @@ class AddCase(TestCase):
 
 ## 状态与多组数据
 
-多组独立输入仍使用 `TestCase`：
+多组独立输入使用 `TestCase`：
 
 ```python
 def get_input_data(self):
-    yield ((2, 3), {})
-    yield ((-2, 1), {})
+    yield ((2, 3),)
+    yield ((-2, 1),)
 
 def get_output_data(self):
     yield 5
     yield -1
 ```
 
-存在顺序状态依赖时使用 `StatefulTestCase`。例如入口是 `Counter` 类，初始化之后连续调用同一实例：
+### 类的实例方法
+
+`get_enterpoint()` 返回未绑定方法；`get_input_data()` 提供实例和方法参数，`TestUnit` 执行实际调用。例：
 
 ```python
-def get_enterpoint(self):
-    return Counter
+# 生产代码：Calculator(c).calculate(a, b) -> (a + b) * c
+class CalculatorMethodCase(TestCase):
+    def get_enterpoint(self):
+        return Calculator.calculate
 
-def get_input_data(self):
-    yield ((10,), {})              # 初始化（不消耗预期值）
-    yield ("add", (2,), {})       # 12
-    yield ("add", (3,), {})       # 15
+    def get_input_data(self):
+        return ((Calculator(10), 2, 3),)
 
-def get_output_data(self):
-    yield 12
-    yield 15
+    def get_output_data(self):
+        return 50
+
+    def equals(self, expected, actual):
+        return expected == actual
 ```
 
-操作元组为 `(method_or_None, args, kwargs)`；`None` 表示直接调用保留的函数、闭包或可调用对象。函数本身具备全局状态时，从操作元组开始，不提供初始化项。初始化工厂则在首项提供 `(args, kwargs)`。执行器按顺序执行每项操作。
+连续调用同一个实例时，使用 `StatefulTestCase`；每个输入对应一项预期：
+
+```python
+class CalculatorSequenceCase(StatefulTestCase):
+    def get_enterpoint(self):
+        return Calculator.calculate
+
+    def get_input_data(self):
+        calculator = Calculator(10)
+        yield calculator, (2, 3)
+        yield calculator, (4, 5)
+
+    def get_output_data(self):
+        yield 50
+        yield 90
+
+    def equals(self, expected, actual):
+        return expected == actual
+```
+
+实例方法和异步入口的可运行示例见 `packages/rqgtest/README.md`。
 
 输入和预期数据可由 `JSONDataLoader`、`JSONLDataLoader`、`CSVDataLoader`、`PickleDataLoader` 读取 JSON、JSONL、CSV 或可信的单文件 Pickle 序列化记录；Loader 原样输出记录，不自动展开记录内部列表或字典。只接受明确的文件路径，不扫描目录。可选 `preprocessing(source, output)` 由具体项目定义，按需生成 `tests/cases/.cache/` 缓存；输入、预期组数必须相等。
 

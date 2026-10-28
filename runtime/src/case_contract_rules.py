@@ -722,7 +722,9 @@ def _case_entrypoint_origin_findings(
         target = statement.value
         # The entrypoint getter must provide a callable reference, not invoke
         # arbitrary construction or production work before TestUnit owns it.
-        if isinstance(target, ast.Call):
+        if not isinstance(target, ast.Lambda) and any(
+            isinstance(node, ast.Call) for node in ast.walk(target)
+        ):
             findings.append(
                 _finding(
                     path,
@@ -1330,16 +1332,27 @@ def _graph_entrypoint_call_witness(
     }
     if len(entry_ids) != 1 or len(caller_ids) != 1:
         return None
-    return_lines = {
-        node.lineno
+    # CALLABLE_REFERENCE also observes the parent of an Attribute.  For a
+    # returned ``Class.method`` only the leaf method is the TestUnit entrypoint;
+    # a ``Class(...)`` receiver in test inputs is a distinct constructor call.
+    returns = {
+        node.lineno: node.value
         for node in ast.walk(entry)
-        if isinstance(node, ast.Return) and node.value is not None
+        if isinstance(node, ast.Return)
+        and isinstance(node.value, (ast.Name, ast.Attribute))
     }
+    symbols = {symbol.symbol_id: symbol for symbol in topology.symbols}
     targets = {
         edge.target_id
         for entry_id in entry_ids
         for edge in topology.outgoing(entry_id, (UsageKind.CALLABLE_REFERENCE,))
-        if edge.path == path and edge.confidence == "high" and edge.line in return_lines
+        if edge.path == path
+        and edge.confidence == "high"
+        and edge.line in returns
+        and (
+            isinstance(returns[edge.line], ast.Name)
+            or symbols[edge.target_id].name == returns[edge.line].attr
+        )
     }
     if not targets:
         return None

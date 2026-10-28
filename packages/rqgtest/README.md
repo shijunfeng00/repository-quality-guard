@@ -40,7 +40,7 @@ class AddCase(TestCase):
         return add
 
     def get_input_data(self):
-        return ((2, 3), {})
+        return ((2, 3),)
 
     def get_output_data(self):
         return 5
@@ -58,7 +58,7 @@ class AddCase(TestCase):
 | 方法 | 返回值 |
 | --- | --- |
 | `get_enterpoint()` | 被测函数、类或可调用对象 |
-| `get_input_data()` | `(args, kwargs)`，或多组输入 |
+| `get_input_data()` | `(args,)` 或 `(args, kwargs)`，也可提供多组输入 |
 | `get_output_data()` | 独立确定的预期值，或多组预期值 |
 | `equals(expected, actual)` | 比较结果（`bool`） |
 
@@ -68,13 +68,50 @@ class AddCase(TestCase):
 
 ```python
 def get_input_data(self):
-    yield ((2, 3), {})
-    yield ((-2, 1), {})
+    yield ((2, 3),)
+    yield ((-2, 1),)
 
 def get_output_data(self):
     yield 5
     yield -1
 ```
+
+### 实例方法（每组独立构造）
+
+测试普通实例方法时，`get_enterpoint()` 直接返回类的方法引用；`get_input_data()` 将实例作为第一个位置参数交给 `TestUnit`，由框架执行方法：
+
+**`calculator.py`**
+
+```python
+class Calculator:
+    def __init__(self, c):
+        self.c = c
+
+    def calculate(self, a, b):
+        return (a + b) * self.c
+```
+
+**`tests/test_calculator.py`**
+
+```python
+from calculator import Calculator
+from rqgtest import TestCase
+
+class CalculatorMethodCase(TestCase):
+    def get_enterpoint(self):
+        return Calculator.calculate
+
+    def get_input_data(self):
+        return ((Calculator(10), 2, 3),)
+
+    def get_output_data(self):
+        return 50
+
+    def equals(self, expected, actual):
+        return expected == actual
+```
+
+多组独立输入逐条创建实例，连续调用同一实例使用 `StatefulTestCase`。每条输入对应一个独立预期结果。
 
 ## 异步生产入口
 
@@ -86,7 +123,7 @@ async def fetch_count():
 
 class FetchCountCase(TestCase):
     def get_enterpoint(self): return fetch_count
-    def get_input_data(self): return ((), {})
+    def get_input_data(self): return ((),)
     def get_output_data(self): return 7
     def equals(self, expected, actual): return expected == actual
 ```
@@ -95,29 +132,30 @@ class FetchCountCase(TestCase):
 
 ## StatefulTestCase
 
-用于需要顺序操作同一实例、闭包或有状态函数的场景。下面的 `Counter(10)` 依次执行两次 `add`：
+测试同一个对象的连续状态变化时，声明真实实例方法，在输入中复用实例；每一次 `yield` 都对应一个预期值：
 
 ```python
+from calculator import Calculator
 from rqgtest import StatefulTestCase
 
-class CounterCase(StatefulTestCase):
+class CalculatorSequenceCase(StatefulTestCase):
     def get_enterpoint(self):
-        return Counter
+        return Calculator.calculate
 
     def get_input_data(self):
-        yield ((10,), {})         # 初始化，不消耗预期值
-        yield ("add", (2,), {})  # 调用实例方法
-        yield ("add", (3,), {})
+        calculator = Calculator(10)
+        yield calculator, (2, 3)
+        yield calculator, (4, 5)
 
     def get_output_data(self):
-        yield 12
-        yield 15
+        yield 50
+        yield 90
 
     def equals(self, expected, actual):
         return expected == actual
 ```
 
-其中操作项为 `(方法名或 None, args, kwargs)`；`None` 表示调用保留的可调用对象。无须实例初始化的有状态函数直接从操作项开始。
+实例方法带关键字参数时，每项输入可写为 `(calculator, args, kwargs)`。
 
 ## DataLoader
 

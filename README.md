@@ -39,7 +39,6 @@ This is not a checklist or a style guide. It is an **enforced high-quality deliv
 - [`修改说明.md`: the delivery answer sheet an Agent cannot skip](#修改说明md-the-delivery-answer-sheet-an-agent-cannot-skip)
 - [Quality check failed? Rework from the report](#quality-check-failed-rework-from-the-report)
 - [Project customization: make RQG fit your repository](#project-customization-make-rqg-fit-your-repository)
-- [License](#license)
 
 ---
 
@@ -192,33 +191,19 @@ RQG is not “another Agent that reviews the first Agent.” It separates the wo
 
 # Quick start
 
-RQG is installed as an Agent Skill. In simple terms, a Skill is **a set of executable working rules and tools installed for a Coding Agent**. After installation, you should not need to manually run a long sequence of audit commands for every task. The Agent is expected to follow the workflow itself: update interface documentation, search for existing capabilities, audit changes, fix issues, complete `修改说明.md`, and run final verification.
+Ask your Coding Agent: **“Install and enable [Repository Quality Guard](https://github.com/shijunfeng00/repository-quality-guard) as a Skill for this project, and set up the Git quality gate.”** Then request development or code review as usual. The Agent uses RQG to find existing capabilities, review changes, resolve findings, complete `修改说明.md`, and run final verification.
 
-```bash
-# 1. Install Repository Quality Guard
-npx skills add shijunfeng00/repository-quality-guard
+For example: **“Use RQG to audit my latest code changes, fix the quality issues, and give me the complete verification result.”**
 
-# 2. Install runtime dependencies
-python .agents/skills/repository-quality-guard/runtime/install_dependencies.py
+### Three audit modes
 
-# 3. Install the Git delivery quality gate
-python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
-```
+| Mode | When to use it | What to ask your Agent |
+| --- | --- | --- |
+| **normal (default)** | Everyday development and change reviews, including relevant existing quality debt | “Audit this change with RQG in normal mode.” |
+| **ignore-diff** | Review the quality of the entire current project | “Review the whole project with RQG in ignore-diff mode.” |
+| **cleanup** | Dedicated quality-debt cleanup targeting Critical, Error, and Warning findings in production code | “Use RQG cleanup mode to clear production quality debt.” |
 
-For source/checkpoint delivery, RQG uses one canonical full-repository ZIP containing the Git metadata, local Profile catalog, complete source, and offline dependency media. Installation into `.agents` remains intentionally slim: deployment seals only the runtime and authorized policy required at execution time, and does not copy the repository's offline wheel/Node payload or source Profile catalog.
-
-RQG exposes these stable workflow operations to the Agent:
-
-```text
-doc-generate   Turn existing functions / classes / interfaces into searchable documentation
-doc-search     Search those docs for existing interfaces, similar capabilities, and the real owner of a responsibility
-audit          Scan the current change, find quality problems, and maintain 修改说明.md
-verify         Re-check the latest code, report, and evidence and produce the final gate result
-```
-
-Normal users usually do not need to run these commands one by one. They are the standard workflow the Agent should perform while completing a development task.
-
-Want the complete rule reference first? Read **[`references/RULES.md`](references/RULES.md)**.
+The Agent uses `normal` by default; you can select either of the other modes for a focused review. See the [QG rule reference](references/RULES.md) for details.
 
 ---
 
@@ -249,9 +234,6 @@ All of these checks end in only three formal states: **`ACCEPT`** = the quality 
 
 The complete QG definitions live in **[`references/RULES.md`](references/RULES.md)**.
 
-### Structure-topology calibration
-
-The current structure policy keeps the same QG families but makes structural decisions evidence-driven: QG001/QG013/QG168 consume normalized ownership and reuse topology; QG003–QG006 distinguish internal formal contracts from external/unknown boundaries; QG008 reviews 21–50 methods and remains Critical above 50; QG019 reviews 1001–2000-line owners and remains Critical above 2000. Unsupported compiler/dependency evidence stays unknown/N/A rather than being guessed. Existing projects may therefore see fewer helper findings and some QG003/QG004 candidates reclassified to QG026; this is a semantic calibration, not an automatic waiver.
 
 ---
 
@@ -451,17 +433,3 @@ A complete executable example is included in the repository. It demonstrates JSO
 **➡️ [View the complete Profile example: `profiles/qg-example-profile/`](profiles/qg-example-profile/)**
 
 ---
-
-# License
-
-Repository Quality Guard is open source under the **Apache License 2.0**.
-
-You may use, modify, and distribute the project subject to the license terms. See [`LICENSE`](LICENSE) in the repository root for the full license text.
-
----
-
-The topology model explicitly records compiler-proven `UsageKind.STATIC_POLYMORPHIC_DISPATCH` edges rather than guessing virtual calls. The Python scanner resolves decorator identifiers exactly (for example, `decorator_leaf` distinguishes `abc.abstractmethod` from lookalike names); C++ CRTP relations are accepted only with compiler-supported topology evidence. These are scanner implementation capabilities, not new end-user CLI entrypoints.
-
-### Audit modes
-
-The only supported mode option is `--mode normal|ignore-diff|cleanup`; there is no `--debt-mode` compatibility alias. Normal is the default (omit `--mode`). Explicit user authorization is required for `--mode ignore-diff` (current-source audit) or `--mode cleanup` (all ordinary production Critical/Error/Warning debt must be zero; ACCEPT or REJECT only). Git-free directories are auditable in normal mode; baseline and historical deltas are N/A, while current static findings and relation graph remain available. Audit and verify must use the same mode.

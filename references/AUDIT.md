@@ -1,97 +1,60 @@
-# 审计协议
+# 审计与验收协议
 
-## Skill 升级的 Git 持久化门禁
+本文件规定 `quality_guard.py audit` 生成的 `修改说明.md`、人工裁决和只读 `verify` 的**外部可观察合同**。规则修复方向见 [`RULES.md`](RULES.md)，代码修改规范见 [`CODING_GUIDE.md`](CODING_GUIDE.md)。
 
-`.agents/skills/repository-quality-guard/**` 是仓库协作运行时，必须进入 Git；根 `AGENTS.md` 是宿主共享协调文件；QG 从不覆盖已有文件，仅当本轮 deploy 在原本缺失时创建了根 `AGENTS.md` 才可能属于同一升级提交。它们与默认不入 Git 的 `修改说明.md` 属于不同交付通道。正式升级默认始终是**从任意旧/残缺版本到当前 manifest 的全量替换**，不要求逐版本升级；deploy 用 staging 构造完整目标树并原子替换旧目录，目标版本不存在的历史文件必须消失。仅在本机 deploy 成功不证明可交付：必须至少 `git add -A -- .agents/skills/repository-quality-guard`，只有本轮同步过根 `AGENTS.md` 时才一并 stage，提交新增/修改/删除，并从 commit fresh clone。clone 中必须存在 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py`、完整 `runtime/src` 与 `SKILL.md`；根 `AGENTS.md` 仅对本轮受管理模板做条件验证，且必须能实跑报告闭环。若用户明确要求本机临时安装而不提交，必须把“不可由同事 pull 复现”列为显式非持久化状态，不得声称仓库升级完成。
+## 基线与模式
 
-Canonical full-repository ZIP 是外部独立运行、备份与 authoring 的唯一完整介质：必须携带 `.git`、完整本地 Profile catalog，并可以携带 `README.md`、`README_zh.md` 与 authoring/release tools，同时必须携带锁定 Python wheelhouse 与 Node 离线 payload，使 `runtime/install_dependencies.py --offline` 在无网络环境完成 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须裁掉 README、测试、authoring tools、Profile authoring 文件及第三方离线介质，仅保留第一方运行时代码、依赖锁与冻结策略。项目或 Profile 可以要求安装托管 pre-push；hook 调用当前安装策略下的 `verify`，因此报告缺失、未完成或 stale 会与代码 REJECT 一样阻止 push。
+- `normal` 为默认模式。Git 可用时按用户指定的 `--diff-base` 或任务起点冻结的 accepted design baseline 比较；无 Git 时历史 Delta 为 N/A，不擅自切换模式。
+- `ignore-diff` 忽略 Git 差分，但不豁免当前质量规则；`cleanup` 要求清除当前生产范围的普通 C/E/W。仅用户明确授权方可选择二者。
+- `ignore-diff` / `cleanup` 不与 `--diff-base` 或 `--staged` 混用。`audit` 与 `verify` 必须使用相同模式、基线、Profile 和源码。
+- 用户未授权接口破坏时，基线内的公开 API、参数、返回值、协议和 owner 为默认契约；出现变化必须说明必要性与调用方影响。
+- 实际 Git author / committer 由真实贡献和本地 Git 工作流决定，不能根据提交者姓名猜测设计基线。
 
-## 报告结构
+## `修改说明.md` 报告
 
-固定九段：审计元数据、变更事实、静态质量门禁、新增与接口必要性审判、语义审计账本、十一项架构拷问、Reduction Pass、最终门禁、提交 Commit。
+正式报告固定九部分：审计元数据、变更事实、静态质量门禁、ADD（新增接口必要性）、SEM（语义审计账本）、架构十一问、Reduction Pass、最终门禁、提交建议。
 
-机器自动区块不可改。报告中的 Git baseline 同时是本轮 accepted design baseline：用户指定 revision 优先，否则在开始修改前冻结任务起点基线；它不能按 author 姓名推导，也不能在本轮中途移动到新 commit 来缩小差分。文件变化只列 A/M/D/R；函数、方法、类、property、变量与 API 变化进入 definition/interface 账本，避免按文件重复解释。
+机器生成的源码、Git 差分、Finding、身份/哈希等字段不可手改；人工字段必须依据当前源码和真实消费者填写，不准用旧版报告或没有核验的推测代替。
 
-## 审计产物与最终交付
+`audit` 负责生成/刷新报告，报告缺失人工裁决时仍为未验收（rc=3）。`修改说明.md` 是独立审计交付物，默认不进入业务 Git commit；mbox、ZIP、单测 PASS 均不能替代。若用户明确要求其进入版本管理，再按项目流程处理。
 
-`修改说明.md` 是代码修改任务的强制审计产物。它默认留在被审计仓库工作区/交付附件中，不属于业务 Git 差分；patch、mbox、commit、bundle、zip 或 clean worktree 都不能替代它。用户若只指定某种代码交付格式，仍必须另外交付完整 `修改说明.md`。只有用户明确要求把审计报告纳入版本控制时才进入 Git。
+## ADD：接口必要性
 
-最终回复必须显式汇报 `修改说明.md` validator/报告门禁、静态事实门禁、模型语义与最终状态，并列出未执行或受环境阻断的验证。`audit GENERATED`/rc=3/PENDING 只表示模板已生成，不能作为完成结论。最终 `verify` 后任何代码或报告变化都会使结论失效，必须重新闭环。
+每个新增的生产 function/method/class/helper 应记录复用搜索、唯一能力所有者、调用方与实际用途、可删除/内联/合并的理由。`doc-search` 只产生候选，未命中不证明没有既有实现。
 
-## Merge collaboration baseline
+## SEM：证据裁决
 
-普通 accepted design baseline 由用户指定 revision 或任务起点决定，不能按 author 推导。若项目存在额外协作/合并基线规则，由对应 Profile/AGENTS 声明；Core 不内置组织、作者或仓库身份。Git authorship 始终遵循实际贡献者及 Git 原生语义。
+- 对本轮新增/升级的普通 Critical/Error/Warning 必须解决；触达文件的历史债务必须逐项修复或以真实消费者/协议/行为证据解释保留理由与关闭条件。未触达债务不应无界扩大本轮工作。
+- 结论须按 `hypothesis → trace → evidence → finding` 核验：从变更点追踪 Producer、Schema/Guard、Consumer、状态/异常/事务/并发与可观察后果。缺乏失败路径的猜测不能写成高确定性的阻断。
+- 必需内部合同优先 fail-loud。静默 fallback、宽松 return-shape、suppression 和额外依赖的保留，需要有明确外部兼容、可选能力或 best-effort 业务理由；不能只把一种兜底语法换成另一种。
+- 若规则候选与真实合同冲突，先登记可复现的 TP/TN/FP/FN 和人工裁决，再申请规则修改授权；报告不能代替修改规则的授权。
+- 关系图可提供静态调用与受影响测试线索；动态调用未解析时影响范围为 UNKNOWN，而非“无调用方”。受影响测试首先应原样运行，不是默认允许改写断言的清单。
+- **Release identity**：QG203 检查文件路径/名称中的发布身份，按 normal 差分规则裁决；QG205 检查内容中的版本和外部依赖证据，属于语义复核而非自动 REJECT。真实版本化 API、schema、依赖和迁移协议应保留并说明其 owner。Profile 额外配置的绝对 BLOCKER 不受历史差分抵消。
 
-## Interface baseline
+## 架构与 Reduction Pass
 
-无本轮明确需求授权时，accepted design baseline 中已经存在的 public interface、参数、返回结构、协议与 owner 是默认契约；实现应优先适配它们。存在生产接口变化时 Q2 不得 `NOT_APPLICABLE`，必须说明需求授权、调用方兼容性与验证。该设计优先级与 Git author/committer 完全无关。
+分别检查**正确性/契约**与**结构/减法**：一处函数变短不证明复杂度下降。比较修改前后的概念数、分支、状态/mode、helper/layer 和耦合；可直接删除、复用或下沉的结构应优先收敛。必要的额外层须有真实复用、协议或资源生命周期证据。允许有证据的 KEEP，不设机械减行数配额。
 
-## ADD
+若宿主提供独立 reviewer，可对高风险变更做 fresh-eyes 审阅；其结论只是待核验假说，不代替主审计者查证。
 
-每个新增生产 function/method/class/helper 必须说明：复用检索、唯一所有者、必要性/减法、真实源码与调用方证据。`doc-search` 只负责高召回，Top1/分数不能证明能力不存在。
+## Commit 建议与最终 `verify`
 
-## SEM
+报告中需要包含绑定当前**完整 patch**的 `git commit -m` 建议命令；这只是一项审计内容，不授权 RQG 执行提交。未设置 Profile commit policy 时不强加项目专属格式。
 
-本轮 Delta 必须逐项裁决。对本轮实际触达的生产 `.py` 文件，历史 Critical / Error / Warning 也必须进入 touched-debt gate：逐项判断真实债务或合法边界契约，真实债务必须修复后重新 audit；只有源码、调用方和行为证据都支持的候选才可 JUSTIFIED。不得仅因 finding 属于 baseline 历史而跳过，也不得通过 `.get(default)` 改成等价 membership/try-except 等语法来隐藏同一 fallback 语义。未触达文件仍按正常历史抽样规则处理，避免清债范围无边界扩张。
+`verify` 只读复查当前源码、Profile、基线和报告，拒绝 stale 或不完整账本，不替用户填写人工裁决。最终结论：
 
-fallback/宽松契约的保留必须属于明确的外部兼容、用户可见降级、可选能力或 best-effort side effect；内部确定性契约默认 fail-loud。用户降级必须保持失败可观测，不伪造工具/检索/证据成功，不污染 canonical state，也不能吞未知程序 bug。
+| 状态 | 退出码 | 含义 |
+| --- | ---: | --- |
+| `ACCEPT` | `0` | 审计门禁全部通过 |
+| `REVIEW_REQUIRED` | `5` | 非 REJECT，但仍有语义项需人工裁决 |
+| `REJECT` | `1` | 静态或语义门禁拒绝 |
+| 报告不可验收 | `3` | 缺失、未完成或违反报告契约 |
+| 环境/完整性失败 | `2` / `4` | 不能声称审计通过 |
 
-QG144 的不同返回结构只有在存在显式 union/discriminator/公开协议时才能保留。QG020 suppression 必须窄且确有必要。QG128 必须证明聚合依赖来自协议固定签名，否则缩小依赖面。QG178 未命中 Profile 精确豁免时只能 BLOCKING；确定性词法/语法例外在 Profile 中声明并由独立正反例证明，不由报告自行授权。QG191 表示本轮手工构造标准协议对象（例如 OpenAI tool_call）而未复用项目既有 schema/validator/ledger owner；必须结合 doc-search 与真实源码裁决，不能靠手工 JSON “形状看起来一样”放行。
+**源码、依赖配置、Profile 或报告变化后，需要重新完成验证。** 最终交付必须列出实际测试结果、报告完整性、静态事实、语义裁决状态、全部未解决 C/E/W 和退出码。
 
-### Semantic Review Method
+## 升级与 Git 持久化
 
-非静态审计固定分成两个认知视角，但仍写入同一 SEM/十一问/Reduction 报告，不新增状态机或命令：
+`.agents/skills/repository-quality-guard/**` 是宿主仓库应提交的 Skill 运行时；更新需要完整替换、`git add -A` 并从 fresh clone 验证。`修改说明.md` 默认单独交付。RQG 不覆盖宿主已有根 `AGENTS.md`；只有部署时确实新生成的宿主指令可按授权纳入变更。
 
-1. **Correctness / Contract**：先确认 intent、可观察失败、non-goals，再追踪 producer/consumer、协议/API、异常路径、state/transaction/concurrency、affected tests。能沿真实调用链验证的假设必须验证完，不能把“如果后端没处理”“可能存在问题”直接写成 BLOCKING。
-2. **Structure / Reduction**：独立检查 code-judo、更简单 canonical owner/layer、concept/branch/mode/helper/layer/state/coupling 是否真实减少；函数变短、文件拆开或静态告警下降，不等于复杂度已删除。新增 abstraction/wrapper 必须有独立契约、真实复用或明确边界收益，不能只为让指标变好。
-
-语义结论遵循 `hypothesis → trace → evidence → finding`。ERROR/CRITICAL/BLOCKING 必须能给出从本轮变化到被破坏 invariant、真实消费方/状态条件以及可观察后果的完整失败路径；只能证明设计 smell 而不能证明行为故障时，保留为 Warning/REVIEW，而不是靠措辞升级严重度。
-
-若宿主支持独立 reviewer/subagent，巨型重构、公开协议大改、高 blast radius 或 `REVIEW_REQUIRED` 可选做一次 fresh-eyes review：给 reviewer 同一份 intent、frozen diff、相关源码和 QG facts，只寻找漏掉的 correctness issue、complexity relocation、canonical-owner 错位与更简单设计。外部 reviewer 的结果只是 hypothesis，主审计者重新验证后才能进入 SEM；无 subagent 的环境不降低核心 QG 能力。
-
-
-## Relation Impact
-
-关系分析只从唯一 `RepositoryAnalysisSnapshot` 持有的 baseline/current 源码事实派生，不建立第二套 Git/file snapshot，也不要求安装 CodeGraph。Python 继续提供定义、导入、调用、继承、override、传递可达性、接口 blast radius 与 affected tests；JS/TS 额外提供 symbol-reference usage、动态 prototype composition、owner surface 与 feature dependency SCC；CSS/HTML/C++ 使用各自结构事实，不伪装成 Python function AST。
-
-- 直接调用边消失但目标能力仍可经新路径到达时，报告替代路径，避免把 owner migration 误报成功能删除。
-- 接口修改/删除显示可解析的直接调用方、传递依赖与受影响测试；动态框架关系未解析时不得伪装成“影响为零”。
-- affected tests 是优先原样运行的回归集合，不是允许自动修改 tests 的清单。
-- Graph 只证明结构与影响；职责合理性、需求授权和动态协议语义仍由规则或语义审计裁决。
-
-
-## Test Contract
-
-单元测试通过独立输入、公开接口可观察结果与已确认 Oracle 验证业务行为。测试执行失败必须记录并阻断实际交付。源文件身份、断言数量和历史实现形状不构成质量证明。
-
-## Release identity coupling
-
-审计时把项目自身 release lineage 与稳定版本化契约分开。通用规则中，QG203 只检查**路径/文件名**里的 release identity，并以 CRITICAL 进入正常 baseline/history-aware 静态门禁；QG205 检查**文件内容**里的版本/provenance，并默认只进入 SEMANTIC 复核，不因静态命中直接 REJECT。语义裁决必须先识别 identity owner：外部 API、协议、schema、依赖、数据迁移/兼容、内容寻址或密码学测试向量可以合理。Profile 可以把任一规则通过 JSON `rules.levels` 提升为 BLOCKER；BLOCKER 是独立绝对门禁，不受历史 baseline 抵消。README.md 与 README_zh.md 明确豁免；其他资产不按目录名自动豁免。
-
-
-## Reduction Pass
-
-填写报告后继续审查剩余 Warning、SEM 和新增接口。能安全删除、内联、复用、合并、下沉、收紧类型/契约的必须处理；不设机械“必须减少 N 条”配额。全部确有必要时允许 0 个额外修改，但 KEEP 必须有源码证据。
-
-Reduction 的核心问题是**复杂度被删除还是仅被重新排列**。至少从 concept、branch、mode/state、helper/layer、coupling 五个维度比较 before/after：某个大函数变短但 helper、owner surface 或跨层依赖同步增加，不得仅凭局部指标下降宣称结构债务清零。优先选择能让整段分支、特殊 mode、临时状态或抽象层直接消失的 code-judo；若保留更多层次能换取真实事务、协议、资源生命周期或复用边界，必须给出调用链证据。
-
-## Commit
-
-最终 patch 冻结后必须填写 `## 9. 提交 Commit`。该章节包含机器生成的完整 patch 范围事实，以及一条可直接执行的 `git commit -m` **建议命令**。它用于验证提交描述能覆盖整个 baseline→target patch，不代表 Guard 已执行或获准执行 Git 写操作。Core 只强制命令存在、非占位且绑定当前 patch；主题和正文格式由所选 Profile 的 `commit_policy` 决定。未配置 `commit_policy` 时不强加某一家公司的 type、语言或正文风格。实际提交仍只服从当前任务授权；`REVIEW_REQUIRED` 的人工裁决也不等价于提交授权。
-
-若随后任何源码/配置/index 变化导致 `change_digest` 改变，下一次 `audit` 会主动把旧 commit 命令重置为 `PENDING`；`verify` 在命令缺失、仍是占位、结构非法，或不符合当前 Profile `commit_policy` 时直接 REJECT。Git author/committer 由仓库实际协作流程与本地 Git 配置决定，不由 QG984 写死。`audit` 生成了未完成报告时也返回门禁退出码 3，避免 Agent 把“已生成报告”误认成“审计通过”。
-
-## verify
-
-`verify` 重新计算当前源码强指纹并验证 baseline、ADD/SEM/十一问与 Reduction Pass，拒绝 stale report。若同一 release、profile、显式 diff-base 与源码内容已经产生完整扫描快照，则复用该不可变 ScanReport；任一相关源码/配置/index 输入变化都会强制完整重扫。它不写代码、不补报告、不自动把 BLOCKING 改成 JUSTIFIED。
-
-## 进程完成语义
-
-- `audit` / `verify` 的最终状态输出只在扫描结果、报告读写与门禁计算完成后产生。
-- 正常 CLI 返回路径在 stdout/stderr flush 后直接结束一次性进程，不执行与审计结果无关的解释器 teardown/atexit 清理；避免重 AST 或第三方退出钩子把已完成命令拖成长尾。
-- 入口与 scan worker 均启用 60 秒重复 faulthandler，并保持到进程实际终止；若 dependency/bootstrap/workflow/worker 或 DONE 后帧清理长期阻塞，会把 Python 栈写入 stderr，但不会降低规则或自动跳过阶段。
-
-
-### Generated API reference lifecycle
-
-`docs/api-reference/` is an RQG-owned disposable derivative, not repository product source. Audit, baseline selection and change-report accounting must exclude it. `doc-search` performs a strong source-content freshness check before every search; `doc-generate` starts a fresh search-evidence round and stale search-ledger entries are invalidated by source digest automatically.
+每个 clone 要检查托管 pre-push hook；不得覆盖非托管 hook、跳过 `verify` 或以 `--no-verify` 绕过门禁。完整 ZIP 与 installed `.agents` 的具体构建及依赖策略由发行工具验证，不能仅凭本机部署成功声称发行验收通过。

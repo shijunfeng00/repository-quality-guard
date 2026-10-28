@@ -39,7 +39,6 @@
 - [`修改说明.md`：Agent 不能跳过的交付答卷](#修改说明mdagent-不能跳过的交付答卷)
 - [代码质量审核不过关？拿着报告回炉重造](#代码质量审核不过关拿着报告回炉重造)
 - [项目定制：让 RQG 适配你的仓库](#项目定制让-rqg-适配你的仓库)
-- [License](#license)
 
 ---
 
@@ -194,33 +193,19 @@ RQG 不是再增加一个“让 AI 审核 AI”的 Agent，而是把工作拆成
 
 # 快速开始
 
-RQG 以 Agent Skill 的形式安装到项目中。这里的 Skill，可以简单理解成**给 Coding Agent 安装的一套可执行工作规则和工具**。安装完成后，你不需要每次自己手动跑一长串命令；Agent 应按照这套流程主动完成接口文档更新、已有能力检索、质量检查、问题修复、`修改说明.md` 和最终验证。
+先告诉 Coding Agent：**“请为当前项目安装并启用 [Repository Quality Guard](https://github.com/shijunfeng00/repository-quality-guard) Skill，配置 Git 质量门禁。”** 安装完成后，直接提出开发或审计需求，Agent 会使用 RQG 检索已有能力、检查代码、修复问题、完善 `修改说明.md` 并执行最终验收。
 
-```bash
-# 1. 安装 Repository Quality Guard
-npx skills add shijunfeng00/repository-quality-guard
+例如，可以直接告诉 Agent：**“请用 RQG 审计这次代码修改，修复质量问题，并给我完整验收结果。”**
 
-# 2. 安装运行依赖
-python .agents/skills/repository-quality-guard/runtime/install_dependencies.py
+### 三种审计模式
 
-# 3. 安装 Git 交付质量门禁
-python .agents/skills/repository-quality-guard/scripts/git_hook_install.py .
-```
+| 模式 | 适用场景 | 你可以这样告诉 Agent |
+| --- | --- | --- |
+| **normal（默认）** | 日常开发与变更审计，同时核对本次修改和相关历史质量债务 | “用 RQG 正常模式审计本次修改。” |
+| **ignore-diff** | 对当前项目整体代码进行质量审查 | “用 RQG ignore-diff 模式检查整个项目。” |
+| **cleanup** | 专项质量治理，目标是清理生产代码中的 Critical、Error、Warning | “用 RQG cleanup 模式开展质量债务清零。” |
 
-源码/检查点交付统一使用一个 canonical full-repository ZIP：包含 Git 元数据、本地 Profile 目录、完整源码与离线依赖介质。安装到 `.agents` 后仍保持精简：部署只封存运行所需 runtime 与已授权策略，不复制仓库中的离线 wheel/Node 介质，也不复制 source Profile 目录。
-
-RQG 为 Agent 提供的稳定流程能力包括：
-
-```text
-doc-generate   把项目现有函数 / 类 / 接口整理成可检索的文档
-doc-search     在这些文档里找现成接口、相似能力和真正负责这项能力的位置
-audit          扫描本次修改，发现质量问题并维护 修改说明.md
-verify         最后重新检查最新代码、报告和证据，给出最终门禁结果
-```
-
-普通使用者通常不需要逐条运行这些命令。它们是 Agent 完成一次开发任务时应该主动执行的标准流程。
-
-想先看完整规则，可以直接阅读：**[`references/RULES.md`](references/RULES.md)**
+Agent 默认采用 `normal`；你可以按治理目标明确指定另两种模式。完整规则见 [QG 规则参考](references/RULES.md)。
 
 ---
 
@@ -250,10 +235,6 @@ RQG 不是靠一句“请认真检查代码”保证质量，而是把多种检�
 这些检查最后只会得到三个结果：**`ACCEPT`** = 质量检查通过，可以正常交付；**`REVIEW_REQUIRED`** = 质量检查通过，但有某些重要变化必须由人确认；**`REJECT`** = 当前代码不合格，Agent 必须继续修改。
 
 完整 QG 定义以 **[`references/RULES.md`](references/RULES.md)** 为准。
-
-### 结构拓扑校准
-
-当前结构策略不新增另一套 QG 家族，而是让结构判断更多依赖可验证事实：QG001/QG013/QG168 使用规范化 ownership / reuse topology；QG003–QG006 区分内部正式契约、外部可选契约与 unknown 边界；QG008 对 21–50 个方法进入语义复核、超过 50 仍为 Critical；QG019 对 1001–2000 行 owner 进入语义复核、超过 2000 仍为 Critical。缺失的编译器/依赖证据保持 unknown/N/A，不靠猜测补齐。因此已有项目可能减少 helper 类 finding，部分 QG003/QG004 也会重分类为 QG026；这是语义校准，不是自动豁免。
 
 ---
 
@@ -452,17 +433,3 @@ class Profile(QualityGuardProfile):
 **➡️ [查看完整 Profile 示例：`profiles/qg-example-profile/`](profiles/qg-example-profile/)**
 
 ---
-
-# License
-
-Repository Quality Guard 使用 **Apache License 2.0** 开源。
-
-你可以在遵守许可证条款的前提下使用、修改和分发本项目。完整许可证内容见仓库根目录的 [`LICENSE`](LICENSE)。
-
----
-
-拓扑模型使用 `UsageKind.STATIC_POLYMORPHIC_DISPATCH` 记录编译器证明的静态多态边，不猜测虚函数调用。Python 扫描器通过 `decorator_leaf` 精确识别装饰器名称（例如区分 `abc.abstractmethod` 与近似拼写）；C++ CRTP 关系必须有编译器拓扑证据才予以认定。这属于扫描器内部能力，不是新增对外 CLI 入口。
-
-### 审计模式
-
-唯一支持的模式参数是 `--mode normal|ignore-diff|cleanup`，不提供 `--debt-mode` 兼容别名。默认不传 `--mode`，使用 `normal` 正常模式。仅当用户明确授权，才可以使用 `--mode ignore-diff`（忽略diff模式）或 `--mode cleanup`（强制清零模式）。cleanup 要求普通生产 Critical / Error / Warning 债务归零，最终只有 ACCEPT 或 REJECT。无 Git 目录在 normal 下照常生成当前静态发现与当前关系图，历史基线和 Delta 标为 N/A。audit 与 verify 模式必须一致；无 `.git` 本身不是忽略 diff 的授权。

@@ -7,71 +7,15 @@
 内部上下游必须使用静态类型和固定字段契约。已确认的映射字段使用 `[]`，已确认的对象字段使用直接属性访问；生产代码不得用 `.get()`、`hasattr()`、`getattr()`、`setattr()`、`delattr()`、`vars()`、`__dict__`、`__getattribute__`、`inspect`/`operator` 反射、`setdefault()` 或成员存在性分支猜测正式契约。真正可选字段应在正式类型契约中显式表达，但 TypedDict、Pydantic、Protocol、Optional 或联合类型的语法可选性不等于真实业务允许缺失；必须再沿生产者的合法初始化/赋值路径及消费端有意义的不同处理独立证明，仅在唯一输入适配边界校验外部数据。外部 framework/plugin 的 optional contract 可以保留动态读取，但必须有静态依赖/stub/继承或唯一 adapter 证据；仅出现一个 import 名、变量名或缺少依赖都不能自动把内部契约降级为 external optional。
 
 
-### QG Finding 的标准修复入口
+## 检索与契约证据
 
-任何 `QGxxx` 告警在修改代码前，先运行 `python scripts/quality_guard.py evidence --rule QG123 --rule QG153`（以实际编号替换；可批量），读取 `references/RULES.md` 的权威定义、修复方向及禁止做法；已有能力/接口定位时同一个命令加 `--api "能力描述" --repo <仓库根>`（复用正式 BM25 doc-search 和源码保鲜），再加 `--symbol <完整符号ID> --direction callers --depth 3` 查询上下游，取得既有图的静态已解析调用关系及真实源码定位，随后手动阅读完整函数体和 Producer / Schema / Consumer / Effect，不能凭片段猜测。图中无边、多态或 UNKNOWN 不等于调用不可能发生。Case 驱动证明合法输入/状态确实可达、缺失是否属于业务结果还是 invariant 违约、上游 guard 是否支配且未发生重赋值。**类型声明 NotRequired/Optional、框架允许缺失不构成业务 Case 证据**。必要时构造正反 Case 并与稳定基线比较；告警与真实契约冲突时只登记 RULE_BUG 待裁决，未经授权不改稳定 QG 的判定算法。Finding 消失不等于修复成功。
+修改前按 [ARCHITECTURE.md](ARCHITECTURE.md) 查询已有能力、符号上下游及变量来源；`evidence --rule QGxxx` 在 [RULES.md](RULES.md) 查检查目标和修复方向。必要时沿 **Producer → Schema/Guard → Consumer → Side Effect** 核对源码及独立正反 Case；`UNKNOWN` 不等于不存在，也不能凭 `.get()`、`hasattr()` 的语法替换宣称问题已解决。
 
-### 已裁决 QG003 / QG004 的业务 Case 要求
+QG003/QG004 尤其要区分稳定内部契约、真实可选输入和外部边界：类型标注可选不足以证明业务缺失合法，必须确认生产者可达路径及消费者的非空操作分支；合同必需字段应 fail-fast。规则的 TP/TN、误报或漏报由独立真实行为验证，不能为通过当前审计修改 Oracle 或扫描器。
 
-检测器与业务代码的正确性都应由真实输入→输出 Case 判断，而不是由语法、
-默认值样式或实现细节直接判定。对于 QG003，先查接收者的类型、真实
-方法 owner、父/祖父类和初始化字段；普通 `get()` 与 Mapping.get
-必须区别，内部委托给字典的调用依旧审查。对于 QG004，先区分
-`None` / 空字符串 / 空列表等有明确接口含义的返回与伪造的非空
-`UNKNOWN` / 假 ID；`Optional` 注解只是返回值允许为空的证据，
-仍需调用方及业务 Producer 验证空结果确实可达，不能将必需字段
-静默变为默认。人工裁决以正反 Case 和上下游源码为准。
-QG033 暂无本轮规则修改授权，不得借 QG003/004 变更一起豁免。
+## 测试边界
 
-### 有效缺失 Case 的验证门槛
-
-判断 `.get(key)` 是否必要时，不以“类型标了可选”或“语法允许”为结论。
-先证明 producer 可能产生未命中，之后验证 consumer 将其转入
-明确、非空操作的业务分支；如果缺失违反 schema/invariant，应 Fail-Fast。
-静态证明有限时，继续以 UNKNOWN 保留复核，不得改写为等价 `if key in`
-规避检测。正反 Case 必须使用实际输入→输出和真实 Scanner Finding 验收，
-并使用其它仓库同类调用/字段保留原 Finding 身份的回归对照。
-
-### 仓库记忆：先查询、再裁决
-
-针对源码 `文件:行号`，优先用 `quality_guard.py evidence --repo ... --file ... --line ... --name ... --kind function|class|variable`。
-变量追踪必须显示真实调用边上 **实参→形参**、所在函数候选赋值及附近源码，而不是只显示函数头。
-类追踪展示继承/覆盖关系；函数追踪展示调用位置和多层静态链。
-`DIRECT_CALL` 与 `MAY_DISPATCH` 是两种不同证据：前者源码精确绑定，后者
-由类型注解、局部构造或构造函数初始化字段建立可能调用边（多态仍 OPEN）。
-`--symbol`、`--file`/`--line` 统一展示调用点和上游来源；使用前先看边置信度，
-不允许把 MAY_DISPATCH 当做程序必然执行/Guard 支配的证明。
-可用 `--graph-stats` 量化已解析的函数调用连通性，用 `--variable self.field`
-追查跨构造器注入字段的来源：核对 `Class.__init__` 里的字段写入、上游构造调用
-的 keyword/positional 实参以及源字段自己的构造表达式。多继承冲突、不完整调用点
-或未标注动态接收者保持 UNKNOWN；不要通过同名函数近似匹配提高连通率。
-`--cache-dir` 生成仓库外内容摘要索引，改动源码或者 RQG Provider 后均须重建，
-不能复用过期图。CodeGraph 1.6.2 可借鉴抽取/解析解耦、别名、反向 BFS、源码位点、
-未解析事实保留的架构，但低置信猜测边不得直接成为质量审计的确定证据。
-查询输出的 `[UNKNOWN]` 和缓存 `HIT` 只说明 provider 覆盖与快照状态；
-**不是** runtime Traceback、字段必有证据、CFG 支配或业务 Case 合法性的替代物。
-
-Case 驱动单元测试应检查：对真实受影响源码运行 CLI 后，是否能够读到正确生产者、形参绑定、调用点、缺失 Case 及必要的反例。
-避免测试固定内部辅助函数名、实现步骤或 AST 解析器组织方式；只要证据的业务语义不变，内部实现可重构。
-当现有图不足以回答必需证据链时，应暴露缺口并保留 UNKNOWN，不能用猜测补齐或据此擅改稳定 QG。
-
-### 单元测试行为契约
-
-单元测试使用输入、公开接口、预期输出或异常和独立比较器验证可观察行为。正常实现重构不得要求修改原业务预期。只保留最小且充分的终态行为与关键契约正反例；已由相同可观察结果覆盖的实现细节测试应删除，而不是永远叠加。业务契约变化时允许有证据地更新预期。禁止将非契约内部函数、局部变量、调用路径、装饰器、源码字符串、私有属性是否存在作为通过条件。测试实现方式与业务功能正确性分开评价；实际执行失败仍由测试执行器阻断交付。
-
-#### 统一 Case / TestUnit 编写合同（Python）
-
-1. **先列具体 Case 再写测试类**：明确目标公开接口、输入、真实应出现的返回/异常/状态转换、独立期望及相邻反例。测试代码按照 `references/TEST.md` 直接继承 `TestCase` 或 `StatefulTestCase`；数据可硬编码或通过标准 DataLoader 迭代。测试类与运行入口由统一框架提供。
-2. **测试目录边界**：以测试根目录（常规 `tests/`、`unit_tests/`、`src/test/` 或目标仓库 `[tool.repo_quality_guard].test_roots`，pytest `testpaths`）为单位识别，所有后代 Python 源码都接受对应测试规范审查；`test_*.py` 是文件命名规范，不能反向凭文件名决定任意生产文件是测试。非常规 CTest/GTest 等构建目录可显式配置，不以排除具体生产目录的方式修误报。
-3. 标准 Case 子类为封闭的数据/Oracle 容器：只有标准行为方法、`__init__` 和 docstring；不允许定义 `_scan_fixture`/`observe` 等额外测试包装方法、staticmethod/classmethod、类属性、嵌套 `def` 或 `lambda`。`get_enterpoint()` 应直指既有生产函数或可以证明只是引用的纯别名。四个 Case 方法均不可执行这个真实入口（直接调用、已证明别名或源码图 CALLS）；只有 TestUnit 可以调用生产目标，get_input_data/get_output_data/equals 必须保持独立。叶子 Case 的 `__init__` 只负责调用 `super().__init__(type=..., config=...)` 固定预期类型及进程策略，禁止新建或修改任何实例属性（含动态 `setattr` 和 `__dict__`）；不因子类形参名称另造额外检验规则，测试输入/Oracle 使用 `get_input_data()`、`get_output_data()` 和外部 fixture。不得用 `object.__new__` 等绕过受测目标真实初始化。`get_enterpoint()` 必须证明引用的函数来自本仓库的生产源码，而不是直接测试 Python 内置函数、TensorFlow 等外部 SDK 或测试类内部的包装 Callable。仓库 SDK 公开入口即使没有内部调用者，其向仓库生产函数/类/类型的源绑定调用或引用可以证明真实业务联系；纯叶子生产函数可以直接实现业务计算，不能仅凭没有其它内部出边报错。直接测试 TensorFlow 等第三方原生接口而未调用真实仓库函数的孤立测试必须拒绝，动态所有权保持 UNKNOWN。遇到旧测试优先质疑是否存在独立终态输出或关键转换义务；没有的应删除而不是包装迁移，保留最少且充分的直接函数输入/输出 Case。测试文件顶部的自由函数和变量已由 QG240 禁止；测试目录（`tests/`、`unit_tests/` 等）内即使文件名不以 `test_` 开头也必须接受相同检测，不能把包装器藏在 helper 文件名中。对生产代码的“仅测试使用”需要完整业务调用/导出/回调可达性证据，不得仅因调用图目前缺边就推断它是测试专用代码。
-3. 标准 Case 方法、数据迭代方式及执行命令参见 `references/TEST.md`。`get_enterpoint()` 返回真实生产入口，`get_output_data()` 提供独立期望，`equals(expected, actual)` 必须观察实际结果并返回 `bool`。运行统一使用 `python -m rqgtest.run`，以真实调用和比较结果作为裁决依据。
-3. **QG 检测器专用 Case 的两种预期都必须存在**：`TP` = 由独立规则合同/业务 Oracle 确认**应报告**指定 QG Finding（对语义审计规则也可只是预期 REVIEW 候选，不等于已证明生产缺陷）；`TN` = 输入合法或证据不足以达到该规则报告门槛，Scanner **不得**返回该 QG。*TP/TN 描述的是检测器判断，不是 TestUnit 执行状态*；两个实例在检测器实现正确时都应当 `PASS`。有混淆语义或灰区时先记录独立证据和预期，不得仅靠当前 Scanner 输出反填真值。边界缺陷应补相应 FN/FP 的修复回归对照，并使用独立 Oracle 裁决。
-4. **一个 Case 是一份可独立重放的行为事实**：建议记录 `id`、`rule`、`kind`（TP/TN）、`source`、`expected`（至少明确 Finding 身份/数量/严重度；位置与证据在规则要求时也要核验）。同一规则至少覆盖一对 TP/TN；还应覆盖类型、继承、别名、上下游 Producer/Consumer、可达性以及不确定来源等适用边界。对真实业务代码，应同时冻结可观察业务输入→输出；只匹配语法模式或过度断言内部实现都不合格。
-5. **先验收已完成的 QG，再迁移旧单测**：每批新增 Case 立刻用 QG240–245 扫描新测试源码、运行 `python -m rqgtest.run`、故意篡改 Oracle 验证确实会 FAIL，再运行原生回归和正式 `audit → verify`。未迁移的有效旧行为在新覆盖已证明等价之前不得删除。不要为减少 Finding 数量而放宽 QG。历史目录迁移独立处理。
-
-例如，数据集可针对一个实际生产规则构造命中与不命中两个独立输入，并分别冻结预期 Finding。
-每组数据由统一测试框架调用真实生产入口，并对比真实 Scanner 的公开结果；严禁复制检测器代码作为 Oracle。
-
+测试应验证公开接口在独立输入下的可观察结果，而不是测试代码组织、私有字段、源码字符串或固定调用路径。Python `TestCase` 只负责目标引用、输入、独立 Oracle；统一执行器 `TestUnit` 调用目标，Case 方法不得自行执行被测入口。测试目录不得自建 TestUnit、包装函数或额外 Case 状态。具体接口、实例方法及执行命令见 [TEST.md](TEST.md)，跨语言/正反例协议见 [TEST_CASE_PROTOCOL.md](TEST_CASE_PROTOCOL.md)；对应静态规则见 `QG240`–`QG246`。
 
 ## 1. 总体原则
 
@@ -371,37 +315,19 @@ Private 实现变化不机械要求修改 README。README 只描述公开能力�
 
 项目专属状态边界、协议字段、检索策略、非阻断路径和附加规则必须由对应 Profile 声明；Core 不内置仓库名、业务类名、固定源码路径或组织策略。Portable 模式可显式/目录名精确匹配选择 Profile；Installed 模式只使用 deploy 时冻结并 seal 的 Profile。
 
-## 17. 修改完成标准
+## 16. 修改完成标准
 
-修改完成前必须：
+1. 使用冻结的 Git 设计基线及实际 Profile 进行接口检索、最小修改与受影响行为测试；不为消除扫描结果改测试 Oracle。
+2. 对本轮新增或升级的普通 C/E/W 修复归零；触达范围的存量债务逐项修复或给出合法边界证据和关闭条件。未触达的历史债务不因此要求全仓清零。
+3. 运行 `audit`，以实际源码及测试填写 `修改说明.md` 的人工字段，报告中包含覆盖完整 patch 的 Git commit 建议，但不视为执行提交授权。
+4. 用同一基线、模式和 Profile 运行只读 `verify`，保留真实退出码、待裁决项及测试结果。若源码/报告再变更，重新完成验收。见 [AUDIT.md](AUDIT.md)。
+5. 受托升级宿主 `.agents` 时使用 `runtime/deploy.py` 原子替换、检查 Git 纳入状态、在 fresh clone 验证；发行包与安装态的差异及 hook 见 [SKILL.md](../SKILL.md)。
 
-1. 运行 repository-quality-guard 生成或刷新自动事实。
-2. 全仓目标仍是尽可能达到 Critical/Error/Warning `0 / 0 / 0`；普通三档问题只要相对累计 Git 基线新增或升级就必须消除，`DELTA-*` 只能记录 BLOCKING 与处置方向，不允许例外保留。累计基线即本轮冻结的 accepted design baseline：用户指定 revision 优先，否则取任务开始时最后一次可确认 push/目标分支提交；不得移动到本轮中间 commit。对**本轮实际触达的生产 `.py` 文件**实行更严格的 touched-debt gate：既有 C/E/W 必须逐项复核并修复真实债务；仅有明确边界契约证据的语义候选可以 JUSTIFIED，不允许用 baseline 身份或语法洗白保留真实债务。
-3. 原样运行并保留目标项目既有回归测试；新增真实业务能力或修复缺陷时增加 Cases；仅在可观察业务契约变化时更新预期，同时按需求同步 README 和调用方。
-4. 逐项填写并通过 `修改说明.md` 固定契约。
-5. 执行 `python scripts/quality_guard.py verify <repo>`；Portable 模式仅在仓库目录名与实际存在的 Profile 名完全一致时自动选择并打印来源，也可显式追加 `--profile <profile>`；Installed 模式使用冻结策略且不接受运行期 `--profile`。`PASS` 表示质量门禁允许进入任务后续步骤，`REVIEW_REQUIRED` 表示质量裁决仍需人工确认，`REJECT` 必须继续修改。这里的“进入提交”只描述质量状态，不授予 Git 写权限：报告必须给出建议 `git commit -m`，但是否实际执行 `git commit` 只服从当前任务的明确授权。没有 `verify` 结果、缺失建议 Commit 或仅有 `audit GENERATED/UNVERIFIED` 都不算审计完成。
-6. 若本轮任务是升级仓库内受跟踪的 `.agents`，只使用当前正式 Skill 的 `python runtime/deploy.py <skill-root> <repo>/.agents/skills/repository-quality-guard [--profile <name-or-path>]`。**升级永远是全量原子替换**：旧版本号、旧目录结构或残缺状态都不是前置条件；staging 目标树必须与当前 release manifest 一致，旧版独有文件全部删除。根 `AGENTS.md` 为宿主共享文件：已有文件逐字节保留；仅在缺失时 create-if-missing，优先直接复制 Profile 提供的完整 `AGENTS.md`，否则使用 generic bootstrap 资源。Profile 在安装阶段冻结并参与 release seal，运行期不得切换。Canonical full-repository ZIP 必须携带 `.git`、本地 Profile catalog，并可以携带 `README.md`、`README_zh.md` 与 authoring/release tools under `scripts/`，并必须携带 `offline/wheelhouse` 与 `offline/node_modules.zip` 以支持断网 bootstrap；不得携带构建缓存或历史 runtime。部署后的 `.agents` 必须排除 README、测试、`scripts/` authoring/release tools、wheel、`node_modules`、`offline/` 与 Profile authoring 文件，但必须包含 `scripts/quality_guard.py`、`scripts/git_hook_install.py`、`runtime/install_dependencies.py` 与完整 `runtime/src`。fresh clone 缺第三方依赖时运行安装器联网 bootstrap；canonical full-repository ZIP 可用 `--offline` 完成离线 bootstrap。**deploy 只是安装，不是持久化完成**：deploy 后检查 `git status --short --untracked-files=all` / `git check-ignore`，再至少执行 `git add -A -- .agents/skills/repository-quality-guard`；仅当本轮 deploy 确实同步了根 `AGENTS.md` 时才把它一并 stage。把新增/修改/删除全部纳入独立升级 commit；随后用 `git ls-files` / `git cat-file` 和 fresh clone 证明完整运行时已在 `HEAD`。fresh clone 必须实际跑 `doc-generate → audit → 填写修改说明.md → audit READY_FOR_VERIFY → verify`；项目要求托管 pre-push 时再安装/触发 hook 验证报告门禁。提交内容可以对齐项目历史，但不得覆盖 Git author/committer 身份；新提交沿用实际执行者 identity。
-7. 最终检查后不得再修改代码或报告；否则必须重新执行最终检查。
+## 设计基线与变更意图
 
+用户指定 revision 优先，否则冻结任务开始时可确认的目标分支基线；本轮 `audit` / `verify` 不得滚动基线。既有公开 API、参数、返回及 owner 默认沿用，除非需求明确授权改变并验证全部消费方。设计权威来自 revision、需求和公开规格，不来自 Git author 姓名；实际提交者身份不因设计沿用而伪造。
 
-## 协作设计基线与 Git 身份
-
-- **先冻结 accepted design baseline，再开始修改。** 用户明确指定 commit 时优先使用该 revision；否则使用任务开始时最后一个可确认的目标分支基线。整轮修改、`audit`、`verify` 使用同一累计 baseline，不得把本轮自己生成的中间 commit 重新当 baseline 来隐藏接口或质量漂移。
-- **设计权威来自 revision/明确授权，不来自作者姓名。** 禁止通过 `git log --author`、固定姓名/邮箱等方式判断哪份设计才有效；author/committer 只记录实际贡献者。
-- **无明确新需求时，accepted baseline 的既有 public interface、参数、返回结构、协议字段与 owner 默认保持不变。** 实现应优先适配既有契约；确需变化时必须在 Q2/接口账本中给出本轮需求授权、调用方兼容性和验证证据。
-- **提交身份与设计对齐彻底解耦。** author/committer 记录真实协作历史，默认由各仓库/开发者自己的 Git 配置与既有补丁元数据决定；RQG 不硬编码姓名邮箱，也不根据身份判断设计权威。需要保留他人真实 authorship 的导入/补丁流程可以按仓库协作规范处理。
-- **交付格式不削弱审计。** 直接修改、patch、mbox、bundle、zip 或完整仓库都必须另行完成并交付 `修改说明.md`。该文件默认不纳入业务 Git，最终回复仍必须直接报告报告门禁、静态门禁、最终状态和验证缺口。
-
-
-## 变更意图与规格证据
-
-accepted design baseline 是默认契约，但本轮明确需求可以有证据地改变它。需求证据优先使用用户明确指令、issue/任务单、公开接口文档和仓库已有规格；仓库若已经采用 OpenSpec，则把 proposal/spec/design/tasks 与归档后的正式 spec 作为变更意图和验收场景的高质量证据来源。Quality Guard 只吸收“变更意图形成可审计 artifact、完成后回写长期规格”的思想，不要求项目安装 OpenSpec，也不创建第二套规格运行时。
-
-代码关系审计同理：只从统一 RepositoryAnalysisSnapshot 派生关系事实，吸收 CodeGraph 的 callers/callees/impact/affected-tests 思路，不依赖外部 CodeGraph 数据库、daemon、MCP 或第二 parser。
-
-## 单元测试
-
-以独立的业务输入、公开接口输出、异常和状态转换 Cases 验证功能。测试不得使非契约的私有字段、内部调用路径、源码字符串或重构方式成为 PASS 条件。合法业务变更允许同步更新预期；有效回归案例按独立可观察价值保留；已经被更强终态 Case 完整覆盖的重复用例应合并或删除。单元测试的实际执行失败由原生执行器判定，不以历史测试文件身份或断言数量替代接口验收。
+项目采用 OpenSpec 等规格工具时，可把既有任务、设计和正式规格作为变更意图证据，但 RQG 不要求安装第二套规格运行时，也不构建第二套 CodeGraph。测试的可观察行为与独立 Oracle 参见 [TEST_CASE_PROTOCOL.md](TEST_CASE_PROTOCOL.md)。
 
 ## Release identity 不得成为项目契约
 
@@ -422,6 +348,6 @@ accepted design baseline 是默认契约，但本轮明确需求可以有证据�
 单个生产定义缺失、过短或章节不完整按 Error 定位修复；docstring 与完整 docstring 覆盖率必须相对 Git 基线单调不降，任何下降只生成一条聚合 Critical。历史低覆盖率本身不阻塞本轮，从而既保留零回退门禁，也避免数百条同质 Critical 淹没真实架构阻断。
 
 
-### 跨函数代码更改的契约校验
+## 跨函数代码更改的契约校验
 
 审计新增债务必须证明 before→after 的真实变化及 Producer→Schema→Consumer→Effect 因果路径；历史未改动代码里的相似 fallback 不自动属于本次新增。

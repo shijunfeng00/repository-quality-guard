@@ -128,9 +128,9 @@
       ],
       "code": 0,
       "contains": [
-        "QG003 / QG026",
-        "实际可达性",
-        "bool(set[str])",
+        "QG003",
+        "QG004",
+        "QG033",
         "RULES.md:"
       ]
     },

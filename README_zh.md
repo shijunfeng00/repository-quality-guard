@@ -193,9 +193,36 @@ RQG 不是再增加一个“让 AI 审核 AI”的 Agent，而是把工作拆成
 
 # 快速开始
 
-先告诉 Coding Agent：**“请为当前项目安装并启用 [Repository Quality Guard](https://github.com/shijunfeng00/repository-quality-guard) Skill，配置 Git 质量门禁。”** 安装完成后，直接提出开发或审计需求，Agent 会使用 RQG 检索已有能力、检查代码、修复问题、完善 `修改说明.md` 并执行最终验收。
+### 官方 Skills CLI 安装
 
-例如，可以直接告诉 Agent：**“请用 RQG 审计这次代码修改，修复质量问题，并给我完整验收结果。”**
+在**目标项目**中运行（需要 Node.js 和 npm）：
+
+```bash
+cd my-project
+npx skills add shijunfeng00/repository-quality-guard
+```
+
+按提示选择 Coding Agent 与项目级安装位置；全局安装可加 `-g`。这是 Agent Skills 的标准安装入口，**不会自动执行** RQG 自有的发行完整性验证、锁定依赖安装或项目 Profile 绑定。
+
+### RQG 自有完整安装
+
+需要完整审计运行时，从 [Releases](https://github.com/shijunfeng00/repository-quality-guard/releases) 下载并解压 `.skill.zip`，按实际位置替换以下路径：
+
+```bash
+python repository-quality-guard/runtime/deploy.py repository-quality-guard my-project/.agents/skills/repository-quality-guard
+```
+
+`deploy.py` 会验证发行封印、准备锁定依赖与 `rqgtest`、绑定宿主项目 Profile（可通过 `--profile NAME` 显式指定，否则按仓库名精确匹配或使用通用规则），部署到固定的 `.agents/skills/repository-quality-guard/`。直接复制文件或仅执行 `npx skills add`，不能替代这套**完整运行时**安装流程。
+
+### 安装 Git pre-push 质量门禁
+
+**上述两种 Skill 安装方式都不会自动启用 Git hook**。完成完整运行时部署后，另行执行：
+
+```bash
+python my-project/.agents/skills/repository-quality-guard/scripts/git_hook_install.py my-project
+```
+
+目标项目必须是 Git 仓库。部署后的 Skill 应提交进宿主项目；每次重新 clone 后仍需安装 Git hook。安装完成即可向 Coding Agent 提出开发或审计需求；Agent 专用的 CLI 操作与证据查询方法见 [SKILL.md](SKILL.md) 及其 references。
 
 ### 三种审计模式
 
@@ -206,6 +233,8 @@ RQG 不是再增加一个“让 AI 审核 AI”的 Agent，而是把工作拆成
 | **cleanup** | 专项质量治理，目标是清理生产代码中的 Critical、Error、Warning | “用 RQG cleanup 模式开展质量债务清零。” |
 
 Agent 默认采用 `normal`；你可以按治理目标明确指定另两种模式。完整规则见 [QG 规则参考](references/RULES.md)。
+
+Agent 的静态调用图、变量来源及接口检索由 [SKILL.md](SKILL.md) 指导。
 
 ---
 
@@ -362,7 +391,7 @@ Profile 解决的是**这个项目要把某条规则管得多严**；`references
 - **不希望怎么改**：哪些 helper、fallback、兼容层或同义语法只是把问题换皮；
 - **关闭证据**：什么上下游事实和验证足以说明根因真的被处理。
 
-不要求给一两百条 QG 每条写一篇长文。相近规则可以共用一张“修复卡”；目标只是避免 Coding Agent 把“让 QG 编号消失”误当成“问题已经修好”。
+每个 QG 在索引中独占一行，分别说明问题、正确修复与禁止做法；不按规则族合并，也不写流水账。
 
 项目独有的约束仍然放在 Profile；只有足够通用、准备进入 RQG Core 的规则，才需要把通用修复意图同步沉淀到 `RULES.md`，让其他开发者不依赖私有项目背景也能理解。
 

@@ -191,9 +191,36 @@ RQG is not “another Agent that reviews the first Agent.” It separates the wo
 
 # Quick start
 
-Ask your Coding Agent: **“Install and enable [Repository Quality Guard](https://github.com/shijunfeng00/repository-quality-guard) as a Skill for this project, and set up the Git quality gate.”** Then request development or code review as usual. The Agent uses RQG to find existing capabilities, review changes, resolve findings, complete `修改说明.md`, and run final verification.
+### Official Skills CLI
 
-For example: **“Use RQG to audit my latest code changes, fix the quality issues, and give me the complete verification result.”**
+Install the RQG Skill from the public repository in your **target project** (Node.js and npm required):
+
+```bash
+cd my-project
+npx skills add shijunfeng00/repository-quality-guard
+```
+
+Follow the CLI prompts to select your Coding Agent and project installation scope. For a global Skill installation, add `-g`. This is the standard Agent Skills installer; it **does not** run RQG's release-integrity check, locked dependency setup, or project Profile binding.
+
+### RQG complete runtime installation
+
+For the full audit runtime, download and extract the `.skill.zip` from [Releases](https://github.com/shijunfeng00/repository-quality-guard/releases), then run (replace both paths with your own):
+
+```bash
+python repository-quality-guard/runtime/deploy.py repository-quality-guard my-project/.agents/skills/repository-quality-guard
+```
+
+`deploy.py` verifies the release, installs locked dependencies and `rqgtest`, and binds the target project's Profile (`--profile NAME` selects one explicitly; otherwise exact repository-name match or generic policy). It deploys to the fixed `.agents/skills/repository-quality-guard/` path; a plain file copy or `npx skills add` alone is not equivalent to this **complete runtime** installation.
+
+### Git pre-push quality gate
+
+The hook is **not enabled by either installation command**. After the complete runtime installation, run:
+
+```bash
+python my-project/.agents/skills/repository-quality-guard/scripts/git_hook_install.py my-project
+```
+
+The target must be a Git repository. Commit the deployed Skill to the host repository; each fresh clone must install its own Git hook. Installation complete: ask your Coding Agent to develop or audit with RQG. Agent-only CLI commands and evidence searches are documented in [SKILL.md](SKILL.md) and its references.
 
 ### Three audit modes
 
@@ -204,6 +231,8 @@ For example: **“Use RQG to audit my latest code changes, fix the quality issue
 | **cleanup** | Dedicated quality-debt cleanup targeting Critical, Error, and Warning findings in production code | “Use RQG cleanup mode to clear production quality debt.” |
 
 The Agent uses `normal` by default; you can select either of the other modes for a focused review. See the [QG rule reference](references/RULES.md) for details.
+
+The Agent uses static call relationships and API discovery as specified in [SKILL.md](SKILL.md).
 
 ---
 
@@ -362,7 +391,7 @@ A Profile answers **how strongly this repository treats a rule**; `references/RU
 - which common “fixes” merely hide or relocate the same problem;
 - what evidence is enough to close the finding.
 
-This does **not** mean writing an essay for every rule. Closely related rules can share one remediation card. The goal is to stop a Coding Agent from optimizing for “make the QG number disappear” instead of correcting the contract or ownership problem that produced it.
+Each QG has exactly one independent index row describing the problem, proper repair and prohibited shortcuts. No grouping by rule family and no development log.
 
 Project-only constraints still belong in the project Profile. If a rule is general enough to enter RQG Core, its remediation intent should be understandable from `RULES.md` without requiring private project knowledge.
 

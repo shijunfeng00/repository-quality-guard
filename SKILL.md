@@ -17,17 +17,18 @@ RQG 为 Coding Agent 提供**接口检索 → 代码修改 → 行为测试 → 
 | 场景 | 命令 | 详细协议 |
 | --- | --- | --- |
 | 检索已有接口 | `python scripts/quality_guard.py doc-generate /repo`、`doc-search /repo "能力"` | [CODING_GUIDE.md](references/CODING_GUIDE.md) |
+| 理解静态架构与变量来源 | `evidence --repo /repo --symbol pkg.module.func --direction both --trace` | [ARCHITECTURE.md](references/ARCHITECTURE.md) |
 | 查询规则与源码证据 | `python scripts/quality_guard.py evidence --rule QG003` | [RULES.md](references/RULES.md) |
 | 生成质量报告 | `python scripts/quality_guard.py audit /repo --diff-base BASE` | [AUDIT.md](references/AUDIT.md) |
 | 验收最新报告 | `python scripts/quality_guard.py verify /repo --diff-base BASE` | [AUDIT.md](references/AUDIT.md) |
 | 编写和运行行为测试 | `python -m rqgtest.run` | [TEST.md](references/TEST.md)、[TEST_CASE_PROTOCOL.md](references/TEST_CASE_PROTOCOL.md) |
 
-`python scripts/quality_guard.py --help` 提供完整参数；`evidence --help` 提供文件、符号、变量、调用方向及深度等检索选项。
+`python scripts/quality_guard.py --help` 提供完整参数；`evidence --help` 提供文件、符号、变量、调用方向及深度等检索选项。静态 Trace 不等于运行时调用栈。
 
 ## 交付工作流
 
 1. **确定基线**：使用用户指定 revision，或在任务开始时冻结当前 Git 起点；记录本轮改动范围与适用 Profile。
-2. **先检索再实现**：生成并搜索接口目录，核实已有能力所有者、调用方及可复用实现；保持职责单一、diff 精简。
+2. **先形成架构记忆再实现**：搜索现有接口，按需查询目标符号的静态上下游、变量来源及源码注释；确认能力所有者、影响范围与 UNKNOWN，再决定最小修改。见 [ARCHITECTURE.md](references/ARCHITECTURE.md)。
 3. **独立验证行为**：以需求/协议确定 Case、输入与 Oracle，运行受影响测试；以真实功能与可观察结果为判断依据。
 4. **生成审计报告**：运行 `audit`，阅读 `修改说明.md`，根据证据完成 ADD、SEM、架构审查和 Reduction Pass。自动生成字段由工具维护。
 5. **闭环问题**：修复新增质量债务，处理本轮触达范围内的历史债务；源码变化后更新测试与审计结果。
